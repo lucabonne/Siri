@@ -16,6 +16,7 @@ from typing import Any, Callable, Dict, List, Optional
 
 from openjarvis.core.events import EventBus, EventType
 from openjarvis.core.types import ToolCall, ToolResult
+from openjarvis.security.permissions import PermissionMiddleware, PermissionRequest
 
 # ---------------------------------------------------------------------------
 # ToolSpec — metadata describing a tool's interface
@@ -107,6 +108,7 @@ class ToolExecutor:
         capability_policy: Optional[Any] = None,
         agent_id: str = "",
         boundary_guard: Optional[Any] = None,
+        permission_middleware: Optional[PermissionMiddleware] = None,
     ) -> None:
         self._tools: Dict[str, BaseTool] = {t.spec.name: t for t in tools}
         self._bus = bus
@@ -116,6 +118,11 @@ class ToolExecutor:
         self._capability_policy = capability_policy
         self._agent_id = agent_id
         self._boundary_guard = boundary_guard
+        self._permission_middleware = (
+            permission_middleware
+            if permission_middleware is not None
+            else PermissionMiddleware()
+        )
 
     def execute(self, tool_call: ToolCall) -> ToolResult:
         """Parse arguments, dispatch to tool, measure latency, emit events."""
@@ -136,6 +143,72 @@ class ToolExecutor:
                 content=f"Invalid arguments JSON: {exc}",
                 success=False,
             )
+
+        # Permission middleware: classify and gate before boundary/capability checks.
+        permission_confirmed = False
+        decision = self._permission_middleware.check(
+            PermissionRequest(
+                tool_name=tool_call.name,
+                arguments=params if isinstance(params, dict) else {},
+                agent_id=self._agent_id,
+                dry_run=params.get("dry_run") is True
+                if isinstance(params, dict)
+                else False,
+            )
+        )
+        permission_metadata = {
+            "action": decision.action,
+            "level": decision.level.name,
+            "reason": decision.reason,
+            "matched_pattern": decision.matched_pattern,
+            "dry_run": decision.dry_run,
+            **decision.metadata,
+        }
+        if decision.dry_run:
+            would_action = decision.metadata.get("would_action", decision.action)
+            return ToolResult(
+                tool_name=tool_call.name,
+                content=(
+                    f"Permission dry run: would {would_action}"
+                    f" tool '{tool_call.name}'. Reason: {decision.reason}"
+                ),
+                success=True,
+                metadata={"permission": permission_metadata},
+            )
+        if decision.denied:
+            return ToolResult(
+                tool_name=tool_call.name,
+                content=(
+                    f"Permission denied for tool '{tool_call.name}':"
+                    f" {decision.reason}"
+                ),
+                success=False,
+                metadata={"permission": permission_metadata},
+            )
+        if decision.requires_confirmation:
+            if not self._interactive or self._confirm_callback is None:
+                return ToolResult(
+                    tool_name=tool_call.name,
+                    content=(
+                        f"Tool '{tool_call.name}' requires"
+                        " permission confirmation but no confirmation"
+                        " callback is available."
+                    ),
+                    success=False,
+                    metadata={"permission": permission_metadata},
+                )
+            prompt = (
+                f"Allow execution of tool '{tool_call.name}'"
+                f" with args {params}? Reason: {decision.reason}"
+            )
+            if not self._confirm_callback(prompt):
+                return ToolResult(
+                    tool_name=tool_call.name,
+                    content=f"Tool '{tool_call.name}' execution denied by user.",
+                    success=False,
+                    metadata={"permission": permission_metadata},
+                )
+            permission_confirmed = True
 
         # Boundary guard: scan external tool arguments
         if self._boundary_guard is not None and not getattr(tool, "is_local", True):
@@ -206,7 +279,7 @@ class ToolExecutor:
                 params.pop("_taint", None)
 
         # Confirmation check for sensitive tools
-        if tool.spec.requires_confirmation:
+        if tool.spec.requires_confirmation and not permission_confirmed:
             if not self._interactive or self._confirm_callback is None:
                 return ToolResult(
                     tool_name=tool_call.name,

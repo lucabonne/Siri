@@ -15,6 +15,12 @@ from openjarvis.security.file_policy import (
     is_sensitive_file,
 )
 from openjarvis.security.guardrails import GuardrailsEngine, SecurityBlockError
+from openjarvis.security.permissions import (
+    PermissionDecision,
+    PermissionLevel,
+    PermissionMiddleware,
+    PermissionRequest,
+)
 from openjarvis.security.scanner import PIIScanner, SecretScanner
 from openjarvis.security.ssrf import check_ssrf, is_private_ip
 from openjarvis.security.types import (
@@ -106,6 +112,10 @@ __all__ = [
     "DEFAULT_SENSITIVE_PATTERNS",
     "GuardrailsEngine",
     "PIIScanner",
+    "PermissionDecision",
+    "PermissionLevel",
+    "PermissionMiddleware",
+    "PermissionRequest",
     "RedactionMode",
     "ScanFinding",
     "ScanResult",
