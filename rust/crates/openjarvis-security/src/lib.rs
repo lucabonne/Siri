@@ -5,6 +5,7 @@ pub mod capabilities;
 pub mod file_policy;
 pub mod guardrails;
 pub mod injection;
+pub mod permissions;
 pub mod rate_limiter;
 pub mod scanner;
 pub mod ssrf;
@@ -16,8 +17,12 @@ pub use capabilities::{Capability, CapabilityPolicy};
 pub use file_policy::is_sensitive_file;
 pub use guardrails::GuardrailsEngine;
 pub use injection::InjectionScanner;
+pub use permissions::{
+    classify_shell_command, PermissionAction, PermissionDecision, PermissionLevel,
+    PermissionPolicy, PermissionRequest,
+};
 pub use rate_limiter::{RateLimitConfig, RateLimiter};
 pub use scanner::{PIIScanner, SecretScanner};
 pub use ssrf::check_ssrf;
-pub use taint::{TaintLabel, TaintSet, check_taint};
+pub use taint::{check_taint, TaintLabel, TaintSet};
 pub use types::{RedactionMode, ScanFinding, ScanResult, ThreatLevel};

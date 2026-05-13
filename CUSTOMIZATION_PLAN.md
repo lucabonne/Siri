@@ -73,3 +73,32 @@ Deferred work remains intentionally untouched in this phase:
 
 - no Rust executor changes
 - no frontend approval UI changes
+
+## Phase 4 Rust Executor Hardening
+
+Phase 4 adds a minimal Rust-side permission layer so native Rust tool
+execution cannot bypass the Python middleware by calling
+`rust/crates/openjarvis-tools/src/executor.rs` or high-risk builtins directly.
+
+The new policy lives in `rust/crates/openjarvis-security/src/permissions.rs`
+and mirrors the Python permission model without a runtime Python dependency:
+
+- `PermissionLevel`, `PermissionAction`, `PermissionRequest`, and
+  `PermissionDecision` provide the same coarse read-only, safe action,
+  confirmed execution, and dangerous concepts.
+- Shell command classification uses the same dangerous-pattern labels as the
+  Python middleware and writes JSONL audit records to the shared
+  `~/.openjarvis/logs/permissions.log` path.
+- `ToolExecutor.execute()` checks permissions before RBAC, taint checks,
+  events, and builtin dispatch. Dangerous calls are blocked immediately, and
+  confirmed-execution calls require an explicit internal
+  `_permission_confirmed=true` marker.
+- Rust `shell_exec`, `file_read`, and `file_write` also perform local
+  defense-in-depth checks so direct rig/PyO3 builtin calls do not skip the
+  dangerous-command, sensitive-file, protected-path, or traversal rules.
+- Rust file policy helpers now include protected write roots and protected
+  path parts aligned with Python's file policy.
+
+This phase intentionally keeps the Rust policy self-contained and conservative
+instead of introducing cross-language approval plumbing or redesigning the
+native agent/tool subsystem.

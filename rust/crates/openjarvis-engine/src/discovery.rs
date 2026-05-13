@@ -1,8 +1,8 @@
 //! Engine discovery — probe health endpoints to find running engines.
 
-use crate::traits::InferenceEngine;
 use crate::ollama::OllamaEngine;
 use crate::openai_compat::OpenAICompatEngine;
+use crate::traits::InferenceEngine;
 use openjarvis_core::config::JarvisConfig;
 use openjarvis_core::OpenJarvisError;
 

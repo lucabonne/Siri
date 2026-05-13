@@ -1,9 +1,12 @@
 //! File read/write tools.
 
 use crate::traits::BaseTool;
-use openjarvis_core::{OpenJarvisError, ToolResult, ToolSpec};
-use openjarvis_security::file_policy::is_sensitive_file;
 use once_cell::sync::Lazy;
+use openjarvis_core::{OpenJarvisError, ToolResult, ToolSpec};
+use openjarvis_security::file_policy::{is_sensitive_file, is_sensitive_path};
+use openjarvis_security::permissions::{
+    blocked_file_write_reason, PermissionPolicy, PermissionRequest,
+};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::path::Path;
@@ -60,7 +63,21 @@ impl BaseTool for FileReadTool {
         let path_str = params["path"].as_str().unwrap_or("");
         let path = Path::new(path_str);
 
-        if is_sensitive_file(path) {
+        let permission_decision = PermissionPolicy::default().check(&PermissionRequest {
+            tool_name: "file_read",
+            arguments: params,
+            agent_id: None,
+            command: None,
+            source: "rust_file_tool",
+        });
+        if permission_decision.denied() {
+            return Ok(ToolResult::failure(
+                "file_read",
+                format!("Permission denied: {}", permission_decision.reason),
+            ));
+        }
+
+        if is_sensitive_path(path) {
             return Ok(ToolResult::failure(
                 "file_read",
                 format!("Access denied: '{}' is a sensitive file", path_str),
@@ -91,10 +108,41 @@ impl BaseTool for FileWriteTool {
         let content = params["content"].as_str().unwrap_or("");
         let path = Path::new(path_str);
 
+        let permission_decision = PermissionPolicy::default().check(&PermissionRequest {
+            tool_name: "file_write",
+            arguments: params,
+            agent_id: None,
+            command: None,
+            source: "rust_file_tool",
+        });
+        if permission_decision.denied() {
+            return Ok(ToolResult::failure(
+                "file_write",
+                format!("Permission denied: {}", permission_decision.reason),
+            ));
+        }
+        if permission_decision.requires_confirmation()
+            && !params
+                .get("_permission_confirmed")
+                .and_then(Value::as_bool)
+                .unwrap_or(false)
+        {
+            return Ok(ToolResult::failure(
+                "file_write",
+                "Tool 'file_write' requires permission confirmation.".to_string(),
+            ));
+        }
+
         if is_sensitive_file(path) {
             return Ok(ToolResult::failure(
                 "file_write",
                 format!("Access denied: '{}' is a sensitive file", path_str),
+            ));
+        }
+        if let Some(reason) = blocked_file_write_reason(params) {
+            return Ok(ToolResult::failure(
+                "file_write",
+                format!("Access denied: {}", reason),
             ));
         }
 
@@ -129,9 +177,7 @@ mod tests {
     #[test]
     fn test_file_read_sensitive_blocked() {
         let tool = FileReadTool;
-        let result = tool
-            .execute(&serde_json::json!({"path": ".env"}))
-            .unwrap();
+        let result = tool.execute(&serde_json::json!({"path": ".env"})).unwrap();
         assert!(!result.success);
         assert!(result.content.contains("sensitive"));
     }
@@ -143,5 +189,27 @@ mod tests {
             .execute(&serde_json::json!({"path": "id_rsa", "content": "secret"}))
             .unwrap();
         assert!(!result.success);
+    }
+
+    #[test]
+    fn test_file_write_protected_path_blocked() {
+        let tool = FileWriteTool;
+        let result = tool
+            .execute(&serde_json::json!({"path": "/etc/openjarvis.conf", "content": "nope"}))
+            .unwrap();
+        assert!(!result.success);
+        assert!(result.content.contains("protected path"));
+    }
+
+    #[test]
+    fn test_file_write_requires_confirmation() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("note.txt");
+        let tool = FileWriteTool;
+        let result = tool
+            .execute(&serde_json::json!({"path": path.to_string_lossy(), "content": "hello"}))
+            .unwrap();
+        assert!(!result.success);
+        assert!(result.content.contains("requires permission confirmation"));
     }
 }
