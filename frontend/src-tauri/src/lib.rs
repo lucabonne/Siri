@@ -530,7 +530,7 @@ async fn boot_backend(backend: SharedBackend, status: SharedStatus) {
         if target_path.exists() && !target_path.join("pyproject.toml").exists() {
             let mut s = status.lock().await;
             s.error = Some(format!(
-                "{} exists but is not a valid OpenJarvis project. \
+                "{} exists but is not a valid Siri Layer project. \
                  Remove it and relaunch, or set OPENJARVIS_ROOT to the correct path.",
                 clone_target,
             ));
@@ -539,7 +539,7 @@ async fn boot_backend(backend: SharedBackend, status: SharedStatus) {
 
         {
             let mut s = status.lock().await;
-            s.detail = "Downloading OpenJarvis (first launch)...".into();
+            s.detail = "Downloading Siri Layer (first launch)...".into();
         }
 
         let clone_result = tokio::process::Command::new(&git_bin)
@@ -563,7 +563,7 @@ async fn boot_backend(backend: SharedBackend, status: SharedStatus) {
                     let stderr = String::from_utf8_lossy(&output.stderr);
                     let mut s = status.lock().await;
                     s.error = Some(format!(
-                        "Failed to download OpenJarvis: {}. \
+                        "Failed to download Siri Layer: {}. \
                          Clone manually: git clone https://github.com/open-jarvis/OpenJarvis.git {}",
                         stderr.trim(),
                         clone_target,
@@ -573,7 +573,7 @@ async fn boot_backend(backend: SharedBackend, status: SharedStatus) {
                 Err(e) => {
                     let mut s = status.lock().await;
                     s.error = Some(format!(
-                        "Failed to download OpenJarvis: {}. \
+                        "Failed to download Siri Layer: {}. \
                          Clone manually: git clone https://github.com/open-jarvis/OpenJarvis.git {}",
                         e, clone_target,
                     ));
@@ -699,8 +699,8 @@ async fn boot_backend(backend: SharedBackend, status: SharedStatus) {
         Err(e) => {
             let mut s = status.lock().await;
             s.error = Some(format!(
-                "Could not start jarvis server: {}. \
-                 Make sure uv is installed (https://astral.sh/uv) and the OpenJarvis repo is cloned at {}",
+                "Could not start Siri server: {}. \
+                 Make sure uv is installed (https://astral.sh/uv) and the Siri Layer repo is cloned at {}",
                 e,
                 root.display(),
             ));
@@ -728,9 +728,9 @@ async fn boot_backend(backend: SharedBackend, status: SharedStatus) {
         }
         let detail = if stderr_msg.is_empty() {
             format!(
-                "Jarvis server did not start. Check that:\n\
+                "Siri server did not start. Check that:\n\
                  1. uv is installed ({})\n\
-                 2. The OpenJarvis repo is at {}\n\
+                 2. The Siri Layer repo is at {}\n\
                  3. Run 'uv sync' in that directory",
                 uv_bin,
                 root.display(),
@@ -1618,7 +1618,7 @@ pub fn run() {
             let health = MenuItemBuilder::with_id("health", "Health: starting...")
                 .enabled(false)
                 .build(app)?;
-            let quit = MenuItemBuilder::with_id("quit", "Quit OpenJarvis").build(app)?;
+            let quit = MenuItemBuilder::with_id("quit", "Quit Siri Layer").build(app)?;
 
             let menu = MenuBuilder::new(app)
                 .item(&show)
@@ -1630,7 +1630,7 @@ pub fn run() {
 
             let _tray = TrayIconBuilder::with_id("main")
                 .icon(app.default_window_icon().unwrap().clone())
-                .tooltip("OpenJarvis")
+                .tooltip("Siri Layer")
                 .menu(&menu)
                 .on_menu_event(move |app, event| match event.id().as_ref() {
                     "show" => {
@@ -1709,7 +1709,7 @@ pub fn run() {
             get_overlay_conversation,
         ])
         .build(tauri::generate_context!())
-        .expect("error while building OpenJarvis Desktop")
+        .expect("error while building Siri Layer Desktop")
         .run(move |_app, event| {
             if let tauri::RunEvent::ExitRequested { .. } = event {
                 let b = backend.clone();
