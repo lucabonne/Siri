@@ -214,12 +214,14 @@ class PermissionMiddleware:
         tool_name = request.tool_name
         arguments = request.arguments if isinstance(request.arguments, Mapping) else {}
 
-        if tool_name == "shell_exec":
-            command = request.command
-            if command is None:
-                raw = arguments.get("command", "")
-                command = raw if isinstance(raw, str) else str(raw)
+        command = self._extract_command(request, arguments)
+        if tool_name == "shell_exec" or self._looks_like_shell_tool(tool_name):
             level, reason, matched_pattern = self.classify_shell_command(command)
+            if (
+                tool_name != "shell_exec"
+                and level == PermissionLevel.CONFIRMED_EXECUTION
+            ):
+                reason = f"MCP shell-style tool requires confirmation: {tool_name}"
             return level, reason, matched_pattern
 
         if tool_name == "http_request":
@@ -249,6 +251,10 @@ class PermissionMiddleware:
             )
         if tool_name in self._DANGEROUS_TOOLS:
             return PermissionLevel.DANGEROUS, "dangerous tool", None
+
+        mcp_level = self._classify_mcp_style_tool(tool_name)
+        if mcp_level is not None:
+            return mcp_level, f"MCP-style {mcp_level.name.lower()} tool", None
 
         return (
             PermissionLevel.SAFE_ACTION,
@@ -287,6 +293,48 @@ class PermissionMiddleware:
             return "require_confirmation"
         return "allow"
 
+    @staticmethod
+    def _extract_command(
+        request: PermissionRequest,
+        arguments: Mapping[str, Any],
+    ) -> str:
+        if request.command is not None:
+            return request.command
+        for key in ("command", "cmd", "shell_command", "script"):
+            raw = arguments.get(key)
+            if raw is not None:
+                return raw if isinstance(raw, str) else str(raw)
+        return ""
+
+    @staticmethod
+    def _looks_like_shell_tool(tool_name: str) -> bool:
+        normalized = tool_name.lower().replace("-", "_")
+        shell_tokens = ("shell", "terminal", "bash", "zsh", "run_command")
+        return any(token in normalized for token in shell_tokens)
+
+    @staticmethod
+    def _classify_mcp_style_tool(tool_name: str) -> Optional[PermissionLevel]:
+        normalized = tool_name.lower().replace("-", "_")
+        if any(token in normalized for token in ("read_file", "get_file")):
+            return PermissionLevel.READ_ONLY
+        if any(
+            token in normalized
+            for token in (
+                "write_file",
+                "create_file",
+                "edit_file",
+                "patch_file",
+                "delete_file",
+                "remove_file",
+                "apply_patch",
+                "run_code",
+                "execute_code",
+                "python",
+            )
+        ):
+            return PermissionLevel.CONFIRMED_EXECUTION
+        return None
+
     def _audit(
         self,
         request: PermissionRequest,
@@ -312,6 +360,7 @@ class PermissionMiddleware:
                     )
                 ),
                 "command_preview": self._command_preview(request),
+                "request_metadata": request.metadata,
                 "metadata": decision.metadata,
             }
             with path.open("a", encoding="utf-8") as fh:

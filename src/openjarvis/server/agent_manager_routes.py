@@ -570,6 +570,77 @@ def _get_mcp_tools(app_state: Any) -> Tuple[List[Dict[str, Any]], Dict[str, Any]
     return openai_tools, adapters_by_name
 
 
+def _get_permission_middleware(app_state: Any = None) -> Any:
+    """Return the server permission middleware, caching it on app state."""
+    middleware = getattr(app_state, "_permission_middleware", None)
+    if middleware is not None:
+        return middleware
+
+    from openjarvis.security.permissions import PermissionMiddleware
+
+    middleware = PermissionMiddleware()
+    if app_state is not None:
+        app_state._permission_middleware = middleware
+    return middleware
+
+
+def _check_server_tool_permission(
+    *,
+    tool_name: str,
+    parsed_args: Dict[str, Any],
+    agent_id: str,
+    app_state: Any = None,
+    source: str = "server_streaming",
+) -> Tuple[bool, str, Dict[str, Any]]:
+    """Gate server-executed tools before MCP/direct execution."""
+    from openjarvis.security.permissions import PermissionRequest
+
+    middleware = _get_permission_middleware(app_state)
+    decision = middleware.check(
+        PermissionRequest(
+            tool_name=tool_name,
+            arguments=parsed_args,
+            agent_id=agent_id,
+            dry_run=parsed_args.get("dry_run") is True,
+            metadata={"source": source},
+        )
+    )
+    metadata = {
+        "action": decision.action,
+        "level": decision.level.name,
+        "reason": decision.reason,
+        "matched_pattern": decision.matched_pattern,
+        "dry_run": decision.dry_run,
+        **decision.metadata,
+    }
+    if decision.dry_run:
+        would_action = decision.metadata.get("would_action", decision.action)
+        return (
+            False,
+            (
+                f"Permission dry run: would {would_action}"
+                f" tool '{tool_name}'. Reason: {decision.reason}"
+            ),
+            metadata,
+        )
+    if decision.denied:
+        return (
+            False,
+            f"Permission denied for tool '{tool_name}': {decision.reason}",
+            metadata,
+        )
+    if decision.requires_confirmation:
+        return (
+            False,
+            (
+                f"Tool '{tool_name}' requires explicit user confirmation:"
+                f" {decision.reason}"
+            ),
+            metadata,
+        )
+    return True, "", metadata
+
+
 def _sse_chunk(chunk_id: str, model: str, content: str) -> str:
     """Build a single SSE content chunk."""
     import json as _json
@@ -713,8 +784,7 @@ async def _stream_managed_agent(
                     tools=dr_tools,
                     max_turns=int(config.get("max_turns", 8)),
                     temperature=float(config.get("temperature", 0.3)),
-                    interactive=True,
-                    confirm_callback=lambda _prompt: True,
+                    interactive=False,
                 )
 
                 # Wrap the executor to capture tool calls
@@ -1137,6 +1207,11 @@ async def _stream_managed_agent(
                     tool_args = tc["function"]["arguments"]
                     tool_result_content = f"Tool '{tool_name}' not available"
                     tool_succeeded = False
+                    permission_metadata: Dict[str, Any] = {}
+                    try:
+                        parsed_args = json.loads(tool_args) if tool_args else {}
+                    except (json.JSONDecodeError, TypeError):
+                        parsed_args = {}
 
                     _start_payload = json.dumps(
                         {"tool": tool_name, "arguments": tool_args}
@@ -1154,15 +1229,31 @@ async def _stream_managed_agent(
                     tool_start_ms = _time.monotonic() * 1000
 
                     try:
+                        allowed, block_reason, permission_metadata = (
+                            _check_server_tool_permission(
+                                tool_name=tool_name,
+                                parsed_args=parsed_args,
+                                agent_id=agent_id,
+                                app_state=app_state,
+                                source="server_streaming",
+                            )
+                        )
+                        if not allowed:
+                            tool_result_content = block_reason
+                            tool_succeeded = False
+                            logger.warning(
+                                "Server streaming permission block for %s: %s",
+                                tool_name,
+                                block_reason,
+                            )
+                            raise PermissionError(block_reason)
+
                         # Try MCP adapter first (external tools)
                         mcp_adapter = mcp_adapters.get(tool_name)
                         if mcp_adapter is not None:
-                            try:
-                                parsed_args = json.loads(tool_args) if tool_args else {}
-                            except (json.JSONDecodeError, TypeError):
-                                parsed_args = {}
                             result = mcp_adapter.execute(**parsed_args)
                             tool_result_content = result.content
+                            tool_succeeded = result.success
                         else:
                             # Try to use ToolExecutor if tools are configured
                             from openjarvis.core.registry import ToolRegistry
@@ -1176,19 +1267,12 @@ async def _stream_managed_agent(
                             tool_cls = ToolRegistry.get(tool_name)
                             if tool_cls is not None:
                                 tool_instance = tool_cls()
-                                # Tools the user explicitly added to this
-                                # agent's toolkit are considered pre-approved —
-                                # selecting them in the wizard is the
-                                # confirmation. Without this, tools that have
-                                # `requires_confirmation=True` (shell_exec,
-                                # apply_patch) would fail with "requires
-                                # confirmation but no callback available" on
-                                # every call.
                                 executor = ToolExecutor(
                                     tools=[tool_instance],
                                     bus=bus,
-                                    interactive=True,
-                                    confirm_callback=lambda _prompt: True,
+                                    permission_middleware=_get_permission_middleware(
+                                        app_state
+                                    ),
                                 )
                                 result = executor.execute(
                                     StubToolCall(
@@ -1198,12 +1282,14 @@ async def _stream_managed_agent(
                                     ),
                                 )
                                 tool_result_content = result.content
+                                tool_succeeded = result.success
                             else:
                                 logger.warning(
                                     "Tool '%s' not found in registry or MCP adapters",
                                     tool_name,
                                 )
-                        tool_succeeded = True
+                    except PermissionError:
+                        pass
                     except Exception as tool_exc:
                         logger.error(
                             "Tool execution error for %s: %s",
@@ -1221,6 +1307,7 @@ async def _stream_managed_agent(
                             "result": tool_result_content,
                             "success": tool_succeeded,
                             "latency": tool_latency_ms,
+                            "permission": permission_metadata,
                         }
                     )
                     # Update the shared persist state so mid-stream
@@ -1537,8 +1624,7 @@ def create_agent_manager_router(
                                     engine=engine,
                                     model=getattr(engine, "_model", ""),
                                     tools=tools,
-                                    interactive=True,
-                                    confirm_callback=lambda _prompt: True,
+                                    interactive=False,
                                 )
 
                                 def handler(text: str) -> str:
@@ -1614,8 +1700,7 @@ def create_agent_manager_router(
                                     engine=engine,
                                     model=model_name,
                                     tools=tools,
-                                    interactive=True,
-                                    confirm_callback=lambda _prompt: True,
+                                    interactive=False,
                                 )
                         bus = getattr(request.app.state, "bus", None)
                         if bus is None:

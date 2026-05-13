@@ -37,12 +37,8 @@ class TestAgentManagerRoutes:
         from openjarvis.server.agent_manager_routes import create_agent_manager_router
 
         app = FastAPI()
-        routers = create_agent_manager_router(manager)
-        agents_router, templates_router, global_router, tools_router = routers
-        app.include_router(agents_router)
-        app.include_router(templates_router)
-        app.include_router(global_router)
-        app.include_router(tools_router)
+        for router in create_agent_manager_router(manager):
+            app.include_router(router)
         return TestClient(app)
 
     def test_list_agents_empty(self, client):
@@ -286,12 +282,8 @@ class TestAgentManagerStreaming:
         app.state.engine = _mock_engine
         app.state.bus = None
 
-        routers = create_agent_manager_router(manager)
-        agents_router, templates_router, global_router, tools_router = routers
-        app.include_router(agents_router)
-        app.include_router(templates_router)
-        app.include_router(global_router)
-        app.include_router(tools_router)
+        for router in create_agent_manager_router(manager):
+            app.include_router(router)
         return TestClient(app)
 
     def test_send_message_stream(self, manager, stream_client):
@@ -425,6 +417,115 @@ class TestAgentManagerStreaming:
         assert resp.status_code == 200
         assert "Error:" in resp.text or "error" in resp.text.lower()
         assert "data: [DONE]" in resp.text
+
+    def test_mcp_streaming_tool_permission_denies_dangerous_command(
+        self,
+        manager,
+    ):
+        """MCP tools executed by the streaming route must pass permissions."""
+        from fastapi import FastAPI
+        from fastapi.testclient import TestClient as TC
+
+        from openjarvis.core.types import ToolResult
+        from openjarvis.engine._stubs import StreamChunk
+        from openjarvis.server.agent_manager_routes import (
+            create_agent_manager_router,
+        )
+
+        engine = MagicMock()
+        engine.engine_id = "mock"
+        engine._model = "test-model"
+        engine.health.return_value = True
+        call_count = {"n": 0}
+
+        async def _stream_full(messages, *, model, **kwargs):
+            call_count["n"] += 1
+            if call_count["n"] == 1:
+                yield StreamChunk(
+                    tool_calls=[
+                        {
+                            "index": 0,
+                            "id": "tool-1",
+                            "function": {
+                                "name": "shell_exec",
+                                "arguments": '{"command":"rm -rf /"}',
+                            },
+                        }
+                    ],
+                    finish_reason="tool_calls",
+                )
+                return
+            yield StreamChunk(content="blocked ")
+            yield StreamChunk(finish_reason="stop")
+
+        engine.stream_full = _stream_full
+
+        mcp_adapter = MagicMock()
+        mcp_adapter.execute.return_value = ToolResult(
+            tool_name="shell_exec",
+            content="should not run",
+            success=True,
+        )
+
+        app = FastAPI()
+        app.state.engine = engine
+        app.state.bus = None
+        app.state._mcp_tools_cache = (
+            [
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "shell_exec",
+                        "description": "Execute shell command",
+                        "parameters": {"type": "object", "properties": {}},
+                    },
+                }
+            ],
+            {"shell_exec": mcp_adapter},
+        )
+        for router in create_agent_manager_router(manager):
+            app.include_router(router)
+        client = TC(app)
+
+        agent = manager.create_agent(name="mcp_stream", agent_type="simple")
+        resp = client.post(
+            f"/v1/managed-agents/{agent['id']}/messages",
+            json={"content": "run dangerous command", "stream": True},
+        )
+
+        assert resp.status_code == 200
+        assert "Permission denied for tool 'shell_exec'" in resp.text
+        mcp_adapter.execute.assert_not_called()
+
+    def test_server_permission_helper_marks_source_metadata(self, tmp_path) -> None:
+        """Server permission checks include source metadata for auditability."""
+        from openjarvis.security.permissions import PermissionMiddleware
+        from openjarvis.server.agent_manager_routes import (
+            _check_server_tool_permission,
+        )
+
+        class _State:
+            pass
+
+        state = _State()
+        state._permission_middleware = PermissionMiddleware(
+            audit_log_path=tmp_path / "permissions.log"
+        )
+
+        allowed, reason, metadata = _check_server_tool_permission(
+            tool_name="run_command",
+            parsed_args={"command": "echo hello"},
+            agent_id="agent-123",
+            app_state=state,
+            source="server_streaming",
+        )
+
+        assert allowed is False
+        assert "requires explicit user confirmation" in reason
+        assert metadata["action"] == "require_confirmation"
+        record = json.loads((tmp_path / "permissions.log").read_text())
+        assert record["agent_id"] == "agent-123"
+        assert record["request_metadata"]["source"] == "server_streaming"
 
 
 @pytest.mark.skipif(not HAS_FASTAPI, reason="fastapi not installed")
