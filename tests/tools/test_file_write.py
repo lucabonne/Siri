@@ -83,6 +83,30 @@ class TestFileWriteTool:
         assert result.success is False
         assert "sensitive" in result.content.lower()
 
+    def test_blocks_path_traversal(self, tmp_path):
+        target = tmp_path / ".." / "escape.txt"
+        tool = FileWriteTool()
+        result = tool.execute(path=str(target), content="nope")
+        assert result.success is False
+        assert "traversal" in result.content.lower()
+        assert not target.resolve().exists()
+
+    def test_blocks_protected_paths(self):
+        tool = FileWriteTool()
+        result = tool.execute(path="/etc/openjarvis-phase3.txt", content="nope")
+        assert result.success is False
+        assert "protected" in result.content.lower()
+
+    def test_blocks_sensitive_symlink_target(self, tmp_path):
+        secret = tmp_path / "id_rsa"
+        secret.write_text("secret", encoding="utf-8")
+        link = tmp_path / "safe.txt"
+        link.symlink_to(secret)
+        tool = FileWriteTool()
+        result = tool.execute(path=str(link), content="overwrite")
+        assert result.success is False
+        assert "sensitive" in result.content.lower()
+
     def test_allowed_dirs_blocks(self, tmp_path):
         f = tmp_path / "test.txt"
         tool = FileWriteTool(allowed_dirs=["/some/other/dir"])

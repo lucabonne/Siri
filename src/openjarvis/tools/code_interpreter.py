@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import ast
+import os
 import subprocess
 import sys
+import tempfile
 from typing import Any
 
 from openjarvis.core.registry import ToolRegistry
@@ -25,6 +28,21 @@ _BLOCKED_PATTERNS = [
     "compile(",
     "open(",
 ]
+
+
+def _contains_unsafe_path_literal(code: str) -> bool:
+    try:
+        tree = ast.parse(code)
+    except SyntaxError:
+        return False
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            value = node.value.strip()
+            if value.startswith(("/", "~")):
+                return True
+            if ".." in value.replace("\\", "/").split("/"):
+                return True
+    return False
 
 
 @ToolRegistry.register("code_interpreter")
@@ -75,14 +93,28 @@ class CodeInterpreterTool(BaseTool):
                     content=f"Blocked: code contains prohibited pattern '{pattern}'",
                     success=False,
                 )
+        if _contains_unsafe_path_literal(code):
+            return ToolResult(
+                tool_name="code_interpreter",
+                content="Blocked: code contains a path outside the sandbox.",
+                success=False,
+            )
 
         try:
-            result = subprocess.run(
-                [sys.executable, "-c", code],
-                capture_output=True,
-                text=True,
-                timeout=self._timeout,
-            )
+            with tempfile.TemporaryDirectory(prefix="openjarvis-code-") as workdir:
+                env = {
+                    "PATH": os.environ.get("PATH", ""),
+                    "PYTHONNOUSERSITE": "1",
+                    "PYTHONPATH": "",
+                }
+                result = subprocess.run(
+                    [sys.executable, "-I", "-c", code],
+                    capture_output=True,
+                    text=True,
+                    timeout=self._timeout,
+                    cwd=workdir,
+                    env=env,
+                )
             output = result.stdout
             if result.stderr:
                 output += ("\n" if output else "") + result.stderr
@@ -92,7 +124,7 @@ class CodeInterpreterTool(BaseTool):
                 tool_name="code_interpreter",
                 content=output or "(no output)",
                 success=result.returncode == 0,
-                metadata={"returncode": result.returncode},
+                metadata={"returncode": result.returncode, "sandboxed": True},
             )
         except subprocess.TimeoutExpired:
             return ToolResult(

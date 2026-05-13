@@ -9,6 +9,7 @@ from typing import Any, List
 
 from openjarvis.core.registry import ToolRegistry
 from openjarvis.core.types import ToolResult
+from openjarvis.security.permissions import PermissionLevel, PermissionMiddleware
 from openjarvis.tools._stubs import BaseTool, ToolSpec
 
 # Maximum output size per stream (100 KB)
@@ -80,6 +81,16 @@ class ShellExecTool(BaseTool):
                 tool_name="shell_exec",
                 content="No command provided.",
                 success=False,
+            )
+        level, reason, matched_pattern = PermissionMiddleware().classify_shell_command(
+            str(command)
+        )
+        if level == PermissionLevel.DANGEROUS:
+            return ToolResult(
+                tool_name="shell_exec",
+                content=f"Blocked dangerous command: {reason}",
+                success=False,
+                metadata={"matched_pattern": matched_pattern},
             )
 
         # Resolve timeout (capped at _MAX_TIMEOUT)

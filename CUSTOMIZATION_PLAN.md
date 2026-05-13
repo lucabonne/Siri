@@ -45,3 +45,31 @@ The server no longer uses unconditional
 `confirm_callback=lambda _prompt: True` approvals in this module. The MCP
 adapter path remains otherwise unchanged; Phase 2 intentionally does not
 redesign streaming, MCP discovery, or the broader tool system.
+
+## Phase 3 Tool-Specific Hardening
+
+Phase 3 adds defense-in-depth inside high-risk Python tools so direct tool
+execution remains guarded even if a caller bypasses `ToolExecutor` or the
+server streaming permission gate.
+
+The hardened tools now perform local checks before touching the filesystem,
+spawning processes, or launching containers:
+
+- `shell_exec` reuses `PermissionMiddleware.classify_shell_command()` and
+  blocks dangerous shell command patterns before either Rust or Python
+  execution.
+- `file_write` blocks sensitive files, protected system paths, path traversal,
+  and symlink targets that resolve to sensitive files.
+- `apply_patch` blocks sensitive files, protected system paths, and path
+  traversal from both explicit `path` input and patch headers.
+- `file_read` continues to honor allowed roots and now also blocks sensitive
+  symlink targets.
+- `code_interpreter` runs from an isolated temporary workdir and blocks obvious
+  absolute or parent-path literals before execution.
+- `ContainerRunner` rejects dangerous host mounts such as `/` before invoking
+  Docker or Podman and logs sandbox start/completion/timeout events.
+
+Deferred work remains intentionally untouched in this phase:
+
+- no Rust executor changes
+- no frontend approval UI changes

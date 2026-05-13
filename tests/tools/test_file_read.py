@@ -87,6 +87,30 @@ class TestFileReadTool:
         assert result.success is False
         assert "sensitive" in result.content.lower()
 
+    def test_blocks_sensitive_symlink_target(self, tmp_path):
+        secret = tmp_path / "id_rsa"
+        secret.write_text("secret", encoding="utf-8")
+        link = tmp_path / "safe.txt"
+        link.symlink_to(secret)
+        tool = FileReadTool()
+        result = tool.execute(path=str(link))
+        assert result.success is False
+        assert "sensitive" in result.content.lower()
+
+    def test_allowed_dirs_blocks_symlink_escape(self, tmp_path):
+        allowed = tmp_path / "allowed"
+        outside = tmp_path / "outside"
+        allowed.mkdir()
+        outside.mkdir()
+        target = outside / "data.txt"
+        target.write_text("secret", encoding="utf-8")
+        link = allowed / "link.txt"
+        link.symlink_to(target)
+        tool = FileReadTool(allowed_dirs=[str(allowed)])
+        result = tool.execute(path=str(link))
+        assert result.success is False
+        assert "Access denied" in result.content
+
     def test_allows_normal_py_files(self, tmp_path):
         f = tmp_path / "main.py"
         f.write_text("print('hello')", encoding="utf-8")

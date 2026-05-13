@@ -7,6 +7,12 @@ from typing import Any, List, Optional
 
 from openjarvis.core.registry import ToolRegistry
 from openjarvis.core.types import ToolResult
+from openjarvis.security.file_policy import (
+    has_path_traversal,
+    is_path_within_roots,
+    is_protected_path,
+    is_sensitive_path,
+)
 from openjarvis.tools._stubs import BaseTool, ToolSpec
 
 # Maximum file size to write (10 MB)
@@ -65,12 +71,7 @@ class FileWriteTool(BaseTool):
 
     def _is_path_allowed(self, path: Path) -> bool:
         """Check if path is within allowed directories."""
-        if not self._allowed_dirs:
-            return True
-        resolved = path.resolve()
-        return any(
-            resolved == d or resolved.is_relative_to(d) for d in self._allowed_dirs
-        )
+        return is_path_within_roots(path, self._allowed_dirs)
 
     def execute(self, **params: Any) -> ToolResult:
         file_path = params.get("path", "")
@@ -101,13 +102,24 @@ class FileWriteTool(BaseTool):
 
         path = Path(file_path)
 
-        # Block sensitive files (secrets, credentials, keys)
-        from openjarvis.security.file_policy import is_sensitive_file
+        if has_path_traversal(path):
+            return ToolResult(
+                tool_name="file_write",
+                content=f"Access denied: {file_path} contains path traversal.",
+                success=False,
+            )
 
-        if is_sensitive_file(path):
+        if is_sensitive_path(path):
             return ToolResult(
                 tool_name="file_write",
                 content=f"Access denied: {file_path} is a sensitive file.",
+                success=False,
+            )
+
+        if is_protected_path(path):
+            return ToolResult(
+                tool_name="file_write",
+                content=f"Access denied: {file_path} is a protected path.",
                 success=False,
             )
 

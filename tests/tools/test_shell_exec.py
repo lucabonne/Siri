@@ -68,6 +68,18 @@ class TestShellExecTool:
         assert result.success is False
         assert "No command" in result.content
 
+    def test_blocks_dangerous_command_before_backend(self):
+        mock_mod = _make_mock_rust(return_value=_rust_output(stdout="bad\n"))
+        tool = ShellExecTool()
+        with patch(
+            "openjarvis._rust_bridge.get_rust_module",
+            return_value=mock_mod,
+        ):
+            result = tool.execute(command="rm -rf /")
+        assert result.success is False
+        assert "Blocked dangerous command" in result.content
+        mock_mod.ShellExecTool.return_value.execute.assert_not_called()
+
     def test_simple_echo(self):
         mock_mod = _make_mock_rust(
             return_value=_rust_output(stdout="hello\n"),

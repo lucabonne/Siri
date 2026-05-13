@@ -133,6 +133,29 @@ class TestApplyPatchTool:
         assert result.success is False
         assert "sensitive" in result.content.lower()
 
+    def test_blocks_path_traversal(self, tmp_path):
+        f = tmp_path / "safe.txt"
+        f.write_text("old\n", encoding="utf-8")
+        patch = "--- a/safe.txt\n+++ b/safe.txt\n@@ -1 +1 @@\n-old\n+new\n"
+        tool = ApplyPatchTool()
+        result = tool.execute(patch=patch, path=str(tmp_path / ".." / "safe.txt"))
+        assert result.success is False
+        assert "traversal" in result.content.lower()
+
+    def test_blocks_traversal_from_patch_header(self):
+        patch = "--- a/escape.txt\n+++ b/../escape.txt\n@@ -1 +1 @@\n-old\n+new\n"
+        tool = ApplyPatchTool()
+        result = tool.execute(patch=patch)
+        assert result.success is False
+        assert "traversal" in result.content.lower()
+
+    def test_blocks_protected_paths(self):
+        patch = "--- a/hosts\n+++ b/hosts\n@@ -1 +1 @@\n-old\n+new\n"
+        tool = ApplyPatchTool()
+        result = tool.execute(patch=patch, path="/etc/hosts")
+        assert result.success is False
+        assert "protected" in result.content.lower()
+
     def test_auto_detect_path_from_patch_header(self, tmp_path):
         f = tmp_path / "auto.txt"
         f.write_text("one\ntwo\nthree\n", encoding="utf-8")

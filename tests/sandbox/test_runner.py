@@ -171,6 +171,36 @@ class TestContainerRunnerRun:
             result = runner.run({"prompt": "test"})
         assert result["content"] == "plain text output"
 
+    def test_rejects_dangerous_host_mount_before_runtime(self):
+        runner = ContainerRunner()
+        with patch("subprocess.run") as mock_run:
+            with pytest.raises(ValueError, match="Dangerous host mount"):
+                runner.run({"prompt": "test"}, mounts=["/"])
+        mock_run.assert_not_called()
+
+    def test_rejects_dangerous_host_mount_children(self):
+        runner = ContainerRunner()
+        with patch("subprocess.run") as mock_run:
+            with pytest.raises(ValueError, match="Dangerous host mount"):
+                runner.run({"prompt": "test"}, mounts=["/etc/ssl"])
+        mock_run.assert_not_called()
+
+    def test_logs_sandbox_execution(self, caplog):
+        runner = ContainerRunner()
+        output = _wrap_output({"content": "Hello!"})
+        with (
+            caplog.at_level("INFO", logger="openjarvis.sandbox.runner"),
+            patch("shutil.which", return_value="/usr/bin/docker"),
+            patch(
+                "subprocess.run",
+                return_value=_mock_proc(stdout=output),
+            ),
+        ):
+            result = runner.run({"prompt": "test"})
+        assert result["content"] == "Hello!"
+        assert "Starting sandbox container" in caplog.text
+        assert "completed successfully" in caplog.text
+
 
 class TestContainerRunnerRuntimeCheck:
     def test_raises_when_runtime_not_found(self):

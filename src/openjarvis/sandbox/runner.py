@@ -12,6 +12,7 @@ import logging
 import shutil
 import subprocess
 import uuid
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from openjarvis.agents._stubs import AgentContext, AgentResult, BaseAgent
@@ -24,6 +25,19 @@ logger = logging.getLogger(__name__)
 # Sentinel markers (same as ClaudeCodeAgent)
 _OUTPUT_START = "---OPENJARVIS_OUTPUT_START---"
 _OUTPUT_END = "---OPENJARVIS_OUTPUT_END---"
+_DANGEROUS_HOST_MOUNTS = (
+    Path("/"),
+    Path("/bin"),
+    Path("/dev"),
+    Path("/etc"),
+    Path("/proc"),
+    Path("/run"),
+    Path("/sbin"),
+    Path("/sys"),
+    Path("/System"),
+    Path("/usr"),
+    Path("/var"),
+)
 
 
 class ContainerRunner:
@@ -96,11 +110,29 @@ class ContainerRunner:
         """Validate mounts against the allowlist."""
         if not mounts:
             return []
+        for mount in mounts:
+            if self._is_dangerous_host_mount(mount):
+                raise ValueError(f"Dangerous host mount rejected: {mount}")
         from openjarvis.sandbox.mount_security import (
             validate_mounts,
         )
 
         return validate_mounts(mounts, self._allowlist)
+
+    @staticmethod
+    def _is_dangerous_host_mount(mount: str) -> bool:
+        try:
+            resolved = Path(mount).expanduser().resolve()
+        except (OSError, ValueError):
+            return True
+        home = Path.home().resolve()
+        if resolved == home:
+            return True
+        for root in _DANGEROUS_HOST_MOUNTS:
+            root_resolved = root.expanduser().resolve()
+            if resolved == root_resolved or resolved.is_relative_to(root_resolved):
+                return True
+        return False
 
     def _build_docker_args(
         self,
@@ -165,6 +197,12 @@ class ContainerRunner:
         validated_mounts = self._validate_mounts(mounts)
 
         container_name = f"oj-sandbox-{uuid.uuid4().hex[:12]}"
+        logger.info(
+            "Starting sandbox container %s image=%s mounts=%d",
+            container_name,
+            self._image,
+            len(validated_mounts),
+        )
 
         # Build request payload
         payload = dict(input_data)
@@ -190,6 +228,11 @@ class ContainerRunner:
         except subprocess.TimeoutExpired:
             # Kill the container on timeout
             self.stop(container_name)
+            logger.warning(
+                "Sandbox container %s timed out after %ss",
+                container_name,
+                self._timeout,
+            )
             return {
                 "content": (f"Container timed out after {self._timeout}s."),
                 "error": True,
@@ -210,6 +253,10 @@ class ContainerRunner:
                 "returncode": proc.returncode,
             }
 
+        logger.info(
+            "Sandbox container %s completed successfully",
+            container_name,
+        )
         return self._parse_output(proc.stdout)
 
     @staticmethod

@@ -10,6 +10,11 @@ from typing import Any, List, Optional
 
 from openjarvis.core.registry import ToolRegistry
 from openjarvis.core.types import ToolResult
+from openjarvis.security.file_policy import (
+    has_path_traversal,
+    is_protected_path,
+    is_sensitive_path,
+)
 from openjarvis.tools._stubs import BaseTool, ToolSpec
 
 # ---------------------------------------------------------------------------
@@ -252,13 +257,24 @@ class ApplyPatchTool(BaseTool):
 
         path = Path(target)
 
-        # Block sensitive files
-        from openjarvis.security.file_policy import is_sensitive_file
+        if has_path_traversal(path):
+            return ToolResult(
+                tool_name="apply_patch",
+                content=f"Access denied: {target} contains path traversal.",
+                success=False,
+            )
 
-        if is_sensitive_file(path):
+        if is_sensitive_path(path):
             return ToolResult(
                 tool_name="apply_patch",
                 content=f"Access denied: {target} is a sensitive file.",
+                success=False,
+            )
+
+        if is_protected_path(path):
+            return ToolResult(
+                tool_name="apply_patch",
+                content=f"Access denied: {target} is a protected path.",
                 success=False,
             )
 

@@ -79,6 +79,27 @@ class TestCodeInterpreterTool:
         assert result.success is False
         assert "Blocked" in result.content
 
+    def test_runs_inside_sandbox_workdir(self):
+        tool = CodeInterpreterTool()
+        result = tool.execute(code="import os; print(os.getcwd())")
+        assert result.success is True
+        assert "openjarvis-code-" in result.content
+        assert result.metadata["sandboxed"] is True
+
+    def test_blocks_absolute_path_literals(self):
+        tool = CodeInterpreterTool()
+        result = tool.execute(
+            code="from pathlib import Path\nprint(Path('/etc/passwd').read_text())"
+        )
+        assert result.success is False
+        assert "outside the sandbox" in result.content
+
+    def test_blocks_parent_path_literals(self):
+        tool = CodeInterpreterTool()
+        result = tool.execute(code="print('../escape.txt')")
+        assert result.success is False
+        assert "outside the sandbox" in result.content
+
     def test_no_code_provided(self):
         tool = CodeInterpreterTool()
         result = tool.execute(code="")

@@ -7,6 +7,10 @@ from typing import Any, List, Optional
 
 from openjarvis.core.registry import ToolRegistry
 from openjarvis.core.types import ToolResult
+from openjarvis.security.file_policy import (
+    is_path_within_roots,
+    is_sensitive_path,
+)
 from openjarvis.tools._stubs import BaseTool, ToolSpec
 
 # Maximum file size to read (1 MB)
@@ -49,12 +53,7 @@ class FileReadTool(BaseTool):
 
     def _is_path_allowed(self, path: Path) -> bool:
         """Check if path is within allowed directories."""
-        if not self._allowed_dirs:
-            return True
-        resolved = path.resolve()
-        return any(
-            resolved == d or resolved.is_relative_to(d) for d in self._allowed_dirs
-        )
+        return is_path_within_roots(path, self._allowed_dirs)
 
     def execute(self, **params: Any) -> ToolResult:
         file_path = params.get("path", "")
@@ -65,10 +64,8 @@ class FileReadTool(BaseTool):
                 success=False,
             )
         path = Path(file_path)
-        # Block sensitive files (secrets, credentials, keys)
-        from openjarvis.security.file_policy import is_sensitive_file
 
-        if is_sensitive_file(path):
+        if is_sensitive_path(path):
             return ToolResult(
                 tool_name="file_read",
                 content=f"Access denied: {file_path} is a sensitive file.",
