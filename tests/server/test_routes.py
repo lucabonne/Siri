@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
@@ -67,6 +68,12 @@ def client_with_agent():
     agent = _make_agent()
     app = create_app(engine, "test-model", agent=agent)
     return TestClient(app)
+
+
+@pytest.fixture
+def isolated_home(monkeypatch, tmp_path):
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    return tmp_path
 
 
 # ---------------------------------------------------------------------------
@@ -289,6 +296,67 @@ class TestHealthEndpoint:
         client = TestClient(app)
         resp = client.get("/health")
         assert resp.status_code == 503
+
+
+# ---------------------------------------------------------------------------
+# Security approval endpoint tests
+# ---------------------------------------------------------------------------
+
+
+class TestSecurityApprovals:
+    def test_approval_routes(self, isolated_home):
+        from openjarvis.security.approval_queue import ApprovalQueue
+        from openjarvis.security.permissions import (
+            PermissionDecision,
+            PermissionLevel,
+            PermissionRequest,
+        )
+
+        queue = ApprovalQueue()
+        record = queue.enqueue(
+            PermissionRequest(
+                tool_name="shell_exec",
+                arguments={"command": "echo hi"},
+                metadata={"source": "server_streaming"},
+            ),
+            PermissionDecision(
+                action="require_confirmation",
+                level=PermissionLevel.CONFIRMED_EXECUTION,
+                reason="shell command requires confirmation",
+            ),
+        )
+
+        app = create_app(_make_engine(), "test-model")
+        client = TestClient(app)
+
+        resp = client.get("/v1/security/approvals")
+        assert resp.status_code == 200
+        assert resp.json()["approvals"][0]["id"] == record.id
+
+        resp = client.post(f"/v1/security/approvals/{record.id}/approve")
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "approved"
+
+        resp = client.get("/v1/security/approvals")
+        assert resp.json()["approvals"] == []
+
+    def test_permission_audit_route(self, isolated_home):
+        from openjarvis.security.permissions import (
+            PermissionMiddleware,
+            PermissionRequest,
+        )
+
+        PermissionMiddleware().check(
+            PermissionRequest(tool_name="file_read", arguments={"path": "README.md"})
+        )
+
+        app = create_app(_make_engine(), "test-model")
+        client = TestClient(app)
+        resp = client.get("/v1/security/permissions/audit")
+
+        assert resp.status_code == 200
+        events = resp.json()["events"]
+        assert events[0]["tool"] == "file_read"
 
 
 # ---------------------------------------------------------------------------

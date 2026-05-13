@@ -102,3 +102,23 @@ and mirrors the Python permission model without a runtime Python dependency:
 This phase intentionally keeps the Rust policy self-contained and conservative
 instead of introducing cross-language approval plumbing or redesigning the
 native agent/tool subsystem.
+
+## Phase 5 Approval Queue And Permissions UI
+
+Phase 5 adds a small review surface for permission-gated work without changing
+the conservative execution default from earlier phases.
+
+- `src/openjarvis/security/approval_queue.py` stores confirmation-required
+  tool calls as owner-only JSON records under `~/.openjarvis/approvals`.
+  Records keep sanitized review metadata such as tool name, source, reason,
+  argument keys, and a short command preview.
+- Server streaming permission blocks now enqueue pending approvals and include
+  the approval id in tool-call metadata.
+- New API routes expose pending/all approvals, approve/deny mutations, and a
+  recent permission audit feed under `/v1/security/...`.
+- The Mission Control Permissions tab now renders a live approval queue with
+  approve/deny controls and a permission audit lane, falling back to mock data
+  when the local API is unavailable.
+
+Approving a queued item records the user's decision for review and follow-up;
+it does not silently resume or replay the blocked tool call.

@@ -596,15 +596,14 @@ def _check_server_tool_permission(
     from openjarvis.security.permissions import PermissionRequest
 
     middleware = _get_permission_middleware(app_state)
-    decision = middleware.check(
-        PermissionRequest(
-            tool_name=tool_name,
-            arguments=parsed_args,
-            agent_id=agent_id,
-            dry_run=parsed_args.get("dry_run") is True,
-            metadata={"source": source},
-        )
+    permission_request = PermissionRequest(
+        tool_name=tool_name,
+        arguments=parsed_args,
+        agent_id=agent_id,
+        dry_run=parsed_args.get("dry_run") is True,
+        metadata={"source": source},
     )
+    decision = middleware.check(permission_request)
     metadata = {
         "action": decision.action,
         "level": decision.level.name,
@@ -630,11 +629,26 @@ def _check_server_tool_permission(
             metadata,
         )
     if decision.requires_confirmation:
+        approval_id = ""
+        try:
+            from openjarvis.security.approval_queue import ApprovalQueue
+
+            approval = ApprovalQueue().enqueue(
+                permission_request,
+                decision,
+                source=source,
+            )
+            approval_id = approval.id
+            metadata["approval_id"] = approval.id
+            metadata["approval_status"] = approval.status
+        except Exception:
+            logger.debug("Failed to enqueue permission approval", exc_info=True)
         return (
             False,
             (
                 f"Tool '{tool_name}' requires explicit user confirmation:"
                 f" {decision.reason}"
+                + (f" Approval queued as {approval_id}." if approval_id else "")
             ),
             metadata,
         )

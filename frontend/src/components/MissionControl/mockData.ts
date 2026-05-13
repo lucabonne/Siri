@@ -13,6 +13,7 @@ import {
   TerminalSquare,
 } from 'lucide-react';
 import type {
+  ApprovalRecord,
   MissionAgent,
   MissionFeedItem,
   MissionMetric,
@@ -163,6 +164,37 @@ export const permissionEvents: PermissionEvent[] = [
     action: 'Needs approval',
     source: 'terminal',
     time: '10:17',
+  },
+];
+
+export const approvalQueue: ApprovalRecord[] = [
+  {
+    id: 'demo-shell-approval',
+    status: 'pending',
+    requested_at: new Date(Date.now() - 8 * 60 * 1000).toISOString(),
+    decided_at: null,
+    tool: 'shell_exec',
+    agent_id: 'orion',
+    source: 'server_streaming',
+    level: 'CONFIRMED_EXECUTION',
+    reason: 'shell command requires confirmation',
+    matched_pattern: null,
+    argument_keys: ['command'],
+    command_preview: 'git status --short',
+  },
+  {
+    id: 'demo-write-approval',
+    status: 'pending',
+    requested_at: new Date(Date.now() - 19 * 60 * 1000).toISOString(),
+    decided_at: null,
+    tool: 'file_write',
+    agent_id: 'vega',
+    source: 'tool_executor',
+    level: 'CONFIRMED_EXECUTION',
+    reason: 'tool requires confirmation',
+    matched_pattern: null,
+    argument_keys: ['path', 'content'],
+    command_preview: '',
   },
 ];
 

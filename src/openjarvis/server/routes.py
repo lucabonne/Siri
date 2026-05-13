@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import uuid
 from typing import Any
@@ -766,6 +767,79 @@ async def security_scan():
             for r in results
         ],
     }
+
+
+@router.get("/v1/security/approvals")
+async def list_security_approvals(
+    status: str = "pending",
+    limit: int = 50,
+):
+    """List permission approval requests."""
+    from openjarvis.security.approval_queue import ApprovalQueue
+
+    normalized = status.lower()
+    if normalized not in {"pending", "approved", "denied", "all"}:
+        raise HTTPException(status_code=400, detail="Invalid approval status")
+
+    queue = ApprovalQueue()
+    approvals = [
+        record.to_json()
+        for record in queue.list(status=normalized, limit=min(max(limit, 0), 200))
+    ]
+    return {"approvals": approvals}
+
+
+@router.post("/v1/security/approvals/{approval_id}/approve")
+async def approve_security_approval(
+    approval_id: str,
+    body: dict[str, Any] | None = None,
+):
+    """Mark a permission approval request as approved."""
+    from openjarvis.security.approval_queue import ApprovalQueue
+
+    try:
+        note = str((body or {}).get("note", ""))
+        record = ApprovalQueue().decide(approval_id, "approved", note=note)
+        return record.to_json()
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Approval not found")
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+
+
+@router.post("/v1/security/approvals/{approval_id}/deny")
+async def deny_security_approval(approval_id: str, body: dict[str, Any] | None = None):
+    """Mark a permission approval request as denied."""
+    from openjarvis.security.approval_queue import ApprovalQueue
+
+    try:
+        note = str((body or {}).get("note", ""))
+        record = ApprovalQueue().decide(approval_id, "denied", note=note)
+        return record.to_json()
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Approval not found")
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+
+
+@router.get("/v1/security/permissions/audit")
+async def list_permission_audit(limit: int = 100):
+    """Return recent permission audit events, newest first."""
+    from openjarvis.security.permissions import PermissionMiddleware
+
+    path = PermissionMiddleware().audit_log_path
+    if not path.exists():
+        return {"events": []}
+
+    events: list[dict[str, Any]] = []
+    lines = path.read_text(encoding="utf-8").splitlines()
+    for line in lines[-min(max(limit, 0), 500) :]:
+        try:
+            events.append(json.loads(line))
+        except json.JSONDecodeError:
+            continue
+    events.reverse()
+    return {"events": events}
 
 
 __all__ = ["router"]

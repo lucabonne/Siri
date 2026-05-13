@@ -1,17 +1,27 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import {
   Activity,
   ArrowUpRight,
+  Ban,
   CheckCircle2,
   Circle,
   Clock3,
   Gauge,
   LockKeyhole,
   Radar,
+  RefreshCw,
   ShieldAlert,
+  ShieldCheck,
+  XCircle,
 } from 'lucide-react';
 import {
+  decideSecurityApproval,
+  fetchPermissionAudit,
+  fetchSecurityApprovals,
+} from '../../lib/api';
+import {
+  approvalQueue,
   missionAgents,
   missionFeed,
   missionMetrics,
@@ -22,7 +32,7 @@ import {
   quickCommands,
   worldSignals,
 } from './mockData';
-import type { MissionSectionId, StatusTone } from './types';
+import type { ApprovalRecord, MissionSectionId, PermissionEvent, StatusTone } from './types';
 
 const toneStyles: Record<StatusTone, { bg: string; text: string; border: string }> = {
   good: {
@@ -492,32 +502,213 @@ function SettingsSection() {
   );
 }
 
+function formatEventTime(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+
+function auditActionLabel(action: string): PermissionEvent['action'] {
+  if (action === 'allow') return 'Allowed';
+  if (action === 'deny') return 'Blocked';
+  return 'Needs approval';
+}
+
+function actionTone(action: PermissionEvent['action']): StatusTone {
+  if (action === 'Allowed') return 'good';
+  if (action === 'Blocked') return 'watch';
+  return 'busy';
+}
+
 function PermissionsSection() {
+  const [approvals, setApprovals] = useState<ApprovalRecord[]>(approvalQueue);
+  const [events, setEvents] = useState<PermissionEvent[]>(permissionEvents);
+  const [status, setStatus] = useState<'ready' | 'loading' | 'offline'>('loading');
+  const [actingId, setActingId] = useState<string>('');
+
+  const refreshPermissions = async () => {
+    setStatus('loading');
+    try {
+      const [approvalData, auditData] = await Promise.all([
+        fetchSecurityApprovals('pending', 50),
+        fetchPermissionAudit(50),
+      ]);
+      setApprovals(approvalData);
+      setEvents(
+        auditData.map((event) => ({
+          tool: event.tool,
+          action: auditActionLabel(event.action),
+          source: String(event.request_metadata?.source || 'tool_executor'),
+          time: formatEventTime(event.timestamp),
+          reason: event.reason,
+        })),
+      );
+      setStatus('ready');
+    } catch {
+      setApprovals(approvalQueue);
+      setEvents(permissionEvents);
+      setStatus('offline');
+    }
+  };
+
+  useEffect(() => {
+    refreshPermissions();
+  }, []);
+
+  const decide = async (approvalId: string, decision: 'approve' | 'deny') => {
+    setActingId(approvalId);
+    try {
+      await decideSecurityApproval(approvalId, decision);
+      setApprovals((current) => current.filter((approval) => approval.id !== approvalId));
+      setStatus('ready');
+    } catch {
+      setStatus('offline');
+    } finally {
+      setActingId('');
+    }
+  };
+
   return (
-    <ShellPanel title="Permissions">
-      <div className="space-y-3">
-        {permissionEvents.map((event) => (
-          <div
-            key={`${event.tool}-${event.time}`}
-            className="grid gap-3 rounded-md border p-3 md:grid-cols-[1fr_150px_160px_70px]"
-            style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg-secondary)' }}
+    <div className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
+      <ShellPanel
+        title="Approval Queue"
+        action={status === 'offline' ? 'mock fallback' : `${approvals.length} pending`}
+      >
+        <div className="space-y-3">
+          {approvals.length === 0 ? (
+            <div
+              className="flex items-center gap-3 rounded-md border p-4 text-sm"
+              style={{ borderColor: 'var(--color-border)', color: 'var(--color-text-secondary)' }}
+            >
+              <ShieldCheck size={18} style={{ color: 'var(--color-success)' }} />
+              No pending approvals
+            </div>
+          ) : (
+            approvals.map((approval) => (
+              <div
+                key={approval.id}
+                className="rounded-md border p-4"
+                style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg-secondary)' }}
+              >
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-mono text-sm font-semibold" style={{ color: 'var(--color-text)' }}>
+                        {approval.tool}
+                      </span>
+                      <StatusPill tone="watch">{approval.level.replace('_', ' ')}</StatusPill>
+                    </div>
+                    <p className="mt-2 text-sm" style={{ color: 'var(--color-text-secondary)' }}>
+                      {approval.reason}
+                    </p>
+                    {approval.command_preview && (
+                      <div
+                        className="mt-3 overflow-hidden rounded-md border px-3 py-2 font-mono text-xs"
+                        style={{
+                          borderColor: 'var(--color-border)',
+                          background: 'var(--color-code-bg)',
+                          color: 'var(--color-text)',
+                        }}
+                      >
+                        {approval.command_preview}
+                      </div>
+                    )}
+                    <div className="mt-3 flex flex-wrap gap-2 text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+                      <span>{approval.source || 'tool_executor'}</span>
+                      <span>{formatEventTime(approval.requested_at)}</span>
+                      {approval.agent_id && <span>{approval.agent_id}</span>}
+                      {approval.argument_keys.length > 0 && <span>{approval.argument_keys.join(', ')}</span>}
+                    </div>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <button
+                      type="button"
+                      disabled={actingId === approval.id}
+                      onClick={() => decide(approval.id, 'approve')}
+                      className="flex h-9 w-9 items-center justify-center rounded-md border transition-colors disabled:opacity-60"
+                      style={{
+                        borderColor: 'color-mix(in srgb, var(--color-success) 35%, transparent)',
+                        color: 'var(--color-success)',
+                        background: 'color-mix(in srgb, var(--color-success) 10%, transparent)',
+                      }}
+                      title="Approve"
+                    >
+                      <CheckCircle2 size={17} />
+                    </button>
+                    <button
+                      type="button"
+                      disabled={actingId === approval.id}
+                      onClick={() => decide(approval.id, 'deny')}
+                      className="flex h-9 w-9 items-center justify-center rounded-md border transition-colors disabled:opacity-60"
+                      style={{
+                        borderColor: 'color-mix(in srgb, var(--color-error) 35%, transparent)',
+                        color: 'var(--color-error)',
+                        background: 'color-mix(in srgb, var(--color-error) 10%, transparent)',
+                      }}
+                      title="Deny"
+                    >
+                      <XCircle size={17} />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </ShellPanel>
+
+      <ShellPanel
+        title="Permission Audit"
+        action={status === 'loading' ? 'loading' : status === 'offline' ? 'offline' : 'live'}
+      >
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <StatusPill tone={status === 'ready' ? 'good' : status === 'loading' ? 'busy' : 'quiet'}>
+            {status}
+          </StatusPill>
+          <button
+            type="button"
+            onClick={refreshPermissions}
+            className="flex h-9 w-9 items-center justify-center rounded-md border transition-colors"
+            style={{
+              borderColor: 'var(--color-border)',
+              color: 'var(--color-text-secondary)',
+              background: 'var(--color-bg-secondary)',
+            }}
+            title="Refresh"
           >
-            <span className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>
-              {event.tool}
-            </span>
-            <span className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
-              {event.action}
-            </span>
-            <span className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
-              {event.source}
-            </span>
-            <span className="font-mono text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
-              {event.time}
-            </span>
-          </div>
-        ))}
-      </div>
-    </ShellPanel>
+            <RefreshCw size={16} />
+          </button>
+        </div>
+        <div className="space-y-2">
+          {events.map((event) => (
+            <div
+              key={`${event.tool}-${event.time}-${event.action}`}
+              className="grid gap-2 rounded-md border p-3"
+              style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg-secondary)' }}
+            >
+              <div className="flex items-center justify-between gap-3">
+                <span className="font-mono text-sm font-medium" style={{ color: 'var(--color-text)' }}>
+                  {event.tool}
+                </span>
+                <StatusPill tone={actionTone(event.action)}>
+                  {event.action === 'Blocked' ? <Ban size={12} className="mr-1" /> : null}
+                  {event.action}
+                </StatusPill>
+              </div>
+              <div className="flex flex-wrap gap-2 text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+                <span>{event.source}</span>
+                <span>{event.time}</span>
+              </div>
+              {event.reason && (
+                <p className="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+                  {event.reason}
+                </p>
+              )}
+            </div>
+          ))}
+        </div>
+      </ShellPanel>
+    </div>
   );
 }
 

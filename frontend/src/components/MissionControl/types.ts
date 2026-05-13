@@ -61,4 +61,22 @@ export type PermissionEvent = {
   action: 'Allowed' | 'Blocked' | 'Needs approval';
   source: string;
   time: string;
+  reason?: string;
+};
+
+export type ApprovalRecord = {
+  id: string;
+  status: 'pending' | 'approved' | 'denied';
+  requested_at: string;
+  decided_at: string | null;
+  tool: string;
+  agent_id: string;
+  source: string;
+  level: string;
+  reason: string;
+  matched_pattern: string | null;
+  argument_keys: string[];
+  command_preview: string;
+  decision?: string | null;
+  decision_note?: string;
 };

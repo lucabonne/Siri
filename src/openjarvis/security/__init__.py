@@ -8,6 +8,7 @@ from typing import Any, Optional
 
 from openjarvis.core.events import EventBus
 from openjarvis.security._stubs import BaseScanner
+from openjarvis.security.approval_queue import ApprovalQueue, ApprovalRecord
 from openjarvis.security.audit import AuditLogger
 from openjarvis.security.file_policy import (
     DEFAULT_SENSITIVE_PATTERNS,
@@ -108,6 +109,8 @@ def setup_security(
 
 __all__ = [
     "AuditLogger",
+    "ApprovalQueue",
+    "ApprovalRecord",
     "BaseScanner",
     "DEFAULT_SENSITIVE_PATTERNS",
     "GuardrailsEngine",

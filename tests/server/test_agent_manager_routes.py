@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import tempfile
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
@@ -236,6 +237,24 @@ def test_run_agent_concurrent_returns_409(tmp_path):
         mgr.start_tick(aid)
 
     mgr.end_tick(aid)
+
+
+def test_server_permission_confirmation_enqueues_approval(tmp_path, monkeypatch):
+    from openjarvis.server.agent_manager_routes import _check_server_tool_permission
+
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    allowed, reason, metadata = _check_server_tool_permission(
+        tool_name="shell_exec",
+        parsed_args={"command": "echo hi"},
+        agent_id="agent-1",
+        app_state=SimpleNamespace(),
+        source="server_streaming",
+    )
+
+    assert allowed is False
+    assert "requires explicit user confirmation" in reason
+    assert metadata["approval_id"]
+    assert (tmp_path / ".openjarvis" / "approvals").exists()
 
 
 @pytest.mark.skipif(not HAS_FASTAPI, reason="fastapi not installed")

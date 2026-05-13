@@ -234,6 +234,70 @@ export async function fetchTraces(limit: number = 50): Promise<unknown> {
 }
 
 // ---------------------------------------------------------------------------
+// Security approvals
+// ---------------------------------------------------------------------------
+
+export interface SecurityApproval {
+  id: string;
+  status: 'pending' | 'approved' | 'denied';
+  requested_at: string;
+  decided_at: string | null;
+  tool: string;
+  agent_id: string;
+  source: string;
+  level: string;
+  reason: string;
+  matched_pattern: string | null;
+  argument_keys: string[];
+  command_preview: string;
+  decision?: string | null;
+  decision_note?: string;
+}
+
+export interface PermissionAuditEvent {
+  timestamp: string;
+  agent_id: string;
+  tool: string;
+  action: string;
+  level: string;
+  reason: string;
+  matched_pattern: string | null;
+  command_preview: string;
+  request_metadata?: Record<string, unknown>;
+}
+
+export async function fetchSecurityApprovals(
+  status: 'pending' | 'approved' | 'denied' | 'all' = 'pending',
+  limit = 50,
+): Promise<SecurityApproval[]> {
+  const res = await fetch(`${getBase()}/v1/security/approvals?status=${status}&limit=${limit}`);
+  if (!res.ok) throw new Error(`Failed: ${res.status}`);
+  const data = await res.json();
+  return data.approvals || [];
+}
+
+export async function decideSecurityApproval(
+  approvalId: string,
+  decision: 'approve' | 'deny',
+  note = '',
+): Promise<SecurityApproval> {
+  const res = await fetch(`${getBase()}/v1/security/approvals/${approvalId}/${decision}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ note }),
+  });
+  if (!res.ok) throw new Error(`Failed: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchPermissionAudit(limit = 100): Promise<PermissionAuditEvent[]> {
+  const res = await fetch(`${getBase()}/v1/security/permissions/audit?limit=${limit}`);
+  if (!res.ok) throw new Error(`Failed: ${res.status}`);
+  const data = await res.json();
+  return data.events || [];
+}
+
+// ---------------------------------------------------------------------------
 // Speech
 // ---------------------------------------------------------------------------
 
