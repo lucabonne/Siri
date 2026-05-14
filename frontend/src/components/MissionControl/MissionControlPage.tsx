@@ -7,14 +7,17 @@ import {
   ArrowUpRight,
   Ban,
   Brain,
+  Camera,
   CheckCircle2,
   Circle,
   Clock3,
   Clipboard,
   Code2,
+  Eye,
   FolderGit2,
   Gauge,
   GitBranch,
+  Image,
   LockKeyhole,
   Package,
   Pin,
@@ -30,10 +33,13 @@ import {
 } from 'lucide-react';
 import {
   createMemory,
+  captureVisionScreenshot,
   decideSecurityApproval,
   deleteMemory,
+  fetchLatestVisualContext,
   fetchLocalContextSnapshot,
   fetchPermissionAudit,
+  fetchRecentVisionScreenshots,
   fetchSecurityApprovals,
   fetchTerminalContext,
   listWorkspaceAgents,
@@ -48,9 +54,11 @@ import {
 import type {
   MemorySearchResult,
   LocalContextSnapshot,
+  ScreenshotMetadata,
   SiriModeConfig,
   StructuredMemory,
   TerminalContextSnapshot,
+  VisualContext,
   WorkspaceAgentConfig,
 } from '../../lib/api';
 import {
@@ -157,6 +165,13 @@ function basename(path: string): string {
 function joinStack(values: string[], fallback = 'Unknown'): string {
   if (!values.length) return fallback;
   return values.slice(0, 4).join(', ');
+}
+
+function formatBytes(value: number | null | undefined): string {
+  if (!value) return 'Unknown size';
+  if (value < 1024) return `${value} B`;
+  if (value < 1024 * 1024) return `${Math.round(value / 1024)} KB`;
+  return `${(value / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 function ContextTile({
@@ -1006,6 +1021,159 @@ function TerminalSection() {
   );
 }
 
+function VisionSection() {
+  const [visualContext, setVisualContext] = useState<VisualContext | null>(null);
+  const [screenshots, setScreenshots] = useState<ScreenshotMetadata[]>([]);
+  const [status, setStatus] = useState<'ready' | 'loading' | 'offline'>('loading');
+  const [capturing, setCapturing] = useState(false);
+  const [notice, setNotice] = useState('');
+
+  const loadVisionContext = async () => {
+    setStatus('loading');
+    try {
+      const [latest, recent] = await Promise.all([
+        fetchLatestVisualContext(),
+        fetchRecentVisionScreenshots(8),
+      ]);
+      setVisualContext(latest);
+      setScreenshots(recent);
+      setStatus('ready');
+      setNotice('');
+    } catch {
+      setStatus('offline');
+    }
+  };
+
+  useEffect(() => {
+    loadVisionContext();
+  }, []);
+
+  const capture = async () => {
+    setCapturing(true);
+    setNotice('');
+    try {
+      await captureVisionScreenshot();
+      await loadVisionContext();
+    } catch {
+      setNotice('Capture blocked or unavailable. Privacy Mode queues approval before screenshots.');
+      setStatus('offline');
+    } finally {
+      setCapturing(false);
+    }
+  };
+
+  const latest = visualContext?.latest_screenshot ?? null;
+  const dimensions = latest?.width && latest?.height ? `${latest.width} x ${latest.height}` : 'Unknown';
+
+  return (
+    <div className="grid gap-4 xl:grid-cols-[0.9fr_1.1fr]">
+      <ShellPanel title="Vision Context" action="passive only">
+        <div className="grid gap-3 md:grid-cols-2">
+          <ContextTile
+            icon={<Eye size={15} />}
+            label="Latest App"
+            value={latest?.active_application || 'No screenshot'}
+            detail={latest?.active_window_title || (latest?.redacted ? 'Redacted locally' : undefined)}
+          />
+          <ContextTile
+            icon={<Image size={15} />}
+            label="Latest Frame"
+            value={dimensions}
+            detail={latest?.captured_at ? new Date(latest.captured_at).toLocaleString() : 'No capture yet'}
+          />
+          <ContextTile
+            icon={<ShieldCheck size={15} />}
+            label="Storage"
+            value={visualContext?.cloud_uploaded ? 'Cloud' : 'Local only'}
+            detail={latest?.file_path ? compactPath(latest.file_path) : 'No image bytes exposed here'}
+          />
+          <ContextTile
+            icon={<Camera size={15} />}
+            label="Screenshots"
+            value={String(visualContext?.screenshot_count ?? 0)}
+            detail={visualContext?.privacy_mode ? 'Privacy Mode redaction' : 'Explicit capture only'}
+          />
+        </div>
+
+        <div className="mt-4 flex flex-wrap items-center gap-3">
+          <button
+            type="button"
+            onClick={capture}
+            disabled={capturing}
+            className="inline-flex h-9 items-center gap-2 rounded-md border px-3 text-sm font-semibold transition-colors disabled:opacity-60"
+            style={{
+              borderColor: 'var(--color-border)',
+              color: 'var(--color-text)',
+              background: 'var(--color-bg-secondary)',
+            }}
+            title="Capture screenshot"
+          >
+            <Camera size={16} />
+            {capturing ? 'Capturing' : 'Capture'}
+          </button>
+          <button
+            type="button"
+            onClick={loadVisionContext}
+            className="flex h-9 w-9 items-center justify-center rounded-md border transition-colors"
+            style={{
+              borderColor: 'var(--color-border)',
+              color: 'var(--color-text-secondary)',
+              background: 'var(--color-bg-secondary)',
+            }}
+            title="Refresh"
+          >
+            <RefreshCw size={16} />
+          </button>
+          <StatusPill tone={status === 'ready' ? 'good' : status === 'loading' ? 'busy' : 'watch'}>
+            {status}
+          </StatusPill>
+        </div>
+
+        {notice && (
+          <p className="mt-4 rounded-md border px-3 py-2 text-sm" style={{ borderColor: 'var(--color-border)', color: 'var(--color-text-secondary)' }}>
+            {notice}
+          </p>
+        )}
+      </ShellPanel>
+
+      <ShellPanel title="Recent Screenshots" action={`${screenshots.length} shown`}>
+        <div className="space-y-2">
+          {screenshots.length === 0 && (
+            <div className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
+              No screenshots have been explicitly captured.
+            </div>
+          )}
+          {screenshots.map((screenshot) => {
+            const size = screenshot.width && screenshot.height ? `${screenshot.width} x ${screenshot.height}` : 'Unknown';
+            return (
+              <div
+                key={screenshot.id}
+                className="grid gap-2 rounded-md border p-3 md:grid-cols-[1fr_120px_110px]"
+                style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg-secondary)' }}
+              >
+                <div className="min-w-0">
+                  <div className="truncate text-sm font-semibold" style={{ color: 'var(--color-text)' }}>
+                    {screenshot.active_application || 'Unknown app'}
+                  </div>
+                  <div className="mt-1 truncate text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+                    {screenshot.redacted ? 'Redacted locally' : compactPath(screenshot.file_path)}
+                  </div>
+                </div>
+                <span className="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+                  {size}
+                </span>
+                <span className="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+                  {formatBytes(screenshot.byte_size)}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      </ShellPanel>
+    </div>
+  );
+}
+
 function ResearchSection() {
   return (
     <ShellPanel title="Research">
@@ -1285,6 +1453,7 @@ function ActiveSection({ section }: { section: MissionSectionId }) {
   if (section === 'agents') return <AgentsSection />;
   if (section === 'memory') return <MemorySection />;
   if (section === 'projects') return <ProjectsSection />;
+  if (section === 'vision') return <VisionSection />;
   if (section === 'terminal') return <TerminalSection />;
   if (section === 'research') return <ResearchSection />;
   if (section === 'settings') return <SettingsSection />;

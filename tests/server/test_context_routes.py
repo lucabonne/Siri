@@ -5,10 +5,19 @@ from fastapi.testclient import TestClient
 
 from openjarvis.context.layer import ContextLayer
 from openjarvis.context.terminal import TerminalContextStore
+from openjarvis.context.vision import VisionContextStore
 from openjarvis.memory import MemoryService
 from openjarvis.modes import ModeRegistry
 from openjarvis.security.approval_queue import ApprovalQueue
 from openjarvis.server.context_routes import context_router
+
+PNG_1X1 = (
+    b"\x89PNG\r\n\x1a\n"
+    b"\x00\x00\x00\rIHDR"
+    b"\x00\x00\x00\x01\x00\x00\x00\x01"
+    b"\x08\x02\x00\x00\x00"
+    b"\x90wS\xde"
+)
 
 
 def test_context_project_route_returns_local_project_context(tmp_path) -> None:
@@ -142,3 +151,105 @@ def test_terminal_route_respects_privacy_mode_and_skips_memory(tmp_path) -> None
     assert current["privacy_mode"] is True
     assert app.state.structured_memory_service.list_command_history() == []
     app.state.structured_memory_service.close()
+
+
+def test_vision_screenshot_capture_stores_local_metadata(tmp_path, monkeypatch) -> None:
+    app = FastAPI()
+    app.state.vision_context_store = VisionContextStore(root_dir=tmp_path / "vision")
+    app.include_router(context_router)
+
+    monkeypatch.setattr("openjarvis.context.vision.platform.system", lambda: "Darwin")
+    monkeypatch.setattr(
+        ContextLayer,
+        "_active_macos_window",
+        lambda self: ("Xcode", "Build"),
+    )
+
+    def fake_capture(self, path):
+        path.write_bytes(PNG_1X1)
+
+    monkeypatch.setattr(VisionContextStore, "_run_capture", fake_capture)
+    client = TestClient(app)
+
+    capture = client.post("/v1/context/vision/screenshots", json={})
+
+    assert capture.status_code == 200
+    payload = capture.json()
+    screenshot = payload["screenshot"]
+    assert payload["cloud_uploaded"] is False
+    assert screenshot["width"] == 1
+    assert screenshot["height"] == 1
+    assert screenshot["active_application"] == "Xcode"
+    assert screenshot["local_only"] is True
+    assert screenshot["passive_only"] is True
+    assert (tmp_path / "vision" / "screenshots.jsonl").exists()
+
+    recent = client.get("/v1/context/vision/screenshots")
+    assert recent.status_code == 200
+    assert recent.json()["screenshots"][0]["id"] == screenshot["id"]
+
+    latest = client.get("/v1/context/vision/latest")
+    assert latest.status_code == 200
+    assert latest.json()["latest_screenshot"]["id"] == screenshot["id"]
+
+
+def test_vision_screenshot_capture_requires_privacy_approval(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    app = FastAPI()
+    registry = ModeRegistry(state_path=tmp_path / "current_mode.json")
+    registry.switch_mode("privacy")
+    app.state.mode_registry = registry
+    app.state.vision_context_store = VisionContextStore(root_dir=tmp_path / "vision")
+    monkeypatch.setattr(
+        "openjarvis.server.context_routes.ApprovalQueue",
+        lambda: ApprovalQueue(tmp_path / "approvals"),
+    )
+    app.include_router(context_router)
+    client = TestClient(app)
+
+    response = client.post("/v1/context/vision/screenshots", json={})
+
+    assert response.status_code == 403
+    detail = response.json()["detail"]
+    assert detail["error"] == "privacy_mode_blocks_screenshot_capture"
+    assert detail["approval"]["tool"] == "vision_screenshot_capture"
+    assert detail["cloud_uploaded"] is False
+    assert list((tmp_path / "vision" / "screenshots").glob("*.png")) == []
+
+
+def test_vision_metadata_redacted_in_privacy_mode(tmp_path, monkeypatch) -> None:
+    app = FastAPI()
+    registry = ModeRegistry(state_path=tmp_path / "current_mode.json")
+    registry.switch_mode("focus")
+    app.state.mode_registry = registry
+    store = VisionContextStore(root_dir=tmp_path / "vision")
+    app.state.vision_context_store = store
+    app.include_router(context_router)
+
+    monkeypatch.setattr("openjarvis.context.vision.platform.system", lambda: "Darwin")
+    monkeypatch.setattr(
+        ContextLayer,
+        "_active_macos_window",
+        lambda self: ("Preview", "Private Doc"),
+    )
+    monkeypatch.setattr(
+        VisionContextStore,
+        "_run_capture",
+        lambda self, path: path.write_bytes(PNG_1X1),
+    )
+    client = TestClient(app)
+
+    assert client.post("/v1/context/vision/screenshots", json={}).status_code == 200
+    registry.switch_mode("privacy")
+
+    recent = client.get("/v1/context/vision/screenshots").json()["screenshots"][0]
+    assert recent["file_path"] == ""
+    assert recent["sha256"] == ""
+    assert recent["active_window_title"] == "[redacted window]"
+    assert recent["redacted"] is True
+
+    latest = client.get("/v1/context/vision/latest").json()
+    assert latest["privacy_mode"] is True
+    assert latest["latest_screenshot"]["file_path"] == ""

@@ -8,6 +8,7 @@ export type MissionSectionId =
   | 'agents'
   | 'memory'
   | 'projects'
+  | 'vision'
   | 'terminal'
   | 'research'
   | 'settings'

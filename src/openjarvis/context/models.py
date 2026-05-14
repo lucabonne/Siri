@@ -63,3 +63,59 @@ class RepoIndex:
         data = asdict(self)
         data["summary"] = self.summary.to_dict()
         return data
+
+
+@dataclass
+class ScreenshotMetadata:
+    id: str
+    captured_at: str
+    file_path: str = ""
+    format: str = "png"
+    width: int | None = None
+    height: int | None = None
+    byte_size: int | None = None
+    sha256: str = ""
+    active_application: str = ""
+    active_window_title: str = ""
+    privacy_mode: bool = False
+    redacted: bool = False
+    passive_only: bool = True
+    local_only: bool = True
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+    def redacted_copy(self) -> "ScreenshotMetadata":
+        data = self.to_dict()
+        data.update(
+            {
+                "file_path": "",
+                "sha256": "",
+                "active_window_title": "[redacted window]",
+                "redacted": True,
+                "privacy_mode": True,
+            }
+        )
+        return ScreenshotMetadata(**data)
+
+
+@dataclass
+class VisualContext:
+    latest_screenshot: ScreenshotMetadata | None = None
+    screenshot_count: int = 0
+    privacy_mode: bool = False
+    passive_only: bool = True
+    local_only: bool = True
+    cloud_uploaded: bool = False
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "latest_screenshot": (
+                self.latest_screenshot.to_dict() if self.latest_screenshot else None
+            ),
+            "screenshot_count": self.screenshot_count,
+            "privacy_mode": self.privacy_mode,
+            "passive_only": self.passive_only,
+            "local_only": self.local_only,
+            "cloud_uploaded": self.cloud_uploaded,
+        }

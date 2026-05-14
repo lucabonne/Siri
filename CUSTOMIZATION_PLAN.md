@@ -124,6 +124,35 @@ Deferred work remains intentionally untouched in this phase:
 - no outbound context transmission
 - no deep semantic code indexing
 
+## Vision Layer Phase 1
+
+Phase 1 adds passive screenshot context for Siri without enabling autonomous
+screen watching or cloud image processing.
+
+- `src/openjarvis/context/vision.py` owns explicit macOS screenshot capture
+  through the local `screencapture` utility plus JSONL metadata storage under
+  the local OpenJarvis vision directory.
+- Screenshot metadata records capture time, local file path, image dimensions,
+  byte size, SHA-256, active application/window hints, and passive/local-only
+  flags. Image bytes stay on disk and are never sent to cloud APIs.
+- `/v1/context/vision/screenshots` supports explicit capture and recent
+  metadata listing. `/v1/context/vision/latest` returns the latest visual
+  context metadata without image bytes.
+- Privacy Mode blocks screenshot capture and queues an approval request for the
+  vision capture tool. Recent/latest metadata is redacted in Privacy Mode by
+  hiding local paths, hashes, and window titles.
+- `PermissionMiddleware` classifies `vision_screenshot_capture` as an explicit
+  local action and applies the Privacy Mode screenshot approval guard.
+- Mission Control now includes a Vision tab with explicit capture, recent
+  screenshot metadata, local-only status, and Privacy Mode redaction signals.
+
+Deferred work remains intentionally untouched in this phase:
+
+- no autonomous screen watching
+- no background polling
+- no OCR or cloud vision analysis
+- no screen control or click automation
+
 ## Terminal Co-Pilot Phase 1
 
 Phase 1 adds passive terminal awareness and local-only terminal debugging

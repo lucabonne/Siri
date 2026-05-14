@@ -10,10 +10,12 @@ from pydantic import BaseModel
 
 from openjarvis.context import ContextLayer
 from openjarvis.context.terminal import TerminalContextStore
+from openjarvis.context.vision import VisionContextStore
 from openjarvis.security.approval_queue import ApprovalQueue
 from openjarvis.security.permissions import (
     PermissionDecision,
     PermissionLevel,
+    PermissionMiddleware,
     PermissionRequest,
 )
 
@@ -43,11 +45,24 @@ class TerminalCommandCaptureRequest(BaseModel):
     timestamp: str | None = None
 
 
+class ScreenshotCaptureRequest(BaseModel):
+    cwd: str | None = None
+    request_approval_on_privacy: bool = True
+
+
 def _terminal_store(request: Request) -> TerminalContextStore:
     store = getattr(request.app.state, "terminal_context_store", None)
     if store is None:
         store = TerminalContextStore()
         request.app.state.terminal_context_store = store
+    return store
+
+
+def _vision_store(request: Request) -> VisionContextStore:
+    store = getattr(request.app.state, "vision_context_store", None)
+    if store is None:
+        store = VisionContextStore()
+        request.app.state.vision_context_store = store
     return store
 
 
@@ -86,6 +101,114 @@ async def get_project_context(cwd: str | None = Query(default=None)):
 async def get_repo_context(cwd: str | None = Query(default=None)):
     """Return lightweight repository inventory and summary metadata."""
     return _layer(cwd).repo_index().to_dict()
+
+
+@context_router.post("/vision/screenshots")
+async def capture_screenshot(
+    body: ScreenshotCaptureRequest,
+    request: Request,
+):
+    """Capture one local screenshot on explicit request.
+
+    This route never uploads screenshot bytes and does not start a watcher.
+    Privacy Mode blocks capture and, by default, queues an approval record
+    without taking a screenshot.
+    """
+    privacy_mode = _privacy_mode(request)
+    if privacy_mode:
+        approval = None
+        if body.request_approval_on_privacy:
+            permission_request = PermissionRequest(
+                tool_name="vision_screenshot_capture",
+                arguments={"cwd": body.cwd or ""},
+                dry_run=True,
+                metadata={"source": "vision_layer", "passive_only": True},
+            )
+            decision = PermissionDecision(
+                action="require_confirmation",
+                level=PermissionLevel.CONFIRMED_EXECUTION,
+                reason="privacy mode requires approval before screenshot capture",
+                matched_pattern="privacy-vision-screenshot",
+                dry_run=True,
+                metadata={"would_capture": True, "cloud_uploaded": False},
+            )
+            approval = ApprovalQueue().enqueue(
+                permission_request,
+                decision,
+                source="vision_layer",
+            )
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "error": "privacy_mode_blocks_screenshot_capture",
+                "approval": approval.to_json() if approval else None,
+                "privacy_mode": True,
+                "passive_only": True,
+                "local_only": True,
+                "cloud_uploaded": False,
+            },
+        )
+
+    middleware = PermissionMiddleware(
+        mode_registry=getattr(request.app.state, "mode_registry", None)
+    )
+    decision = middleware.check(
+        PermissionRequest(
+            tool_name="vision_screenshot_capture",
+            arguments={"cwd": body.cwd or ""},
+            metadata={"source": "vision_layer", "passive_only": True},
+        )
+    )
+    if decision.denied:
+        raise HTTPException(status_code=403, detail=decision.reason)
+
+    try:
+        metadata = _vision_store(request).capture(
+            cwd=body.cwd,
+            privacy_mode=False,
+        )
+    except RuntimeError as exc:
+        raise HTTPException(status_code=501, detail=str(exc)) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+
+    return {
+        "screenshot": metadata.to_dict(),
+        "privacy_mode": False,
+        "passive_only": True,
+        "local_only": True,
+        "cloud_uploaded": False,
+    }
+
+
+@context_router.get("/vision/screenshots")
+async def list_recent_screenshots(
+    request: Request,
+    limit: int = Query(default=10, ge=1, le=50),
+):
+    """Return recent local screenshot metadata only."""
+    privacy_mode = _privacy_mode(request)
+    screenshots = _vision_store(request).recent(
+        limit=limit,
+        privacy_mode=privacy_mode,
+    )
+    return {
+        "screenshots": [screenshot.to_dict() for screenshot in screenshots],
+        "privacy_mode": privacy_mode,
+        "passive_only": True,
+        "local_only": True,
+        "cloud_uploaded": False,
+    }
+
+
+@context_router.get("/vision/latest")
+async def get_latest_visual_context(request: Request):
+    """Return latest local visual context metadata without image bytes."""
+    return (
+        _vision_store(request)
+        .latest_context(privacy_mode=_privacy_mode(request))
+        .to_dict()
+    )
 
 
 @context_router.post("/terminal/commands")

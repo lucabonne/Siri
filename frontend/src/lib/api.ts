@@ -400,6 +400,40 @@ export interface LocalContextSnapshot {
   repo: RepoIndex;
 }
 
+export interface ScreenshotMetadata {
+  id: string;
+  captured_at: string;
+  file_path: string;
+  format: string;
+  width: number | null;
+  height: number | null;
+  byte_size: number | null;
+  sha256: string;
+  active_application: string;
+  active_window_title: string;
+  privacy_mode: boolean;
+  redacted: boolean;
+  passive_only: boolean;
+  local_only: boolean;
+}
+
+export interface VisualContext {
+  latest_screenshot: ScreenshotMetadata | null;
+  screenshot_count: number;
+  privacy_mode: boolean;
+  passive_only: boolean;
+  local_only: boolean;
+  cloud_uploaded: boolean;
+}
+
+export interface ScreenshotCaptureResponse {
+  screenshot: ScreenshotMetadata;
+  privacy_mode: boolean;
+  passive_only: boolean;
+  local_only: boolean;
+  cloud_uploaded: boolean;
+}
+
 export interface SuggestedTerminalCommand {
   id: string;
   command: string;
@@ -473,6 +507,29 @@ export async function fetchLocalContextSnapshot(): Promise<LocalContextSnapshot>
     fetchRepoContext(),
   ]);
   return { desktop, project, repo };
+}
+
+export async function captureVisionScreenshot(): Promise<ScreenshotCaptureResponse> {
+  const res = await fetch(`${getBase()}/v1/context/vision/screenshots`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ request_approval_on_privacy: true }),
+  });
+  if (!res.ok) throw new Error(`Failed to capture screenshot: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchRecentVisionScreenshots(limit = 10): Promise<ScreenshotMetadata[]> {
+  const res = await fetch(`${getBase()}/v1/context/vision/screenshots?limit=${limit}`);
+  if (!res.ok) throw new Error(`Failed to fetch screenshots: ${res.status}`);
+  const data = await res.json();
+  return data.screenshots || [];
+}
+
+export async function fetchLatestVisualContext(): Promise<VisualContext> {
+  const res = await fetch(`${getBase()}/v1/context/vision/latest`);
+  if (!res.ok) throw new Error(`Failed to fetch visual context: ${res.status}`);
+  return res.json();
 }
 
 export async function fetchTerminalContext(): Promise<TerminalContextSnapshot> {
