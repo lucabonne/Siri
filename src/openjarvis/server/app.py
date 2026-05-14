@@ -221,6 +221,12 @@ def create_app(
     app.state.agent_manager = agent_manager
     app.state.agent_scheduler = agent_scheduler
     app.state.session_start = time.time()
+    try:
+        from openjarvis.modes import ModeRegistry
+
+        app.state.mode_registry = ModeRegistry()
+    except Exception as exc:
+        logger.debug("Mode registry init skipped: %s", exc)
 
     # Wire up trace store if traces are enabled
     app.state.trace_store = None

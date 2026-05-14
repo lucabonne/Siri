@@ -488,6 +488,14 @@ def _get_mcp_tools(app_state: Any) -> Tuple[List[Dict[str, Any]], Dict[str, Any]
     if not app_config.tools.mcp.enabled or not app_config.tools.mcp.servers:
         return openai_tools, adapters_by_name
 
+    mode_registry = getattr(app_state, "mode_registry", None)
+    remote_mcp_allowed = True
+    if mode_registry is not None:
+        try:
+            remote_mcp_allowed = mode_registry.remote_mcp_allowed()
+        except Exception:
+            remote_mcp_allowed = True
+
     from openjarvis.mcp.client import MCPClient
     from openjarvis.mcp.transport import StdioTransport, StreamableHTTPTransport
     from openjarvis.tools.mcp_adapter import MCPToolProvider
@@ -513,6 +521,12 @@ def _get_mcp_tools(app_state: Any) -> Tuple[List[Dict[str, Any]], Dict[str, Any]
 
         try:
             if url:
+                if not remote_mcp_allowed:
+                    logger.info(
+                        "Skipping remote MCP server '%s' while Privacy Mode is active",
+                        name,
+                    )
+                    continue
                 transport = StreamableHTTPTransport(url=url)
             elif command:
                 transport = StdioTransport(command=[command] + args)
@@ -578,7 +592,9 @@ def _get_permission_middleware(app_state: Any = None) -> Any:
 
     from openjarvis.security.permissions import PermissionMiddleware
 
-    middleware = PermissionMiddleware()
+    middleware = PermissionMiddleware(
+        mode_registry=getattr(app_state, "mode_registry", None)
+    )
     if app_state is not None:
         app_state._permission_middleware = middleware
     return middleware
@@ -629,12 +645,24 @@ def _check_server_tool_permission(
                 )
 
     middleware = _get_permission_middleware(app_state)
+    active_mode = None
+    mode_registry = getattr(app_state, "mode_registry", None)
+    if mode_registry is not None:
+        try:
+            active_mode = mode_registry.get_active_mode().mode
+        except Exception:
+            active_mode = None
+
+    request_metadata: Dict[str, Any] = {"source": source}
+    if active_mode is not None:
+        request_metadata["active_mode_id"] = active_mode.id
+
     permission_request = PermissionRequest(
         tool_name=tool_name,
         arguments=parsed_args,
         agent_id=workspace_agent_id or agent_id,
         dry_run=parsed_args.get("dry_run") is True,
-        metadata={"source": source},
+        metadata=request_metadata,
     )
     if workspace_registry is not None and workspace_agent_id:
         permission_request = workspace_registry.apply_to_permission_request(

@@ -4,6 +4,7 @@ import {
   Activity,
   ArrowUpRight,
   Ban,
+  Brain,
   CheckCircle2,
   Circle,
   Clock3,
@@ -26,13 +27,16 @@ import {
   fetchPermissionAudit,
   fetchSecurityApprovals,
   listWorkspaceAgents,
+  listSiriModes,
   listMemories,
   searchMemory,
   setMemoryPinned,
   switchActiveWorkspaceAgent,
+  switchActiveSiriMode,
 } from '../../lib/api';
 import type {
   MemorySearchResult,
+  SiriModeConfig,
   StructuredMemory,
   WorkspaceAgentConfig,
 } from '../../lib/api';
@@ -1046,8 +1050,132 @@ function ActiveSection({ section }: { section: MissionSectionId }) {
   return <HomeSection />;
 }
 
+const fallbackModes: SiriModeConfig[] = [
+  {
+    id: 'focus',
+    display_name: 'Focus',
+    description: 'Keeps Siri direct, calm, and task-centered.',
+    verbosity_level: 'concise',
+    proactive_level: 'low',
+    interruption_policy: 'priority_only',
+    preferred_agents: ['coding', 'engineering'],
+    memory_behavior: {},
+    privacy_network_policy: { outbound_network: 'allowed' },
+    default_model_overrides: {},
+    ui_theme_metadata: { accent: 'blue' },
+    notification_behavior: {},
+  },
+  {
+    id: 'privacy',
+    display_name: 'Privacy',
+    description: 'Locks Siri to local-first behavior.',
+    verbosity_level: 'balanced',
+    proactive_level: 'off',
+    interruption_policy: 'priority_only',
+    preferred_agents: ['privacy', 'engineering'],
+    memory_behavior: {},
+    privacy_network_policy: { outbound_network: 'localhost_only', cloud_apis: 'disabled' },
+    default_model_overrides: { engine: 'ollama' },
+    ui_theme_metadata: { accent: 'emerald' },
+    notification_behavior: {},
+  },
+];
+
+function ModeSwitcher({
+  onModeChange,
+}: {
+  onModeChange: (mode: SiriModeConfig | null, live: boolean) => void;
+}) {
+  const [modes, setModes] = useState<SiriModeConfig[]>(fallbackModes);
+  const [activeModeId, setActiveModeId] = useState('focus');
+  const [live, setLive] = useState(false);
+  const [switching, setSwitching] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    listSiriModes()
+      .then((data) => {
+        if (cancelled) return;
+        const active = data.modes.find((mode) => mode.id === data.active_mode_id) ?? null;
+        setModes(data.modes);
+        setActiveModeId(data.active_mode_id);
+        setLive(true);
+        onModeChange(active, true);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        const active = fallbackModes.find((mode) => mode.id === activeModeId) ?? fallbackModes[0];
+        setModes(fallbackModes);
+        setLive(false);
+        onModeChange(active, false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const selectedMode = modes.find((mode) => mode.id === activeModeId) ?? modes[0];
+
+  const changeMode = async (modeId: string) => {
+    setActiveModeId(modeId);
+    const optimistic = modes.find((mode) => mode.id === modeId) ?? null;
+    onModeChange(optimistic, live);
+    if (!live) return;
+    setSwitching(true);
+    try {
+      const state = await switchActiveSiriMode(modeId);
+      setActiveModeId(state.active_mode_id);
+      onModeChange(state.mode, true);
+    } finally {
+      setSwitching(false);
+    }
+  };
+
+  return (
+    <div
+      className="rounded-md border px-4 py-3"
+      style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg-secondary)' }}
+    >
+      <label
+        htmlFor="mission-mode-select"
+        className="mb-2 flex items-center gap-2 text-xs"
+        style={{ color: 'var(--color-text-tertiary)' }}
+      >
+        <Brain size={14} />
+        Mode
+      </label>
+      <select
+        id="mission-mode-select"
+        value={activeModeId}
+        disabled={switching}
+        onChange={(event) => changeMode(event.target.value)}
+        className="h-9 w-full rounded-md border px-2 text-sm font-semibold outline-none"
+        style={{
+          borderColor: 'var(--color-border)',
+          color: 'var(--color-text)',
+          background: 'var(--color-bg)',
+        }}
+      >
+        {modes.map((mode) => (
+          <option key={mode.id} value={mode.id}>
+            {mode.display_name}
+          </option>
+        ))}
+      </select>
+      <div className="mt-2 text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+        {selectedMode?.verbosity_level ?? 'balanced'} / {selectedMode?.proactive_level ?? 'low'}
+      </div>
+      <div className="mt-1 text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+        {live ? 'Live mode registry' : 'Mode fallback'}
+      </div>
+    </div>
+  );
+}
+
 export function MissionControlPage() {
   const [activeSection, setActiveSection] = useState<MissionSectionId>('home');
+  const [activeMode, setActiveMode] = useState<SiriModeConfig | null>(null);
+  const [modeLive, setModeLive] = useState(false);
   const activeLabel = useMemo(
     () => missionSections.find((section) => section.id === activeSection)?.label ?? 'Home',
     [activeSection],
@@ -1097,10 +1225,15 @@ export function MissionControlPage() {
               className="grid min-w-0 gap-3 sm:grid-cols-3"
               style={{ color: 'var(--color-text-secondary)' }}
             >
+              <ModeSwitcher
+                onModeChange={(mode, liveRegistry) => {
+                  setActiveMode(mode);
+                  setModeLive(liveRegistry);
+                }}
+              />
               {[
                 ['Current section', activeLabel],
-                ['Mode', 'Mock data'],
-                ['Surface', 'Dashboard shell'],
+                ['Network', activeMode?.privacy_network_policy?.outbound_network === 'localhost_only' ? 'Localhost only' : 'Normal'],
               ].map(([label, value]) => (
                 <div
                   key={label}
@@ -1134,7 +1267,7 @@ export function MissionControlPage() {
           </span>
           <span className="flex items-center gap-2">
             <LockKeyhole size={14} />
-            No backend changes
+            {modeLive ? `Mode: ${activeMode?.display_name ?? 'Focus'}` : 'Mode fallback'}
           </span>
         </footer>
       </div>

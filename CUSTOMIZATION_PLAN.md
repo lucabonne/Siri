@@ -60,6 +60,39 @@ Deferred work remains intentionally untouched in this phase:
 - no complex multi-agent execution graph
 - no orchestrator rewrite
 
+## Mode System Phase 1
+
+Phase 1 adds a global Siri operating mode layer without changing the core
+agent orchestration model.
+
+- `src/openjarvis/modes/` owns the central mode registry, typed mode models,
+  default mode definitions, and local active-mode persistence at
+  `~/.openjarvis/state/current_mode.json`.
+- The default registry defines `focus`, `research`, `creative`, `quiet`,
+  `coding`, `engineering`, and `privacy`. Each mode declares verbosity,
+  proactive level, interruption policy, preferred agents, memory behavior,
+  privacy/network policy, default model overrides, UI theme metadata, and
+  notification behavior.
+- `/v1/modes` exposes list, active-mode, and switch-mode APIs. Switching a
+  mode updates the persisted state file.
+- Agent Workspace responses now include the active mode id and preferred-agent
+  hints so Mission Control and future routing layers can read the mode without
+  redesigning the orchestrator.
+- `PermissionMiddleware` can consult the active mode. Privacy Mode blocks
+  remote MCP tool execution and denies non-localhost HTTP/browser/web-search
+  networking where the current permission layer can see the target.
+- Server chat and cloud reload routes reject cloud API usage while Privacy
+  Mode is active. Remote MCP discovery is skipped in Privacy Mode while local
+  stdio tools remain available.
+- Mission Control now includes a live mode switcher backed by `/v1/modes`,
+  with a small local fallback when the backend is unavailable.
+
+Deferred work remains intentionally untouched in this phase:
+
+- no autonomous behavior
+- no orchestrator rewrite
+- no proactive scheduling or background mode actions
+
 ## Phase 1 Permission System
 
 Phase 1 adds a minimal Python-side permission layer before existing tool

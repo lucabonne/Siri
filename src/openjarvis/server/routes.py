@@ -28,6 +28,21 @@ from openjarvis.server.models import (
 router = APIRouter()
 
 
+def _active_mode(request: Request):
+    registry = getattr(request.app.state, "mode_registry", None)
+    if registry is None:
+        return None
+    try:
+        return registry.get_active_mode().mode
+    except Exception:
+        return None
+
+
+def _privacy_mode_blocks_cloud(request: Request) -> bool:
+    mode = _active_mode(request)
+    return bool(getattr(mode, "cloud_apis_disabled", False))
+
+
 def _to_messages(chat_messages) -> list[Message]:
     """Convert Pydantic ChatMessage objects to core Message objects."""
     messages = []
@@ -50,6 +65,15 @@ async def chat_completions(request_body: ChatCompletionRequest, request: Request
     engine = request.app.state.engine
     agent = getattr(request.app.state, "agent", None)
     model = request_body.model
+
+    if _privacy_mode_blocks_cloud(request):
+        from openjarvis.server.cloud_router import is_cloud_model
+
+        if is_cloud_model(model):
+            raise HTTPException(
+                status_code=403,
+                detail="Privacy Mode disables cloud API models.",
+            )
 
     # Inject memory context into messages before dispatching
     config = getattr(request.app.state, "config", None)
@@ -544,6 +568,12 @@ async def reload_cloud_engine(request: Request):
     Called by the desktop app immediately after the user saves a cloud API
     key so that cloud models become available without a full app restart.
     """
+    if _privacy_mode_blocks_cloud(request):
+        raise HTTPException(
+            status_code=403,
+            detail="Privacy Mode disables cloud API reloads.",
+        )
+
     import os
     from pathlib import Path
 

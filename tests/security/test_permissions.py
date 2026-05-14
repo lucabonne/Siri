@@ -6,6 +6,7 @@ import json
 from typing import Any
 
 from openjarvis.core.types import ToolCall, ToolResult
+from openjarvis.modes import ModeRegistry
 from openjarvis.security.permissions import (
     PermissionLevel,
     PermissionMiddleware,
@@ -106,6 +107,55 @@ class TestPermissionMiddleware:
         assert record["action"] == "require_confirmation"
         assert record["argument_keys"] == ["command", "secret"]
         assert record["command_preview"] == "echo hello"
+
+    def test_privacy_mode_blocks_remote_http_request(self, tmp_path) -> None:
+        mode_registry = ModeRegistry(state_path=tmp_path / "current_mode.json")
+        mode_registry.switch_mode("privacy")
+        middleware = PermissionMiddleware(
+            audit_log_path=tmp_path / "permissions.log",
+            mode_registry=mode_registry,
+        )
+
+        decision = middleware.check(
+            PermissionRequest(
+                tool_name="http_request",
+                arguments={"url": "https://example.com", "method": "GET"},
+            )
+        )
+
+        assert decision.action == "deny"
+        assert decision.matched_pattern == "privacy-network-localhost-only"
+
+    def test_privacy_mode_allows_localhost_http_request(self, tmp_path) -> None:
+        mode_registry = ModeRegistry(state_path=tmp_path / "current_mode.json")
+        mode_registry.switch_mode("privacy")
+        middleware = PermissionMiddleware(
+            audit_log_path=tmp_path / "permissions.log",
+            mode_registry=mode_registry,
+        )
+
+        decision = middleware.check(
+            PermissionRequest(
+                tool_name="http_request",
+                arguments={"url": "http://127.0.0.1:11434/api/tags", "method": "GET"},
+            )
+        )
+
+        assert decision.action == "allow"
+        assert decision.level == PermissionLevel.SAFE_ACTION
+
+    def test_privacy_mode_blocks_mcp_adapter(self, tmp_path) -> None:
+        mode_registry = ModeRegistry(state_path=tmp_path / "current_mode.json")
+        mode_registry.switch_mode("privacy")
+        middleware = PermissionMiddleware(
+            audit_log_path=tmp_path / "permissions.log",
+            mode_registry=mode_registry,
+        )
+
+        decision = middleware.check(PermissionRequest(tool_name="mcp_adapter"))
+
+        assert decision.action == "deny"
+        assert decision.matched_pattern == "privacy-remote-mcp"
 
 
 class _FakeShellTool(BaseTool):

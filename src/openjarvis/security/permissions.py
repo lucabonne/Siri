@@ -12,8 +12,10 @@ import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import IntEnum
+from ipaddress import ip_address
 from pathlib import Path
 from typing import Any, Dict, Mapping, Optional
+from urllib.parse import urlparse
 
 from openjarvis.security.file_utils import secure_create
 
@@ -171,6 +173,7 @@ class PermissionMiddleware:
         *,
         audit_log_path: Optional[Path | str] = None,
         dry_run: bool = False,
+        mode_registry: Any = None,
     ) -> None:
         self._audit_log_path = (
             Path(audit_log_path).expanduser()
@@ -178,6 +181,7 @@ class PermissionMiddleware:
             else Path.home() / ".openjarvis" / "logs" / "permissions.log"
         )
         self._dry_run = dry_run
+        self._mode_registry = mode_registry
 
     @property
     def audit_log_path(self) -> Path:
@@ -222,6 +226,12 @@ class PermissionMiddleware:
         """Classify a permission request without applying dry-run behavior."""
         tool_name = request.tool_name
         arguments = request.arguments if isinstance(request.arguments, Mapping) else {}
+        active_mode = self._active_mode(request)
+
+        privacy_block = self._privacy_mode_block(tool_name, arguments, active_mode)
+        if privacy_block is not None:
+            reason, matched_pattern = privacy_block
+            return PermissionLevel.DANGEROUS, reason, matched_pattern
 
         command = self._extract_command(request, arguments)
         if tool_name == "shell_exec" or self._looks_like_shell_tool(tool_name):
@@ -270,6 +280,70 @@ class PermissionMiddleware:
             "unclassified tool defaults to safe action",
             None,
         )
+
+    def _active_mode(self, request: PermissionRequest) -> Any:
+        mode = request.metadata.get("active_mode")
+        if mode is not None and not isinstance(mode, str):
+            return mode
+        registry = self._mode_registry
+        if registry is None:
+            return None
+        try:
+            mode_id = request.metadata.get("active_mode_id")
+            if mode_id:
+                return registry.get_mode(str(mode_id))
+            return registry.get_active_mode().mode
+        except Exception:
+            return None
+
+    def _privacy_mode_block(
+        self,
+        tool_name: str,
+        arguments: Mapping[str, Any],
+        active_mode: Any,
+    ) -> Optional[tuple[str, str]]:
+        if getattr(active_mode, "id", "") != "privacy":
+            return None
+
+        normalized = tool_name.lower().replace("-", "_")
+        if "mcp" in normalized:
+            return "privacy mode blocks remote MCP tool execution", "privacy-remote-mcp"
+
+        if tool_name == "http_request":
+            url = str(arguments.get("url", ""))
+            if not self._is_localhost_url(url):
+                return (
+                    "privacy mode blocks outbound non-localhost HTTP requests",
+                    "privacy-network-localhost-only",
+                )
+
+        if normalized in {"web_search", "browser_navigate"}:
+            url = str(arguments.get("url", ""))
+            if not url or not self._is_localhost_url(url):
+                return (
+                    "privacy mode blocks outbound non-localhost networking",
+                    "privacy-network-localhost-only",
+                )
+
+        return None
+
+    @staticmethod
+    def _is_localhost_url(url: str) -> bool:
+        try:
+            parsed = urlparse(url)
+        except Exception:
+            return False
+        host = parsed.hostname
+        if not host:
+            return False
+        normalized = host.strip("[]").lower()
+        if normalized in {"localhost", "localhost.localdomain"}:
+            return True
+        try:
+            parsed_ip = ip_address(normalized)
+        except ValueError:
+            return False
+        return parsed_ip.is_loopback
 
     def classify_shell_command(
         self,

@@ -301,6 +301,57 @@ export async function switchActiveWorkspaceAgent(
 }
 
 // ---------------------------------------------------------------------------
+// Siri operating modes
+// ---------------------------------------------------------------------------
+
+export interface SiriModeConfig {
+  id: string;
+  display_name: string;
+  description: string;
+  verbosity_level: string;
+  proactive_level: string;
+  interruption_policy: string;
+  preferred_agents: string[];
+  memory_behavior: Record<string, unknown>;
+  privacy_network_policy: Record<string, unknown>;
+  default_model_overrides: Record<string, unknown>;
+  ui_theme_metadata: Record<string, unknown>;
+  notification_behavior: Record<string, unknown>;
+}
+
+export interface SiriModesResponse {
+  modes: SiriModeConfig[];
+  active_mode_id: string;
+}
+
+export interface ActiveSiriModeState {
+  active_mode_id: string;
+  mode: SiriModeConfig;
+}
+
+export async function listSiriModes(): Promise<SiriModesResponse> {
+  const res = await fetch(`${getBase()}/v1/modes`);
+  if (!res.ok) throw new Error(`Failed to list Siri modes: ${res.status}`);
+  return res.json();
+}
+
+export async function getActiveSiriMode(): Promise<ActiveSiriModeState> {
+  const res = await fetch(`${getBase()}/v1/modes/active`);
+  if (!res.ok) throw new Error(`Failed to fetch active Siri mode: ${res.status}`);
+  return res.json();
+}
+
+export async function switchActiveSiriMode(modeId: string): Promise<ActiveSiriModeState> {
+  const res = await fetch(`${getBase()}/v1/modes/active`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ mode_id: modeId }),
+  });
+  if (!res.ok) throw new Error(`Failed to switch Siri mode: ${res.status}`);
+  return res.json();
+}
+
+// ---------------------------------------------------------------------------
 // Security approvals
 // ---------------------------------------------------------------------------
 

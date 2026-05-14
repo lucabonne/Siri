@@ -36,6 +36,20 @@ def get_agent_workspace_registry(request: Request) -> AgentWorkspaceRegistry:
     return registry
 
 
+def _mode_metadata(request: Request) -> dict[str, object]:
+    registry = getattr(request.app.state, "mode_registry", None)
+    if registry is None:
+        return {}
+    try:
+        active = registry.get_active_mode()
+    except Exception:
+        return {}
+    return {
+        "active_mode_id": active.active_mode_id,
+        "mode_preferred_agents": list(active.mode.preferred_agents),
+    }
+
+
 @agent_workspace_router.get("/agents")
 async def list_workspace_agents(request: Request):
     """List configured Siri workspace agents."""
@@ -44,6 +58,7 @@ async def list_workspace_agents(request: Request):
     return {
         "agents": [agent.to_dict() for agent in registry.list_agents()],
         "active_agent_id": active_id,
+        **_mode_metadata(request),
     }
 
 
@@ -61,7 +76,10 @@ async def get_workspace_agent(agent_id: str, request: Request):
 async def get_active_workspace_agent(request: Request):
     """Return the current active workspace agent."""
     registry = get_agent_workspace_registry(request)
-    return registry.get_active_agent().to_dict()
+    return {
+        **registry.get_active_agent().to_dict(),
+        **_mode_metadata(request),
+    }
 
 
 @agent_workspace_router.post("/active-agent")
@@ -76,7 +94,10 @@ async def switch_active_workspace_agent(
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     request.app.state.active_workspace_agent_id = state.active_agent_id
-    return state.to_dict()
+    return {
+        **state.to_dict(),
+        **_mode_metadata(request),
+    }
 
 
 __all__ = ["agent_workspace_router", "get_agent_workspace_registry"]
