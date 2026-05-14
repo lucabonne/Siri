@@ -17,6 +17,7 @@ import type {
   MissionAgent,
   MissionFeedItem,
   MissionMetric,
+  MissionMemory,
   MissionProject,
   MissionSection,
   MissionTask,
@@ -143,6 +144,36 @@ export const missionProjects: MissionProject[] = [
     status: 'Discovery',
     progress: 36,
     next: 'Draft tag model',
+  },
+];
+
+export const missionMemories: MissionMemory[] = [
+  {
+    id: 'mock-memory-permissions',
+    content: 'Phase 2 permission notes',
+    memory_type: 'decision',
+    tags: ['permissions'],
+    pinned: true,
+    created_at: new Date(Date.now() - 42 * 60 * 1000).toISOString(),
+    source: null,
+  },
+  {
+    id: 'mock-memory-sources',
+    content: 'Desktop source setup',
+    memory_type: 'project',
+    tags: ['desktop'],
+    pinned: false,
+    created_at: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
+    source: null,
+  },
+  {
+    id: 'mock-memory-branding',
+    content: 'Siri branding pass',
+    memory_type: 'note',
+    tags: ['siri'],
+    pinned: false,
+    created_at: new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString(),
+    source: null,
   },
 ];
 

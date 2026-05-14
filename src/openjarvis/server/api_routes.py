@@ -28,11 +28,25 @@ class AgentMessageRequest(BaseModel):
 class MemoryStoreRequest(BaseModel):
     content: str
     metadata: Optional[Dict[str, Any]] = None
+    memory_type: str = "note"
+    project_id: Optional[str] = None
+    source: Optional[Dict[str, Any]] = None
+    tags: Optional[List[str]] = None
+    pinned: bool = False
 
 
 class MemorySearchRequest(BaseModel):
     query: str
     top_k: int = 5
+    project_id: Optional[str] = None
+    memory_type: Optional[str] = None
+    created_after: Optional[str] = None
+    created_before: Optional[str] = None
+    pinned: Optional[bool] = None
+
+
+class MemoryPinRequest(BaseModel):
+    pinned: bool
 
 
 class MemoryIndexRequest(BaseModel):
@@ -152,6 +166,25 @@ async def message_agent(agent_id: str, req: AgentMessageRequest, request: Reques
 memory_router = APIRouter(prefix="/v1/memory", tags=["memory"])
 
 
+def _get_structured_memory_service(request: Request):
+    """Return the app-level structured memory service, creating one lazily."""
+    service = getattr(request.app.state, "structured_memory_service", None)
+    if service is None:
+        try:
+            from openjarvis.memory import MemoryService
+
+            config = getattr(request.app.state, "config", None)
+            db_path = None
+            if config is not None:
+                db_path = getattr(getattr(config, "memory", None), "db_path", None)
+            service = MemoryService(db_path=db_path)
+            request.app.state.structured_memory_service = service
+        except Exception as exc:
+            logger.warning("Failed to initialize structured memory service: %s", exc)
+            return None
+    return service
+
+
 def _get_memory_backend(request: Request):
     """Return the app-level memory backend, falling back to a fresh SQLiteMemory."""
     backend = getattr(request.app.state, "memory_backend", None)
@@ -168,6 +201,24 @@ def _get_memory_backend(request: Request):
 @memory_router.post("/store")
 async def memory_store(req: MemoryStoreRequest, request: Request):
     """Store content in memory."""
+    service = _get_structured_memory_service(request)
+    if service is not None:
+        try:
+            memory = service.create_memory(
+                req.content,
+                memory_type=req.memory_type,
+                project_id=req.project_id,
+                source=req.source,
+                metadata=req.metadata or {},
+                tags=req.tags or [],
+                pinned=req.pinned,
+            )
+            return {"status": "stored", "id": memory["id"], "memory": memory}
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=str(exc))
+
     backend = _get_memory_backend(request)
     if backend is None:
         return {"status": "stored", "note": "no backend available"}
@@ -181,6 +232,22 @@ async def memory_store(req: MemoryStoreRequest, request: Request):
 @memory_router.post("/search")
 async def memory_search(req: MemorySearchRequest, request: Request):
     """Search memory for relevant content."""
+    service = _get_structured_memory_service(request)
+    if service is not None:
+        try:
+            results = service.search_memories(
+                req.query,
+                project_id=req.project_id,
+                memory_type=req.memory_type,
+                created_after=req.created_after,
+                created_before=req.created_before,
+                pinned=req.pinned,
+                limit=req.top_k,
+            )
+            return {"results": results}
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=str(exc))
+
     backend = _get_memory_backend(request)
     if backend is None:
         return {"results": []}
@@ -202,6 +269,17 @@ async def memory_search(req: MemorySearchRequest, request: Request):
 @memory_router.get("/stats")
 async def memory_stats(request: Request):
     """Get memory backend statistics."""
+    service = _get_structured_memory_service(request)
+    if service is not None:
+        try:
+            return {
+                "entries": service.count(),
+                "backend": "sqlite_structured",
+                "semantic": service.semantic_status(),
+            }
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=str(exc))
+
     backend = _get_memory_backend(request)
     if backend is None:
         return {"entries": 0, "backend": "none", "status": "not_configured"}
@@ -267,6 +345,91 @@ async def memory_index(req: MemoryIndexRequest, request: Request):
         return {"status": "indexed", "chunks_indexed": stored}
     except HTTPException:
         raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@memory_router.get("")
+async def memory_list(
+    request: Request,
+    project_id: Optional[str] = None,
+    memory_type: Optional[str] = None,
+    created_after: Optional[str] = None,
+    created_before: Optional[str] = None,
+    pinned: Optional[bool] = None,
+    limit: int = 50,
+    offset: int = 0,
+):
+    """List structured memories with optional filters."""
+    service = _get_structured_memory_service(request)
+    if service is None:
+        return {"memories": []}
+    try:
+        return {
+            "memories": service.list_memories(
+                project_id=project_id,
+                memory_type=memory_type,
+                created_after=created_after,
+                created_before=created_before,
+                pinned=pinned,
+                limit=limit,
+                offset=offset,
+            )
+        }
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@memory_router.post("")
+async def memory_create(req: MemoryStoreRequest, request: Request):
+    """Create a structured memory."""
+    service = _get_structured_memory_service(request)
+    if service is None:
+        raise HTTPException(status_code=503, detail="Structured memory unavailable")
+    try:
+        memory = service.create_memory(
+            req.content,
+            memory_type=req.memory_type,
+            project_id=req.project_id,
+            source=req.source,
+            metadata=req.metadata or {},
+            tags=req.tags or [],
+            pinned=req.pinned,
+        )
+        return {"memory": memory}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@memory_router.delete("/{memory_id}")
+async def memory_delete(memory_id: str, request: Request):
+    """Delete a structured memory."""
+    service = _get_structured_memory_service(request)
+    if service is None:
+        raise HTTPException(status_code=503, detail="Structured memory unavailable")
+    try:
+        deleted = service.delete_memory(memory_id)
+        if not deleted:
+            raise HTTPException(status_code=404, detail="Memory not found")
+        return {"status": "deleted", "id": memory_id}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@memory_router.post("/{memory_id}/pin")
+async def memory_pin(memory_id: str, req: MemoryPinRequest, request: Request):
+    """Pin or unpin a structured memory."""
+    service = _get_structured_memory_service(request)
+    if service is None:
+        raise HTTPException(status_code=503, detail="Structured memory unavailable")
+    try:
+        return {"memory": service.set_pinned(memory_id, req.pinned)}
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Memory not found")
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
 

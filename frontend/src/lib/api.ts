@@ -921,9 +921,39 @@ export async function submitSavings(data: SavingsSubmission): Promise<boolean> {
 // ---------------------------------------------------------------------------
 
 export interface MemorySearchResult {
+  id?: string;
   content: string;
   score: number;
   metadata: Record<string, unknown>;
+  memory_type?: string;
+  project_id?: string | null;
+  tags?: string[];
+  pinned?: boolean;
+  created_at?: string;
+  updated_at?: string;
+  source?: MemorySource | null;
+}
+
+export interface MemorySource {
+  id?: string;
+  title: string;
+  url: string;
+  timestamp?: string;
+  relevance?: number;
+  tags?: string[];
+}
+
+export interface StructuredMemory {
+  id: string;
+  content: string;
+  memory_type: string;
+  project_id: string | null;
+  metadata: Record<string, unknown>;
+  tags: string[];
+  pinned: boolean;
+  created_at: string;
+  updated_at: string;
+  source: MemorySource | null;
 }
 
 export interface MemoryStats {
@@ -957,7 +987,67 @@ export async function searchMemory(query: string, topK: number = 5): Promise<Mem
   return data.results;
 }
 
-export async function storeMemory(content: string, metadata?: Record<string, unknown>): Promise<void> {
+export async function listMemories(params: {
+  project_id?: string;
+  memory_type?: string;
+  created_after?: string;
+  created_before?: string;
+  pinned?: boolean;
+  limit?: number;
+  offset?: number;
+} = {}): Promise<StructuredMemory[]> {
+  const searchParams = new URLSearchParams();
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== undefined && value !== null) searchParams.set(key, String(value));
+  });
+  const suffix = searchParams.toString() ? `?${searchParams.toString()}` : '';
+  const res = await fetch(`${getBase()}/v1/memory${suffix}`);
+  if (!res.ok) throw new Error('Failed to list memories');
+  const data = await res.json();
+  return data.memories;
+}
+
+export async function createMemory(data: {
+  content: string;
+  memory_type?: string;
+  project_id?: string | null;
+  metadata?: Record<string, unknown>;
+  tags?: string[];
+  source?: MemorySource | null;
+  pinned?: boolean;
+}): Promise<StructuredMemory> {
+  const res = await fetch(`${getBase()}/v1/memory`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error('Failed to create memory');
+  const body = await res.json();
+  return body.memory;
+}
+
+export async function deleteMemory(memoryId: string): Promise<void> {
+  const res = await fetch(`${getBase()}/v1/memory/${encodeURIComponent(memoryId)}`, {
+    method: 'DELETE',
+  });
+  if (!res.ok) throw new Error('Failed to delete memory');
+}
+
+export async function setMemoryPinned(memoryId: string, pinned: boolean): Promise<StructuredMemory> {
+  const res = await fetch(`${getBase()}/v1/memory/${encodeURIComponent(memoryId)}/pin`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ pinned }),
+  });
+  if (!res.ok) throw new Error('Failed to update memory pin');
+  const body = await res.json();
+  return body.memory;
+}
+
+export async function storeMemory(
+  content: string,
+  metadata?: Record<string, unknown>,
+): Promise<void> {
   const res = await fetch(`${getBase()}/v1/memory/store`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

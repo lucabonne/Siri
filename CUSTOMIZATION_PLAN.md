@@ -1,5 +1,35 @@
 # Customization Plan
 
+## Memory Architecture Phase 1
+
+Phase 1 adds the local-first memory foundation for Siri without enabling
+autonomous memory writing or advanced summarization.
+
+- `src/openjarvis/memory/service.py` owns the structured SQLite schema for
+  memories, projects, tasks, sources, research reports, command history,
+  agent runs, and daily briefings.
+- The memory service supports creating, listing, filtering, searching,
+  deleting, pinning, and unpinning memories. Filters cover project id, memory
+  type, creation window, and pinned state.
+- Source metadata is first-class for memories: title, URL, timestamp,
+  relevance, and tags are stored in the `sources` table and returned through
+  the API.
+- `src/openjarvis/memory/semantic.py` adds optional local ChromaDB indexing
+  with a tiny deterministic embedding function. If ChromaDB or embedding
+  setup fails, the service falls back to SQLite FTS/LIKE search.
+- `/v1/memory` now exposes list/create/delete/search routes for structured
+  memory while preserving the older `/store`, `/search`, `/stats`, and
+  `/index` compatibility paths.
+- Mission Control's Memory tab now reads, searches, creates, pins, and deletes
+  through the backend API, falling back to mock data when the backend is not
+  reachable.
+
+Deferred work remains intentionally untouched in this phase:
+
+- no autonomous memory writing
+- no advanced summarization
+- no redesign of the existing agent or retrieval architecture
+
 ## Phase 1 Permission System
 
 Phase 1 adds a minimal Python-side permission layer before existing tool

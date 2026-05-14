@@ -9,21 +9,32 @@ import {
   Clock3,
   Gauge,
   LockKeyhole,
+  Pin,
+  Plus,
   Radar,
   RefreshCw,
+  Search,
   ShieldAlert,
   ShieldCheck,
+  Trash2,
   XCircle,
 } from 'lucide-react';
 import {
+  createMemory,
   decideSecurityApproval,
+  deleteMemory,
   fetchPermissionAudit,
   fetchSecurityApprovals,
+  listMemories,
+  searchMemory,
+  setMemoryPinned,
 } from '../../lib/api';
+import type { MemorySearchResult, StructuredMemory } from '../../lib/api';
 import {
   approvalQueue,
   missionAgents,
   missionFeed,
+  missionMemories,
   missionMetrics,
   missionProjects,
   missionSections,
@@ -32,7 +43,13 @@ import {
   quickCommands,
   worldSignals,
 } from './mockData';
-import type { ApprovalRecord, MissionSectionId, PermissionEvent, StatusTone } from './types';
+import type {
+  ApprovalRecord,
+  MissionMemory,
+  MissionSectionId,
+  PermissionEvent,
+  StatusTone,
+} from './types';
 
 const toneStyles: Record<StatusTone, { bg: string; text: string; border: string }> = {
   good: {
@@ -342,19 +359,146 @@ function AgentsSection() {
   );
 }
 
+function toMissionMemory(memory: StructuredMemory | MemorySearchResult): MissionMemory {
+  return {
+    id: memory.id ?? `${memory.content}-${memory.created_at ?? ''}`,
+    content: memory.content,
+    memory_type: memory.memory_type ?? 'note',
+    tags: memory.tags ?? [],
+    pinned: Boolean(memory.pinned),
+    created_at: memory.created_at ?? new Date().toISOString(),
+    source: memory.source
+      ? {
+          title: memory.source.title,
+          url: memory.source.url,
+        }
+      : null,
+  };
+}
+
 function MemorySection() {
+  const [memories, setMemories] = useState<MissionMemory[]>(missionMemories);
+  const [query, setQuery] = useState('');
+  const [draft, setDraft] = useState('');
+  const [live, setLive] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  const loadMemories = async () => {
+    try {
+      const items = await listMemories({ limit: 12 });
+      setMemories(items.map(toMissionMemory));
+      setLive(true);
+    } catch {
+      setMemories(missionMemories);
+      setLive(false);
+    }
+  };
+
+  useEffect(() => {
+    loadMemories();
+  }, []);
+
+  const filteredCounts = useMemo(() => {
+    const byType = new Map<string, number>();
+    memories.forEach((memory) => {
+      byType.set(memory.memory_type, (byType.get(memory.memory_type) ?? 0) + 1);
+    });
+    return [
+      ['Pinned', memories.filter((memory) => memory.pinned).length],
+      ['Notes', byType.get('note') ?? 0],
+      ['Decisions', byType.get('decision') ?? 0],
+      ['Sources', memories.filter((memory) => memory.source?.url).length],
+    ];
+  }, [memories]);
+
+  const runSearch = async () => {
+    if (!query.trim()) {
+      await loadMemories();
+      return;
+    }
+    try {
+      const results = await searchMemory(query, 12);
+      setMemories(results.map(toMissionMemory));
+      setLive(true);
+    } catch {
+      const lower = query.toLowerCase();
+      setMemories((items) =>
+        items.filter((memory) => memory.content.toLowerCase().includes(lower)),
+      );
+      setLive(false);
+    }
+  };
+
+  const addMemory = async () => {
+    if (!draft.trim()) return;
+    setBusy(true);
+    try {
+      const memory = await createMemory({
+        content: draft.trim(),
+        memory_type: 'note',
+        tags: ['mission-control'],
+      });
+      setMemories((items) => [toMissionMemory(memory), ...items]);
+      setDraft('');
+      setLive(true);
+    } catch {
+      const fallback = {
+        id: `local-${Date.now()}`,
+        content: draft.trim(),
+        memory_type: 'note',
+        tags: ['mission-control'],
+        pinned: false,
+        created_at: new Date().toISOString(),
+        source: null,
+      };
+      setMemories((items) => [fallback, ...items]);
+      setDraft('');
+      setLive(false);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const togglePin = async (memory: MissionMemory) => {
+    if (!live || memory.id.startsWith('mock-') || memory.id.startsWith('local-')) {
+      setMemories((items) =>
+        items.map((item) => (item.id === memory.id ? { ...item, pinned: !item.pinned } : item)),
+      );
+      return;
+    }
+    try {
+      const updated = await setMemoryPinned(memory.id, !memory.pinned);
+      setMemories((items) =>
+        items.map((item) => (item.id === memory.id ? toMissionMemory(updated) : item)),
+      );
+    } catch {
+      setLive(false);
+    }
+  };
+
+  const removeMemory = async (memory: MissionMemory) => {
+    if (live && !memory.id.startsWith('mock-') && !memory.id.startsWith('local-')) {
+      try {
+        await deleteMemory(memory.id);
+      } catch {
+        setLive(false);
+      }
+    }
+    setMemories((items) => items.filter((item) => item.id !== memory.id));
+  };
+
   return (
     <div className="grid gap-4 lg:grid-cols-[0.9fr_1.1fr]">
-      <ShellPanel title="Memory">
+      <ShellPanel title="Memory" action={live ? 'live' : 'mock'}>
         <div className="grid grid-cols-2 gap-3">
-          {['People', 'Places', 'Decisions', 'Open loops'].map((label, index) => (
+          {filteredCounts.map(([label, value]) => (
             <div
               key={label}
               className="rounded-md border p-4"
               style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg-secondary)' }}
             >
               <div className="text-2xl font-semibold" style={{ color: 'var(--color-text)' }}>
-                {[128, 42, 317, 19][index]}
+                {value}
               </div>
               <div className="mt-1 text-xs" style={{ color: 'var(--color-text-secondary)' }}>
                 {label}
@@ -362,17 +506,94 @@ function MemorySection() {
             </div>
           ))}
         </div>
+        <div className="mt-4 grid gap-2">
+          <div className="flex gap-2">
+            <input
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') runSearch();
+              }}
+              placeholder="Search memory"
+              className="min-w-0 flex-1 rounded-md border px-3 py-2 text-sm outline-none"
+              style={{
+                borderColor: 'var(--color-border)',
+                color: 'var(--color-text)',
+                background: 'var(--color-bg-secondary)',
+              }}
+            />
+            <button
+              type="button"
+              onClick={runSearch}
+              className="inline-flex h-10 w-10 items-center justify-center rounded-md border"
+              style={{ borderColor: 'var(--color-border)', color: 'var(--color-text)' }}
+              title="Search"
+            >
+              <Search size={16} />
+            </button>
+          </div>
+          <div className="flex gap-2">
+            <input
+              value={draft}
+              onChange={(event) => setDraft(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') addMemory();
+              }}
+              placeholder="Create memory"
+              className="min-w-0 flex-1 rounded-md border px-3 py-2 text-sm outline-none"
+              style={{
+                borderColor: 'var(--color-border)',
+                color: 'var(--color-text)',
+                background: 'var(--color-bg-secondary)',
+              }}
+            />
+            <button
+              type="button"
+              onClick={addMemory}
+              disabled={busy}
+              className="inline-flex h-10 w-10 items-center justify-center rounded-md border disabled:opacity-60"
+              style={{ borderColor: 'var(--color-border)', color: 'var(--color-text)' }}
+              title="Add"
+            >
+              <Plus size={16} />
+            </button>
+          </div>
+        </div>
       </ShellPanel>
       <ShellPanel title="Recent recalls">
         <div className="space-y-2">
-          {['Phase 2 permission notes', 'Desktop source setup', 'Siri branding pass'].map((item) => (
+          {memories.map((memory) => (
             <div
-              key={item}
-              className="flex items-center gap-3 rounded-md border px-3 py-3 text-sm"
+              key={memory.id}
+              className="grid grid-cols-[auto_1fr_auto_auto] items-center gap-3 rounded-md border px-3 py-3 text-sm"
               style={{ borderColor: 'var(--color-border)', color: 'var(--color-text)' }}
             >
               <Circle size={10} style={{ color: 'var(--color-accent)' }} />
-              {item}
+              <div className="min-w-0">
+                <div className="truncate">{memory.content}</div>
+                <div className="mt-1 flex gap-2 text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+                  <span>{memory.memory_type}</span>
+                  {memory.source?.title && <span>{memory.source.title}</span>}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => togglePin(memory)}
+                className="inline-flex h-8 w-8 items-center justify-center rounded-md"
+                style={{ color: memory.pinned ? 'var(--color-accent)' : 'var(--color-text-tertiary)' }}
+                title={memory.pinned ? 'Unpin' : 'Pin'}
+              >
+                <Pin size={15} />
+              </button>
+              <button
+                type="button"
+                onClick={() => removeMemory(memory)}
+                className="inline-flex h-8 w-8 items-center justify-center rounded-md"
+                style={{ color: 'var(--color-text-tertiary)' }}
+                title="Delete"
+              >
+                <Trash2 size={15} />
+              </button>
             </div>
           ))}
         </div>

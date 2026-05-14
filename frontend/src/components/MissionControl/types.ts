@@ -56,6 +56,19 @@ export type MissionProject = {
   next: string;
 };
 
+export type MissionMemory = {
+  id: string;
+  content: string;
+  memory_type: string;
+  tags: string[];
+  pinned: boolean;
+  created_at: string;
+  source?: {
+    title: string;
+    url: string;
+  } | null;
+};
+
 export type PermissionEvent = {
   tool: string;
   action: 'Allowed' | 'Blocked' | 'Needs approval';
