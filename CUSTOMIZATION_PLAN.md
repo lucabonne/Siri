@@ -124,6 +124,45 @@ Deferred work remains intentionally untouched in this phase:
 - no outbound context transmission
 - no deep semantic code indexing
 
+## Terminal Co-Pilot Phase 1
+
+Phase 1 adds passive terminal awareness and local-only terminal debugging
+assistance without enabling autonomous command execution.
+
+- `src/openjarvis/context/terminal.py` owns terminal command snapshots,
+  recent history, local error analysis, possible fixes, and dry-run annotated
+  suggested commands.
+- Captured snapshots include last command, bounded command output, exit code,
+  cwd, repository/project context, shell type, timestamp, and passive/local
+  metadata.
+- `/v1/context/terminal/current`, `/history`, `/error-summary`, and
+  `/suggested-fixes` expose read-only terminal context APIs. A local shell
+  integration can passively record completed commands through
+  `/v1/context/terminal/commands`.
+- Error analysis is lightweight and local: it detects missing dependencies,
+  command-not-found errors, permission failures, occupied ports, git
+  conflicts, Python tracebacks, TypeScript diagnostics, Rust compiler errors,
+  and generic non-zero exits.
+- Suggested commands are not executed. They are classified through
+  `PermissionMiddleware`, include dry-run previews, and clearly mark dangerous
+  commands with matched permission patterns.
+- Suggested command approval requests can be queued through the existing
+  approval queue, preserving a passive "request approval only" workflow for
+  future execution phases.
+- Structured memory now records terminal command summaries in the existing
+  `commands_history` table when Privacy Mode is off.
+- Mission Control's Terminal tab now shows Recent Commands, Last Error,
+  Suggested Fixes, and Suggested Commands from the live terminal context APIs.
+- Privacy Mode redacts command/output payloads in terminal APIs and skips
+  structured memory writes for captured terminal commands.
+
+Deferred work remains intentionally untouched in this phase:
+
+- no autonomous terminal execution
+- no shell hook installer
+- no cloud-based terminal analysis
+- no automatic fix application
+
 ## Phase 1 Permission System
 
 Phase 1 adds a minimal Python-side permission layer before existing tool

@@ -400,6 +400,54 @@ export interface LocalContextSnapshot {
   repo: RepoIndex;
 }
 
+export interface SuggestedTerminalCommand {
+  id: string;
+  command: string;
+  reason: string;
+  safety: string;
+  permission_level: string;
+  permission_action: string;
+  requires_approval: boolean;
+  dangerous: boolean;
+  matched_pattern: string | null;
+  dry_run_preview: Record<string, unknown>;
+}
+
+export interface TerminalErrorSummary {
+  has_error: boolean;
+  summary: string;
+  patterns: string[];
+  possible_fixes: string[];
+  suggested_commands: SuggestedTerminalCommand[];
+  local_only: boolean;
+  passive_only: boolean;
+}
+
+export interface TerminalCommandRecord {
+  command: string;
+  output: string;
+  exit_code: number | null;
+  cwd: string;
+  repo_context: Record<string, unknown>;
+  shell_type: string;
+  timestamp: string;
+  output_preview: string;
+  passive_only: boolean;
+  local_only: boolean;
+}
+
+export interface TerminalContextSnapshot {
+  current: TerminalCommandRecord | null;
+  history: TerminalCommandRecord[];
+  error_summary: TerminalErrorSummary;
+  cwd: string;
+  shell_type: string;
+  project_context: ProjectContext;
+  privacy_mode: boolean;
+  passive_only: boolean;
+  local_only: boolean;
+}
+
 export async function fetchDesktopContext(): Promise<DesktopContext> {
   const res = await fetch(`${getBase()}/v1/context/desktop`);
   if (!res.ok) throw new Error(`Failed to fetch desktop context: ${res.status}`);
@@ -425,6 +473,38 @@ export async function fetchLocalContextSnapshot(): Promise<LocalContextSnapshot>
     fetchRepoContext(),
   ]);
   return { desktop, project, repo };
+}
+
+export async function fetchTerminalContext(): Promise<TerminalContextSnapshot> {
+  const res = await fetch(`${getBase()}/v1/context/terminal/current`);
+  if (!res.ok) throw new Error(`Failed to fetch terminal context: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchTerminalHistory(limit = 20): Promise<TerminalCommandRecord[]> {
+  const res = await fetch(`${getBase()}/v1/context/terminal/history?limit=${limit}`);
+  if (!res.ok) throw new Error(`Failed to fetch terminal history: ${res.status}`);
+  const data = await res.json();
+  return data.history || [];
+}
+
+export async function fetchTerminalSuggestedFixes(): Promise<TerminalErrorSummary> {
+  const res = await fetch(`${getBase()}/v1/context/terminal/suggested-fixes`);
+  if (!res.ok) throw new Error(`Failed to fetch terminal fixes: ${res.status}`);
+  return res.json();
+}
+
+export async function requestTerminalCommandApproval(commandId: string): Promise<{
+  approval: SecurityApproval;
+  suggested_command: SuggestedTerminalCommand;
+  executed: boolean;
+  passive_only: boolean;
+}> {
+  const res = await fetch(`${getBase()}/v1/context/terminal/suggested-commands/${commandId}/approval`, {
+    method: 'POST',
+  });
+  if (!res.ok) throw new Error(`Failed: ${res.status}`);
+  return res.json();
 }
 
 // ---------------------------------------------------------------------------

@@ -90,6 +90,10 @@ class PermissionMiddleware:
             "list_scheduled_tasks",
             "retrieval",
             "scan_chunks",
+            "terminal_context",
+            "terminal_error_summary",
+            "terminal_history",
+            "terminal_suggested_fixes",
             "think",
             "web_search",
         }
@@ -134,6 +138,7 @@ class PermissionMiddleware:
             "shell_exec",
             "storage_delete",
             "storage_put",
+            "terminal_suggested_command_approval",
         }
     )
     _DANGEROUS_TOOLS = frozenset()
@@ -392,7 +397,7 @@ class PermissionMiddleware:
     @staticmethod
     def _looks_like_shell_tool(tool_name: str) -> bool:
         normalized = tool_name.lower().replace("-", "_")
-        shell_tokens = ("shell", "terminal", "bash", "zsh", "run_command")
+        shell_tokens = ("shell", "bash", "zsh", "run_command")
         return any(token in normalized for token in shell_tokens)
 
     @staticmethod

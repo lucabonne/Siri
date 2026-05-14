@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import {
   Activity,
+  AlertTriangle,
   AppWindow,
   ArrowUpRight,
   Ban,
@@ -23,6 +24,7 @@ import {
   Search,
   ShieldAlert,
   ShieldCheck,
+  TerminalSquare,
   Trash2,
   XCircle,
 } from 'lucide-react';
@@ -33,9 +35,11 @@ import {
   fetchLocalContextSnapshot,
   fetchPermissionAudit,
   fetchSecurityApprovals,
+  fetchTerminalContext,
   listWorkspaceAgents,
   listSiriModes,
   listMemories,
+  requestTerminalCommandApproval,
   searchMemory,
   setMemoryPinned,
   switchActiveWorkspaceAgent,
@@ -46,6 +50,7 @@ import type {
   LocalContextSnapshot,
   SiriModeConfig,
   StructuredMemory,
+  TerminalContextSnapshot,
   WorkspaceAgentConfig,
 } from '../../lib/api';
 import {
@@ -805,25 +810,199 @@ function ProjectsSection() {
 }
 
 function TerminalSection() {
+  const [context, setContext] = useState<TerminalContextSnapshot | null>(null);
+  const [live, setLive] = useState(false);
+  const [queuedId, setQueuedId] = useState<string | null>(null);
+
+  const loadTerminalContext = async () => {
+    try {
+      const data = await fetchTerminalContext();
+      setContext(data);
+      setLive(true);
+    } catch {
+      setContext(null);
+      setLive(false);
+    }
+  };
+
+  useEffect(() => {
+    loadTerminalContext();
+  }, []);
+
+  const queueApproval = async (commandId: string) => {
+    setQueuedId(commandId);
+    try {
+      await requestTerminalCommandApproval(commandId);
+      await loadTerminalContext();
+    } finally {
+      setQueuedId(null);
+    }
+  };
+
+  const current = context?.current;
+  const analysis = context?.error_summary;
+  const history = context?.history ?? [];
+  const suggestions = analysis?.suggested_commands ?? [];
+
   return (
-    <ShellPanel title="Terminal" action="mock session">
-      <div
-        className="rounded-md border p-4 font-mono text-sm"
-        style={{
-          borderColor: 'var(--color-border)',
-          background: 'var(--color-code-bg)',
-          color: 'var(--color-text)',
-        }}
-      >
-        <div style={{ color: 'var(--color-text-tertiary)' }}>$ siri mission status</div>
-        <div className="mt-2">agents: 4 active</div>
-        <div>tasks: 7 queued</div>
-        <div>permissions: 2 pending approval</div>
-        <div className="mt-2" style={{ color: 'var(--color-warning)' }}>
-          command gate: waiting
+    <div className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
+      <ShellPanel title="Terminal Co-Pilot" action={live ? 'passive live' : 'waiting'}>
+        <div className="grid gap-3 md:grid-cols-3">
+          <ContextTile
+            icon={<TerminalSquare size={15} />}
+            label="Shell"
+            value={context?.shell_type || current?.shell_type || 'Unknown'}
+            detail={context?.privacy_mode ? 'Privacy Mode' : 'Local only'}
+          />
+          <ContextTile
+            icon={<FolderGit2 size={15} />}
+            label="Project"
+            value={basename(String(context?.project_context?.git_repository || context?.cwd || ''))}
+            detail={compactPath(context?.cwd || current?.cwd || '')}
+          />
+          <ContextTile
+            icon={<Code2 size={15} />}
+            label="Last exit"
+            value={current?.exit_code === undefined || current?.exit_code === null ? 'None' : String(current.exit_code)}
+            detail={current?.timestamp ? new Date(current.timestamp).toLocaleString() : 'No capture yet'}
+          />
         </div>
+
+        <div
+          className="mt-4 rounded-md border p-4 font-mono text-sm"
+          style={{
+            borderColor: 'var(--color-border)',
+            background: 'var(--color-code-bg)',
+            color: 'var(--color-text)',
+          }}
+        >
+          <div style={{ color: 'var(--color-text-tertiary)' }}>
+            $ {current?.command || 'No terminal command captured'}
+          </div>
+          {current?.output_preview && (
+            <pre className="mt-3 max-h-44 overflow-auto whitespace-pre-wrap text-xs leading-5">
+              {current.output_preview}
+            </pre>
+          )}
+        </div>
+
+        <div className="mt-4 grid gap-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-2 text-sm font-semibold" style={{ color: 'var(--color-text)' }}>
+              {analysis?.has_error ? <AlertTriangle size={16} style={{ color: 'var(--color-warning)' }} /> : <ShieldCheck size={16} style={{ color: 'var(--color-success)' }} />}
+              <span>Last Error</span>
+            </div>
+            <StatusPill tone={analysis?.has_error ? 'watch' : 'good'}>
+              {analysis?.has_error ? 'Needs attention' : 'Clear'}
+            </StatusPill>
+          </div>
+          <p className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
+            {analysis?.summary || 'Terminal context will appear after a local shell integration records a completed command.'}
+          </p>
+          {!!analysis?.patterns.length && (
+            <div className="flex flex-wrap gap-2">
+              {analysis.patterns.map((pattern) => (
+                <StatusPill key={pattern} tone="quiet">{pattern}</StatusPill>
+              ))}
+            </div>
+          )}
+        </div>
+      </ShellPanel>
+
+      <div className="grid gap-4">
+        <ShellPanel title="Suggested Fixes" action="dry run">
+          <div className="space-y-3">
+            {(analysis?.possible_fixes.length ? analysis.possible_fixes : ['No fixes suggested yet.']).map((fix) => (
+              <div
+                key={fix}
+                className="rounded-md border px-3 py-3 text-sm"
+                style={{ borderColor: 'var(--color-border)', color: 'var(--color-text-secondary)' }}
+              >
+                {fix}
+              </div>
+            ))}
+          </div>
+        </ShellPanel>
+
+        <ShellPanel title="Suggested Commands" action="approval gated">
+          <div className="space-y-3">
+            {suggestions.length === 0 && (
+              <div className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
+                Safe next commands will appear after a captured error.
+              </div>
+            )}
+            {suggestions.map((command) => (
+              <div
+                key={command.id}
+                className="rounded-md border p-3"
+                style={{
+                  borderColor: command.dangerous ? 'var(--color-warning)' : 'var(--color-border)',
+                  background: 'var(--color-bg-secondary)',
+                }}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="truncate font-mono text-sm" style={{ color: 'var(--color-text)' }}>
+                      {command.command}
+                    </div>
+                    <p className="mt-1 text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+                      {command.reason}
+                    </p>
+                  </div>
+                  <StatusPill tone={command.dangerous ? 'watch' : 'quiet'}>
+                    {command.dangerous ? 'Dangerous' : command.permission_level}
+                  </StatusPill>
+                </div>
+                <div className="mt-3 flex items-center justify-between gap-3">
+                  <span className="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+                    Dry run: {String(command.dry_run_preview?.would_action || command.permission_action)}
+                  </span>
+                  {command.requires_approval && (
+                    <button
+                      type="button"
+                      onClick={() => queueApproval(command.id)}
+                      disabled={queuedId === command.id}
+                      className="inline-flex h-8 w-8 items-center justify-center rounded-md border disabled:opacity-60"
+                      style={{ borderColor: 'var(--color-border)', color: 'var(--color-text)' }}
+                      title="Request approval"
+                    >
+                      <ShieldAlert size={15} />
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </ShellPanel>
       </div>
-    </ShellPanel>
+
+      <ShellPanel title="Recent Commands" action={`${history.length} shown`}>
+        <div className="space-y-2">
+          {history.length === 0 && (
+            <div className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
+              No terminal history has been captured.
+            </div>
+          )}
+          {history.map((item) => (
+            <div
+              key={`${item.timestamp}-${item.command}`}
+              className="grid gap-2 rounded-md border px-3 py-3 md:grid-cols-[1fr_80px_140px]"
+              style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg-secondary)' }}
+            >
+              <span className="truncate font-mono text-sm" style={{ color: 'var(--color-text)' }}>
+                {item.command}
+              </span>
+              <StatusPill tone={item.exit_code ? 'watch' : 'good'}>
+                {item.exit_code === null ? 'n/a' : item.exit_code}
+              </StatusPill>
+              <span className="truncate text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+                {compactPath(item.cwd)}
+              </span>
+            </div>
+          ))}
+        </div>
+      </ShellPanel>
+    </div>
   );
 }
 

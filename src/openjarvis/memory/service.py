@@ -10,7 +10,6 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from openjarvis.core.config import DEFAULT_CONFIG_DIR
 from openjarvis.memory.semantic import ChromaSemanticIndex
 
 
@@ -42,7 +41,7 @@ class MemoryService:
         enable_semantic: bool = True,
     ) -> None:
         if db_path is None:
-            db_path = DEFAULT_CONFIG_DIR / "siri_memory.db"
+            db_path = Path.home() / ".openjarvis" / "siri_memory.db"
         self.db_path = Path(db_path).expanduser()
         if str(self.db_path) != ":memory:":
             self.db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -56,7 +55,7 @@ class MemoryService:
             chroma_dir = (
                 Path(chroma_path).expanduser()
                 if chroma_path is not None
-                else DEFAULT_CONFIG_DIR / "chroma_memory"
+                else Path.home() / ".openjarvis" / "chroma_memory"
             )
             self._semantic = ChromaSemanticIndex(chroma_dir)
 
@@ -380,6 +379,61 @@ class MemoryService:
             raise KeyError(memory_id)
         return self.get_memory(memory_id)
 
+    def record_command_history(
+        self,
+        *,
+        command: str,
+        cwd: str = "",
+        exit_code: int | None = None,
+        output_preview: str = "",
+        metadata: dict[str, Any] | None = None,
+        created_at: str | None = None,
+    ) -> dict[str, Any]:
+        """Persist a passive terminal command summary in structured memory."""
+        if not command.strip():
+            raise ValueError("command cannot be empty")
+        command_id = str(uuid.uuid4())
+        created = created_at or _utc_now()
+        self._conn.execute(
+            """
+            INSERT INTO commands_history (
+                id, command, cwd, exit_code, output_preview, metadata, created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                command_id,
+                command,
+                cwd,
+                exit_code,
+                output_preview,
+                _json_dumps(metadata or {}),
+                created,
+            ),
+        )
+        self._conn.commit()
+        return self.get_command_history(command_id)
+
+    def get_command_history(self, command_id: str) -> dict[str, Any]:
+        row = self._conn.execute(
+            "SELECT * FROM commands_history WHERE id = ?",
+            (command_id,),
+        ).fetchone()
+        if row is None:
+            raise KeyError(command_id)
+        return self._row_to_command_history(row)
+
+    def list_command_history(self, *, limit: int = 50) -> list[dict[str, Any]]:
+        rows = self._conn.execute(
+            """
+            SELECT * FROM commands_history
+            ORDER BY created_at DESC
+            LIMIT ?
+            """,
+            (max(1, min(limit, 200)),),
+        ).fetchall()
+        return [self._row_to_command_history(row) for row in rows]
+
     def count(self) -> int:
         row = self._conn.execute("SELECT COUNT(*) AS count FROM memories").fetchone()
         return int(row["count"])
@@ -541,6 +595,18 @@ class MemoryService:
         if score is not None:
             item["score"] = float(score)
         return item
+
+    @staticmethod
+    def _row_to_command_history(row: sqlite3.Row) -> dict[str, Any]:
+        return {
+            "id": row["id"],
+            "command": row["command"],
+            "cwd": row["cwd"],
+            "exit_code": row["exit_code"],
+            "output_preview": row["output_preview"],
+            "metadata": _json_loads(row["metadata"], {}),
+            "created_at": row["created_at"],
+        }
 
 
 __all__ = ["MemoryService"]

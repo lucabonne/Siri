@@ -75,6 +75,19 @@ class TestPermissionMiddleware:
         assert decision.matched_pattern == "agent-permission-ceiling"
         assert "exceeds agent ceiling SAFE_ACTION" in decision.reason
 
+    def test_terminal_context_tools_are_classified(self, tmp_path) -> None:
+        middleware = PermissionMiddleware(audit_log_path=tmp_path / "permissions.log")
+
+        context_decision = middleware.check(
+            PermissionRequest(tool_name="terminal_context")
+        )
+        approval_decision = middleware.check(
+            PermissionRequest(tool_name="terminal_suggested_command_approval")
+        )
+
+        assert context_decision.level == PermissionLevel.READ_ONLY
+        assert approval_decision.level == PermissionLevel.CONFIRMED_EXECUTION
+
     def test_dry_run_reports_would_action(self, tmp_path) -> None:
         log_path = tmp_path / "permissions.log"
         middleware = PermissionMiddleware(audit_log_path=log_path, dry_run=True)
