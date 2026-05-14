@@ -2,14 +2,20 @@ import { useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import {
   Activity,
+  AppWindow,
   ArrowUpRight,
   Ban,
   Brain,
   CheckCircle2,
   Circle,
   Clock3,
+  Clipboard,
+  Code2,
+  FolderGit2,
   Gauge,
+  GitBranch,
   LockKeyhole,
+  Package,
   Pin,
   Plus,
   Radar,
@@ -24,6 +30,7 @@ import {
   createMemory,
   decideSecurityApproval,
   deleteMemory,
+  fetchLocalContextSnapshot,
   fetchPermissionAudit,
   fetchSecurityApprovals,
   listWorkspaceAgents,
@@ -36,6 +43,7 @@ import {
 } from '../../lib/api';
 import type {
   MemorySearchResult,
+  LocalContextSnapshot,
   SiriModeConfig,
   StructuredMemory,
   WorkspaceAgentConfig,
@@ -123,6 +131,61 @@ function StatusPill({ tone, children }: { tone: StatusTone; children: ReactNode 
     >
       {children}
     </span>
+  );
+}
+
+function compactPath(path: string): string {
+  if (!path) return 'Unavailable';
+  const normalized = path.replace(/\\/g, '/');
+  const parts = normalized.split('/').filter(Boolean);
+  if (parts.length <= 2) return normalized;
+  return `.../${parts.slice(-2).join('/')}`;
+}
+
+function basename(path: string): string {
+  if (!path) return '';
+  const normalized = path.replace(/\\/g, '/');
+  const parts = normalized.split('/').filter(Boolean);
+  return parts.length ? parts[parts.length - 1] : path;
+}
+
+function joinStack(values: string[], fallback = 'Unknown'): string {
+  if (!values.length) return fallback;
+  return values.slice(0, 4).join(', ');
+}
+
+function ContextTile({
+  icon,
+  label,
+  value,
+  detail,
+}: {
+  icon: ReactNode;
+  label: string;
+  value: string;
+  detail?: string;
+}) {
+  return (
+    <div
+      className="min-w-0 rounded-md border px-4 py-3"
+      style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg-secondary)' }}
+    >
+      <div
+        className="mb-1 flex items-center gap-2 text-xs"
+        style={{ color: 'var(--color-text-tertiary)' }}
+      >
+        {icon}
+        <span>{label}</span>
+      </div>
+      <div className="truncate text-sm font-semibold" style={{ color: 'var(--color-text)' }}>
+        {value || 'Unavailable'}
+      </div>
+      {detail && (
+        <div className="mt-1 truncate text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+          {detail}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -1176,10 +1239,75 @@ export function MissionControlPage() {
   const [activeSection, setActiveSection] = useState<MissionSectionId>('home');
   const [activeMode, setActiveMode] = useState<SiriModeConfig | null>(null);
   const [modeLive, setModeLive] = useState(false);
+  const [localContext, setLocalContext] = useState<LocalContextSnapshot | null>(null);
+  const [contextLive, setContextLive] = useState(false);
   const activeLabel = useMemo(
     () => missionSections.find((section) => section.id === activeSection)?.label ?? 'Home',
     [activeSection],
   );
+  const refreshContext = async () => {
+    try {
+      const snapshot = await fetchLocalContextSnapshot();
+      setLocalContext(snapshot);
+      setContextLive(true);
+    } catch {
+      setContextLive(false);
+    }
+  };
+
+  useEffect(() => {
+    refreshContext();
+  }, []);
+
+  const contextTiles = useMemo(() => {
+    const desktop = localContext?.desktop;
+    const project = localContext?.project;
+    const repo = localContext?.repo;
+    const repoRoot = project?.git_repository || repo?.root || '';
+    const projectName = basename(repoRoot || project?.cwd || '');
+    const techStack = joinStack([
+      ...(project?.languages ?? []),
+      ...(project?.framework_build_system ?? []),
+      ...(project?.package_manager ?? []),
+    ]);
+    return [
+      {
+        label: 'Current App',
+        value: desktop?.active_application || 'Unavailable',
+        detail: desktop?.active_window_title || undefined,
+        icon: <AppWindow size={14} />,
+      },
+      {
+        label: 'Current Project',
+        value: projectName || 'Unavailable',
+        detail: project?.project_type,
+        icon: <Code2 size={14} />,
+      },
+      {
+        label: 'Current Repo',
+        value: basename(repoRoot) || 'No repo',
+        detail: repoRoot ? compactPath(repoRoot) : undefined,
+        icon: <FolderGit2 size={14} />,
+      },
+      {
+        label: 'Current Branch',
+        value: project?.current_branch || 'No branch',
+        icon: <GitBranch size={14} />,
+      },
+      {
+        label: 'Tech Stack',
+        value: techStack,
+        detail: repo?.summary?.file_count ? `${repo.summary.file_count} indexed files` : undefined,
+        icon: <Package size={14} />,
+      },
+      {
+        label: 'Clipboard Preview',
+        value: desktop?.clipboard_preview || 'Empty or unavailable',
+        detail: desktop?.clipboard_sensitive ? 'Redacted locally' : 'Local preview only',
+        icon: <Clipboard size={14} />,
+      },
+    ];
+  }, [localContext]);
 
   return (
     <div className="flex-1 overflow-y-auto">
@@ -1221,33 +1349,46 @@ export function MissionControlPage() {
                 </StatusPill>
               </div>
             </div>
-            <div
-              className="grid min-w-0 gap-3 sm:grid-cols-3"
-              style={{ color: 'var(--color-text-secondary)' }}
-            >
+            <div className="grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-4">
               <ModeSwitcher
                 onModeChange={(mode, liveRegistry) => {
                   setActiveMode(mode);
                   setModeLive(liveRegistry);
                 }}
               />
-              {[
-                ['Current section', activeLabel],
-                ['Network', activeMode?.privacy_network_policy?.outbound_network === 'localhost_only' ? 'Localhost only' : 'Normal'],
-              ].map(([label, value]) => (
-                <div
-                  key={label}
-                  className="rounded-md border px-4 py-3"
-                  style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg-secondary)' }}
-                >
-                  <div className="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
-                    {label}
-                  </div>
-                  <div className="mt-1 text-sm font-semibold" style={{ color: 'var(--color-text)' }}>
-                    {value}
-                  </div>
-                </div>
+              <ContextTile
+                icon={<Activity size={14} />}
+                label="Current Section"
+                value={activeLabel}
+                detail={
+                  activeMode?.privacy_network_policy?.outbound_network === 'localhost_only'
+                    ? 'Localhost network'
+                    : 'Normal network'
+                }
+              />
+              {contextTiles.map((tile) => (
+                <ContextTile
+                  key={tile.label}
+                  icon={tile.icon}
+                  label={tile.label}
+                  value={tile.value}
+                  detail={tile.detail}
+                />
               ))}
+              <button
+                type="button"
+                onClick={refreshContext}
+                className="flex min-h-[76px] items-center justify-center gap-2 rounded-md border px-4 py-3 text-sm font-semibold transition-colors"
+                style={{
+                  borderColor: 'var(--color-border)',
+                  color: 'var(--color-text)',
+                  background: contextLive ? 'var(--color-bg-secondary)' : 'var(--color-accent-subtle)',
+                }}
+                title="Refresh local context"
+              >
+                <RefreshCw size={16} />
+                {contextLive ? 'Refresh Context' : 'Retry Context'}
+              </button>
             </div>
           </div>
           <MissionTabs active={activeSection} onChange={setActiveSection} />

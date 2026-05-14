@@ -352,6 +352,82 @@ export async function switchActiveSiriMode(modeId: string): Promise<ActiveSiriMo
 }
 
 // ---------------------------------------------------------------------------
+// Passive local context
+// ---------------------------------------------------------------------------
+
+export interface DesktopContext {
+  active_application: string;
+  active_window_title: string;
+  clipboard_preview: string;
+  clipboard_sensitive: boolean;
+  current_working_directory: string;
+  recent_files: string[];
+  privacy_mode: boolean;
+  passive_only: boolean;
+}
+
+export interface ProjectContext {
+  cwd: string;
+  git_repository: string;
+  current_branch: string;
+  languages: string[];
+  framework_build_system: string[];
+  package_manager: string[];
+  project_type: string;
+  passive_only: boolean;
+}
+
+export interface RepoIndex {
+  root: string;
+  inventory: string[];
+  module_summaries: Array<Record<string, unknown>>;
+  dependency_hints: string[];
+  architecture_metadata: Record<string, unknown>;
+  summary: {
+    root: string;
+    file_count: number;
+    language_breakdown: Record<string, number>;
+    top_level_modules: Array<Record<string, unknown>>;
+    dependency_hints: string[];
+    architecture_metadata: Record<string, unknown>;
+  };
+  passive_only: boolean;
+}
+
+export interface LocalContextSnapshot {
+  desktop: DesktopContext;
+  project: ProjectContext;
+  repo: RepoIndex;
+}
+
+export async function fetchDesktopContext(): Promise<DesktopContext> {
+  const res = await fetch(`${getBase()}/v1/context/desktop`);
+  if (!res.ok) throw new Error(`Failed to fetch desktop context: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchProjectContext(): Promise<ProjectContext> {
+  const res = await fetch(`${getBase()}/v1/context/project`);
+  if (!res.ok) throw new Error(`Failed to fetch project context: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchRepoContext(): Promise<RepoIndex> {
+  const res = await fetch(`${getBase()}/v1/context/repo`);
+  if (!res.ok) throw new Error(`Failed to fetch repo context: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchLocalContextSnapshot(): Promise<LocalContextSnapshot> {
+  const [desktop, project, repo] = await Promise.all([
+    fetchDesktopContext(),
+    fetchProjectContext(),
+    fetchRepoContext(),
+  ]);
+  return { desktop, project, repo };
+}
+
+// ---------------------------------------------------------------------------
 // Security approvals
 // ---------------------------------------------------------------------------
 

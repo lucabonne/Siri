@@ -93,6 +93,37 @@ Deferred work remains intentionally untouched in this phase:
 - no orchestrator rewrite
 - no proactive scheduling or background mode actions
 
+## Context Layer Phase 1
+
+Phase 1 adds passive desktop and project awareness for Siri without enabling
+autonomous desktop control or project execution.
+
+- `src/openjarvis/context/` owns the local context models and the
+  `ContextLayer` collector for desktop, project, and repository snapshots.
+- Desktop awareness uses macOS-local mechanisms where available:
+  AppleScript for the frontmost application/window title, `pbpaste` for a
+  redacted clipboard preview, process cwd for the current working directory,
+  and bounded filesystem scanning for recent files.
+- Project awareness detects the git repository root, current branch,
+  language mix, framework/build-system hints, package managers, and a coarse
+  project type from local manifests and file extensions.
+- Lightweight repo indexing returns a bounded file inventory, top-level module
+  summaries, dependency hints from local manifests, and architecture metadata
+  such as frontend/backend/Rust/tests presence.
+- `/v1/context/desktop`, `/v1/context/project`, and `/v1/context/repo` expose
+  read-only local APIs for Mission Control and future prompt-context assembly.
+- Mission Control now surfaces Current App, Current Project, Current Repo,
+  Current Branch, Tech Stack, and Clipboard Preview from the context APIs.
+- Privacy Mode is respected by redacting clipboard preview content. Sensitive
+  clipboard-looking values are redacted in all modes where practical.
+
+Deferred work remains intentionally untouched in this phase:
+
+- no autonomous execution
+- no desktop control
+- no outbound context transmission
+- no deep semantic code indexing
+
 ## Phase 1 Permission System
 
 Phase 1 adds a minimal Python-side permission layer before existing tool
