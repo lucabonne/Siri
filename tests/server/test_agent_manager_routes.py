@@ -257,6 +257,29 @@ def test_server_permission_confirmation_enqueues_approval(tmp_path, monkeypatch)
     assert (tmp_path / ".openjarvis" / "approvals").exists()
 
 
+def test_server_permission_respects_workspace_agent_ceiling(tmp_path, monkeypatch):
+    from openjarvis.agent_workspace import AgentWorkspaceRegistry
+    from openjarvis.server.agent_manager_routes import _check_server_tool_permission
+
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    state = SimpleNamespace(
+        agent_workspace_registry=AgentWorkspaceRegistry(),
+        active_workspace_agent_id="privacy",
+    )
+
+    allowed, reason, metadata = _check_server_tool_permission(
+        tool_name="shell_exec",
+        parsed_args={"command": "echo hi"},
+        agent_id="agent-1",
+        app_state=state,
+        source="server_streaming",
+    )
+
+    assert allowed is False
+    assert "not allowed for agent 'privacy'" in reason
+    assert metadata["matched_pattern"] == "agent-tool-allowlist"
+
+
 @pytest.mark.skipif(not HAS_FASTAPI, reason="fastapi not installed")
 class TestAgentManagerStreaming:
     """Tests for the SSE streaming mode of the managed-agent messages endpoint.

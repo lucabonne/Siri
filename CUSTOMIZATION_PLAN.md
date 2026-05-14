@@ -30,6 +30,36 @@ Deferred work remains intentionally untouched in this phase:
 - no advanced summarization
 - no redesign of the existing agent or retrieval architecture
 
+## Agent Workspace Phase 1
+
+Phase 1 adds a configuration-driven multi-agent workspace for Siri without
+introducing autonomous planning or a full orchestrator redesign.
+
+- `src/openjarvis/agent_workspace/` owns the central workspace registry,
+  typed agent configuration models, default Siri agent definitions, active
+  agent state, and lightweight routing metadata.
+- The default registry defines `coding`, `research`, `engineering`,
+  `privacy`, `scheduler`, `CAD`, `terminal`, and `vision` agents. Each agent
+  declares id, display name, description, allowed tools, memory scopes,
+  permission ceiling, preferred model, personality mode, output style, and
+  orchestrator routing hints.
+- `PermissionMiddleware` now accepts an optional per-request permission
+  ceiling and denies tool calls whose classified level exceeds the active
+  workspace agent's ceiling.
+- Server-side tool gating can consult the workspace registry for an active
+  agent's allowed tools, memory scopes, and permission ceiling before
+  executing server-streamed tool calls.
+- `/v1/agent-workspace` exposes list/get/switch/current active-agent routes.
+- Mission Control's Agents tab reads the live registry and switches the active
+  agent through the backend, while keeping its mock fallback when the local API
+  is unavailable.
+
+Deferred work remains intentionally untouched in this phase:
+
+- no autonomous planning
+- no complex multi-agent execution graph
+- no orchestrator rewrite
+
 ## Phase 1 Permission System
 
 Phase 1 adds a minimal Python-side permission layer before existing tool

@@ -25,11 +25,17 @@ import {
   deleteMemory,
   fetchPermissionAudit,
   fetchSecurityApprovals,
+  listWorkspaceAgents,
   listMemories,
   searchMemory,
   setMemoryPinned,
+  switchActiveWorkspaceAgent,
 } from '../../lib/api';
-import type { MemorySearchResult, StructuredMemory } from '../../lib/api';
+import type {
+  MemorySearchResult,
+  StructuredMemory,
+  WorkspaceAgentConfig,
+} from '../../lib/api';
 import {
   approvalQueue,
   missionAgents,
@@ -323,37 +329,130 @@ function TasksSection() {
   );
 }
 
+function toFallbackWorkspaceAgents(): WorkspaceAgentConfig[] {
+  return missionAgents.map((agent) => {
+    const id = agent.role.toLowerCase();
+    return {
+      id,
+      display_name: agent.name,
+      description: `${agent.role} agent: ${agent.status}`,
+      allowed_tools: [],
+      memory_scope: [],
+      permission_ceiling: 'READ_ONLY',
+      preferred_model: 'mock',
+      personality_mode: agent.role,
+      output_style: 'Mock fallback',
+      routing: {
+        task_classification: [id],
+        recommended_agent: id,
+        fallback_agent: 'coding',
+        multi_agent_compatibility: [],
+      },
+    };
+  });
+}
+
 function AgentsSection() {
+  const [agents, setAgents] = useState<WorkspaceAgentConfig[]>(toFallbackWorkspaceAgents);
+  const [activeAgentId, setActiveAgentId] = useState<string>('');
+  const [backendLive, setBackendLive] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [switchingAgentId, setSwitchingAgentId] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setIsLoading(true);
+    listWorkspaceAgents()
+      .then((data) => {
+        if (cancelled) return;
+        setAgents(data.agents);
+        setActiveAgentId(data.active_agent_id);
+        setBackendLive(true);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setAgents(toFallbackWorkspaceAgents());
+        setActiveAgentId('');
+        setBackendLive(false);
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const switchAgent = async (agentId: string) => {
+    if (!backendLive || agentId === activeAgentId) return;
+    setSwitchingAgentId(agentId);
+    try {
+      const state = await switchActiveWorkspaceAgent(agentId);
+      setActiveAgentId(state.active_agent_id);
+    } finally {
+      setSwitchingAgentId(null);
+    }
+  };
+
   return (
-    <ShellPanel title="Agents">
+    <ShellPanel
+      title="Agents"
+      action={backendLive ? 'Live registry' : isLoading ? 'Loading' : 'Mock fallback'}
+    >
       <div className="grid gap-3 md:grid-cols-2">
-        {missionAgents.map((agent) => (
+        {agents.map((agent) => {
+          const isActive = agent.id === activeAgentId;
+          const toolPreview = agent.allowed_tools.slice(0, 4).join(', ');
+          return (
           <div
-            key={agent.name}
+            key={agent.id}
             className="rounded-md border p-4"
             style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg-secondary)' }}
           >
-            <div className="flex items-center justify-between">
+            <div className="flex items-start justify-between gap-3">
               <div>
                 <div className="text-sm font-semibold" style={{ color: 'var(--color-text)' }}>
-                  {agent.name}
+                  {agent.display_name}
                 </div>
                 <div className="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
-                  {agent.role}
+                  {agent.personality_mode}
                 </div>
               </div>
-              <StatusPill tone={agent.status.includes('Awaiting') ? 'watch' : 'good'}>
-                {agent.status}
+              <StatusPill tone={isActive ? 'good' : 'quiet'}>
+                {isActive ? 'Active' : agent.permission_ceiling}
               </StatusPill>
             </div>
-            <div className="mt-4 h-2 rounded-full" style={{ background: 'var(--color-bg-tertiary)' }}>
-              <div
-                className="h-2 rounded-full"
-                style={{ width: `${agent.load}%`, background: 'var(--color-accent)' }}
-              />
+            <p className="mt-3 text-sm" style={{ color: 'var(--color-text-secondary)' }}>
+              {agent.description}
+            </p>
+            <div className="mt-3 grid gap-2 text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+              <span>Model: {agent.preferred_model || 'default'}</span>
+              <span>Memory: {agent.memory_scope.join(', ') || 'none declared'}</span>
+              <span>Tools: {toolPreview || 'chat-only'}{agent.allowed_tools.length > 4 ? '...' : ''}</span>
+            </div>
+            <div className="mt-4 flex items-center justify-between gap-3">
+              <span className="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+                Route: {agent.routing.task_classification.slice(0, 2).join(', ')}
+              </span>
+              {backendLive && (
+                <button
+                  type="button"
+                  disabled={isActive || switchingAgentId === agent.id}
+                  onClick={() => switchAgent(agent.id)}
+                  className="rounded-md border px-3 py-1.5 text-xs font-medium disabled:opacity-50"
+                  style={{
+                    borderColor: 'var(--color-border)',
+                    color: 'var(--color-text)',
+                    background: isActive ? 'var(--color-bg-tertiary)' : 'var(--color-bg)',
+                  }}
+                >
+                  {isActive ? 'Selected' : switchingAgentId === agent.id ? 'Switching' : 'Switch'}
+                </button>
+              )}
             </div>
           </div>
-        ))}
+          );
+        })}
       </div>
     </ShellPanel>
   );

@@ -234,6 +234,73 @@ export async function fetchTraces(limit: number = 50): Promise<unknown> {
 }
 
 // ---------------------------------------------------------------------------
+// Siri agent workspace
+// ---------------------------------------------------------------------------
+
+export interface AgentRoutingMetadata {
+  task_classification: string[];
+  recommended_agent: string;
+  fallback_agent: string;
+  multi_agent_compatibility: string[];
+}
+
+export interface WorkspaceAgentConfig {
+  id: string;
+  display_name: string;
+  description: string;
+  allowed_tools: string[];
+  memory_scope: string[];
+  permission_ceiling: string;
+  preferred_model: string;
+  personality_mode: string;
+  output_style: string;
+  routing: AgentRoutingMetadata;
+}
+
+export interface WorkspaceAgentsResponse {
+  agents: WorkspaceAgentConfig[];
+  active_agent_id: string;
+}
+
+export interface ActiveWorkspaceAgentState {
+  active_agent_id: string;
+  agent: WorkspaceAgentConfig;
+}
+
+export async function listWorkspaceAgents(): Promise<WorkspaceAgentsResponse> {
+  const res = await fetch(`${getBase()}/v1/agent-workspace/agents`);
+  if (!res.ok) throw new Error(`Failed to list workspace agents: ${res.status}`);
+  return res.json();
+}
+
+export async function getWorkspaceAgentConfig(agentId: string): Promise<WorkspaceAgentConfig> {
+  const res = await fetch(
+    `${getBase()}/v1/agent-workspace/agents/${encodeURIComponent(agentId)}`,
+  );
+  if (!res.ok) throw new Error(`Failed to fetch workspace agent: ${res.status}`);
+  const data = await res.json();
+  return data.agent;
+}
+
+export async function getActiveWorkspaceAgent(): Promise<ActiveWorkspaceAgentState> {
+  const res = await fetch(`${getBase()}/v1/agent-workspace/active-agent`);
+  if (!res.ok) throw new Error(`Failed to fetch active workspace agent: ${res.status}`);
+  return res.json();
+}
+
+export async function switchActiveWorkspaceAgent(
+  agentId: string,
+): Promise<ActiveWorkspaceAgentState> {
+  const res = await fetch(`${getBase()}/v1/agent-workspace/active-agent`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ agent_id: agentId }),
+  });
+  if (!res.ok) throw new Error(`Failed to switch workspace agent: ${res.status}`);
+  return res.json();
+}
+
+// ---------------------------------------------------------------------------
 // Security approvals
 // ---------------------------------------------------------------------------
 

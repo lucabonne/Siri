@@ -37,6 +37,7 @@ class PermissionRequest:
     arguments: Mapping[str, Any] = field(default_factory=dict)
     agent_id: str = ""
     command: Optional[str] = None
+    permission_ceiling: Optional[PermissionLevel] = None
     dry_run: bool = False
     metadata: Dict[str, Any] = field(default_factory=dict)
 
@@ -185,6 +186,14 @@ class PermissionMiddleware:
     def check(self, request: PermissionRequest) -> PermissionDecision:
         """Return the permission decision for *request* and audit it."""
         level, reason, matched_pattern = self.classify(request)
+        ceiling = request.permission_ceiling
+        if ceiling is not None and level > ceiling:
+            reason = (
+                f"permission level {level.name} exceeds agent ceiling "
+                f"{ceiling.name}: {reason}"
+            )
+            level = PermissionLevel.DANGEROUS
+            matched_pattern = matched_pattern or "agent-permission-ceiling"
         action = self._action_for_level(level)
         dry_run = self._dry_run or request.dry_run
 

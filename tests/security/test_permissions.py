@@ -59,6 +59,21 @@ class TestPermissionMiddleware:
         assert decision.action == "require_confirmation"
         assert decision.level == PermissionLevel.CONFIRMED_EXECUTION
 
+    def test_permission_ceiling_denies_excessive_tool_level(self, tmp_path) -> None:
+        middleware = PermissionMiddleware(audit_log_path=tmp_path / "permissions.log")
+        decision = middleware.check(
+            PermissionRequest(
+                tool_name="shell_exec",
+                arguments={"command": "echo hello"},
+                permission_ceiling=PermissionLevel.SAFE_ACTION,
+            )
+        )
+
+        assert decision.action == "deny"
+        assert decision.level == PermissionLevel.DANGEROUS
+        assert decision.matched_pattern == "agent-permission-ceiling"
+        assert "exceeds agent ceiling SAFE_ACTION" in decision.reason
+
     def test_dry_run_reports_would_action(self, tmp_path) -> None:
         log_path = tmp_path / "permissions.log"
         middleware = PermissionMiddleware(audit_log_path=log_path, dry_run=True)

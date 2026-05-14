@@ -595,14 +595,52 @@ def _check_server_tool_permission(
     """Gate server-executed tools before MCP/direct execution."""
     from openjarvis.security.permissions import PermissionRequest
 
+    workspace_agent_id = ""
+    workspace_registry = getattr(app_state, "agent_workspace_registry", None)
+    if workspace_registry is not None:
+        workspace_agent_id = str(
+            parsed_args.get("workspace_agent_id")
+            or getattr(app_state, "active_workspace_agent_id", "")
+            or ""
+        )
+        if not workspace_agent_id:
+            try:
+                workspace_agent_id = (
+                    workspace_registry.get_active_agent().active_agent_id
+                )
+            except Exception:
+                workspace_agent_id = ""
+        if workspace_agent_id:
+            allowed, registry_reason = workspace_registry.validate_tool_request(
+                workspace_agent_id,
+                tool_name,
+            )
+            if not allowed:
+                return (
+                    False,
+                    f"Permission denied for tool '{tool_name}': {registry_reason}",
+                    {
+                        "action": "deny",
+                        "level": "DANGEROUS",
+                        "reason": registry_reason,
+                        "matched_pattern": "agent-tool-allowlist",
+                        "dry_run": False,
+                    },
+                )
+
     middleware = _get_permission_middleware(app_state)
     permission_request = PermissionRequest(
         tool_name=tool_name,
         arguments=parsed_args,
-        agent_id=agent_id,
+        agent_id=workspace_agent_id or agent_id,
         dry_run=parsed_args.get("dry_run") is True,
         metadata={"source": source},
     )
+    if workspace_registry is not None and workspace_agent_id:
+        permission_request = workspace_registry.apply_to_permission_request(
+            permission_request,
+            agent_id=workspace_agent_id,
+        )
     decision = middleware.check(permission_request)
     metadata = {
         "action": decision.action,

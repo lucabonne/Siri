@@ -10,6 +10,8 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, HTTPException, Request, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
 
+from openjarvis.server.agent_workspace_routes import agent_workspace_router
+
 logger = logging.getLogger(__name__)
 
 # ---- Request/Response models ----
@@ -1059,6 +1061,7 @@ def include_all_routes(app) -> None:
     app.include_router(speech_router)
     app.include_router(feedback_router)
     app.include_router(optimize_router)
+    app.include_router(agent_workspace_router)
 
     # Agent Manager routes (if available)
     try:
@@ -1108,4 +1111,5 @@ __all__ = [
     "speech_router",
     "feedback_router",
     "optimize_router",
+    "agent_workspace_router",
 ]
