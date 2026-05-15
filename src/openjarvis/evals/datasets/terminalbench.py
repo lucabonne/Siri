@@ -6,17 +6,11 @@ Agentic benchmark for terminal / command-line tasks.
 from __future__ import annotations
 
 import random
+from importlib.util import find_spec
 from typing import Iterable, List, MutableMapping, Optional, Sequence
 
 from openjarvis.evals.core.dataset import DatasetProvider
 from openjarvis.evals.core.types import EvalRecord
-
-try:
-    from datasets import load_dataset as _load_dataset  # noqa: F401
-
-    _HAS_DATASETS = True
-except ImportError:
-    _HAS_DATASETS = False
 
 _HF_PATH = "terminal-bench/terminal-bench"
 
@@ -40,7 +34,7 @@ class TerminalBenchDataset(DatasetProvider):
         split: Optional[str] = None,
         seed: Optional[int] = None,
     ) -> None:
-        if not _HAS_DATASETS:
+        if find_spec("datasets") is None:
             raise ImportError(
                 "The 'datasets' package is required for TerminalBenchDataset. "
                 "Install it with: pip install datasets"

@@ -46,7 +46,9 @@ DEFAULT_MODE_CONFIGS = [
     {
         "id": "research",
         "display_name": "Research",
-        "description": "Prioritizes source gathering, comparisons, and careful synthesis.",
+        "description": (
+            "Prioritizes source gathering, comparisons, and careful synthesis."
+        ),
         "verbosity_level": "detailed",
         "proactive_level": "medium",
         "interruption_policy": "normal",
@@ -82,7 +84,9 @@ DEFAULT_MODE_CONFIGS = [
     {
         "id": "creative",
         "display_name": "Creative",
-        "description": "Opens up ideation, drafts, variants, and expressive exploration.",
+        "description": (
+            "Opens up ideation, drafts, variants, and expressive exploration."
+        ),
         "verbosity_level": "expanded",
         "proactive_level": "medium",
         "interruption_policy": "low_friction",
@@ -154,7 +158,9 @@ DEFAULT_MODE_CONFIGS = [
     {
         "id": "coding",
         "display_name": "Coding",
-        "description": "Optimizes for code reading, implementation, tests, and patch summaries.",
+        "description": (
+            "Optimizes for code reading, implementation, tests, and patch summaries."
+        ),
         "verbosity_level": "balanced",
         "proactive_level": "low",
         "interruption_policy": "normal",
@@ -190,7 +196,9 @@ DEFAULT_MODE_CONFIGS = [
     {
         "id": "engineering",
         "display_name": "Engineering",
-        "description": "Emphasizes systems thinking, tradeoffs, and implementation boundaries.",
+        "description": (
+            "Emphasizes systems thinking, tradeoffs, and implementation boundaries."
+        ),
         "verbosity_level": "detailed",
         "proactive_level": "medium",
         "interruption_policy": "normal",
@@ -226,7 +234,9 @@ DEFAULT_MODE_CONFIGS = [
     {
         "id": "privacy",
         "display_name": "Privacy",
-        "description": "Locks Siri to local-first behavior and blocks cloud or remote surfaces.",
+        "description": (
+            "Locks Siri to local-first behavior and blocks cloud or remote surfaces."
+        ),
         "verbosity_level": "balanced",
         "proactive_level": "off",
         "interruption_policy": "priority_only",

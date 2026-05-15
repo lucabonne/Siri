@@ -28,7 +28,11 @@ class ModeRegistry:
         source = configs if configs is not None else DEFAULT_MODE_CONFIGS
         modes: dict[str, ModeConfig] = {}
         for item in source:
-            config = item if isinstance(item, ModeConfig) else ModeConfig.from_mapping(item)
+            config = (
+                item
+                if isinstance(item, ModeConfig)
+                else ModeConfig.from_mapping(item)
+            )
             if config.id in modes:
                 raise ValueError(f"duplicate mode id: {config.id}")
             modes[config.id] = config

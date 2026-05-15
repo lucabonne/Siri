@@ -37,7 +37,12 @@ class LocalTranscriptionResult:
 class LocalVoiceTranscriber:
     """Resolve and use faster-whisper only for PTT transcription."""
 
-    def __init__(self, *, config: JarvisConfig | None = None, backend: Any = None) -> None:
+    def __init__(
+        self,
+        *,
+        config: JarvisConfig | None = None,
+        backend: Any = None,
+    ) -> None:
         self._config = config or JarvisConfig()
         self._backend = backend
 
@@ -90,7 +95,8 @@ class LocalVoiceTranscriber:
         except Exception:
             pass
         raise TranscriptionUnavailableError(
-            "transcription backend unavailable: install faster-whisper for local voice transcription"
+            "transcription backend unavailable: install faster-whisper for local "
+            "voice transcription"
         )
 
 

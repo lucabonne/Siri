@@ -39,7 +39,9 @@ class LocalMacOSRecorder:
 
     def start(self, recording_id: str) -> RecordingHandle:
         if platform.system() != "Darwin":
-            raise VoiceRecordingError("local microphone recording is supported on macOS")
+            raise VoiceRecordingError(
+                "local microphone recording is supported on macOS"
+            )
         self._temp_dir.mkdir(parents=True, exist_ok=True)
         path = self._temp_dir / f"openjarvis-ptt-{recording_id}.wav"
         command = self._record_command(path)

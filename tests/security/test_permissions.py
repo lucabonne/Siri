@@ -183,7 +183,9 @@ class TestPermissionMiddleware:
         assert decision.action == "require_confirmation"
         assert decision.level == PermissionLevel.CONFIRMED_EXECUTION
 
-    def test_privacy_mode_voice_capture_requires_explicit_approval(self, tmp_path) -> None:
+    def test_privacy_mode_voice_capture_requires_explicit_approval(
+        self, tmp_path
+    ) -> None:
         mode_registry = ModeRegistry(state_path=tmp_path / "current_mode.json")
         mode_registry.switch_mode("privacy")
         middleware = PermissionMiddleware(
@@ -191,7 +193,9 @@ class TestPermissionMiddleware:
             mode_registry=mode_registry,
         )
 
-        denied = middleware.check(PermissionRequest(tool_name="voice_microphone_capture"))
+        denied = middleware.check(
+            PermissionRequest(tool_name="voice_microphone_capture")
+        )
         approved = middleware.check(
             PermissionRequest(
                 tool_name="voice_microphone_capture",

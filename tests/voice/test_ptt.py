@@ -6,13 +6,13 @@ import pytest
 
 from openjarvis.core.config import JarvisConfig
 from openjarvis.modes import ModeRegistry
+from openjarvis.voice.models import VoiceSession
 from openjarvis.voice.ptt import (
     RecordingHandle,
     TranscriptionUnavailableError,
     VoicePermissionError,
     VoicePushToTalkService,
 )
-from openjarvis.voice.models import VoiceSession
 
 
 class FakeRecorder:

@@ -11,7 +11,6 @@ from openjarvis.core.config import JarvisConfig
 from openjarvis.voice.models import (
     TranscriptionUnavailableError,
     VoiceIntentPreview,
-    VoicePermissionError,
     VoiceRecordingError,
     VoiceSession,
 )
@@ -205,7 +204,10 @@ class VoicePushToTalkService:
         if "?" in text or lower.startswith(("what", "why", "how", "when", "where")):
             intent = "question"
             planned_actions.append("route to active agent if user submits")
-        if any(token in lower for token in ("run ", "delete ", "send ", "open ", "commit ")):
+        if any(
+            token in lower
+            for token in ("run ", "delete ", "send ", "open ", "commit ")
+        ):
             intent = "action_request"
             planned_actions.append("request explicit approval before execution")
             risk = "medium"
@@ -219,7 +221,11 @@ class VoicePushToTalkService:
         )
 
     def _persist_raw_audio(self, override: bool | None) -> bool:
-        return self._config.speech.persist_raw_audio if override is None else bool(override)
+        return (
+            self._config.speech.persist_raw_audio
+            if override is None
+            else bool(override)
+        )
 
     def _active_mode(self) -> Any:
         if self._mode_registry is None:
