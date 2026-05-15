@@ -27,12 +27,48 @@ LaunchAgent installation.
 - The scheduler is intentionally only an abstraction that can report due
   status; it does not install or run a macOS LaunchAgent.
 
-Deferred work remains intentionally untouched in this phase:
+Deferred work for that original briefing phase was intentionally untouched
+until Startup / Boot Scheduler Phase 1:
 
 - no autonomous interruptions
 - no background notifications
 - no cloud persistence
-- no LaunchAgent installation
+- LaunchAgent installation moved to Startup / Boot Scheduler Phase 1
+
+## Startup / Boot Scheduler Phase 1
+
+Phase 1 adds local login-startup support and a passive once-per-day Morning
+Briefing trigger without introducing a scheduler daemon, autonomous
+notifications, or continuous background monitoring.
+
+- `src/openjarvis/startup/` owns LaunchAgent plist generation, install/remove
+  helpers, validation, local JSON state, passive scheduled task descriptors,
+  and the coordinating startup service.
+- Startup state is stored locally under `~/.openjarvis/state/` in
+  `last_morning_briefing.json` and `scheduler_state.json`.
+- The passive scheduler detects first launch of the day, evaluates a
+  Morning Briefing task at a configured local time, and prevents duplicate
+  briefings by comparing the stored last briefing date.
+- macOS LaunchAgent support writes a user LaunchAgent for `jarvis serve` on
+  login with `RunAtLoad=true` and `KeepAlive=false`; validation reports plist
+  path, label, expected arguments, installed arguments, and validity.
+- `/v1/startup/status`, `/scheduler/status`, `/install`, `/remove`, and
+  `/morning-briefing` expose startup status, scheduler status, launch-at-login
+  control, and manual briefing triggering.
+- The FastAPI app evaluates startup tasks once on process startup, but only
+  auto-triggers Morning Briefing when the LaunchAgent is installed and valid.
+- Mission Control Settings now shows launch-at-login controls, startup status,
+  passive scheduler status, last briefing timestamp, and manual briefing
+  trigger controls.
+- Privacy Mode remains local-only: no startup telemetry is emitted, scheduler
+  state stays on disk, and external briefing fetches stay blocked.
+
+Deferred work remains intentionally untouched in this phase:
+
+- no autonomous notifications
+- no continuous background monitoring
+- no scheduler daemon process
+- no external startup telemetry
 
 ## WorldMonitor Integration Phase 1
 

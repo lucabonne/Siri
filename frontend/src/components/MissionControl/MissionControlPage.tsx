@@ -48,6 +48,7 @@ import {
   fetchPermissionAudit,
   fetchRepoSummary,
   fetchRecentVisionScreenshots,
+  fetchStartupStatus,
   fetchSecurityApprovals,
   fetchTerminalContext,
   fetchVoicePttStatus,
@@ -57,7 +58,9 @@ import {
   listWorkspaceAgents,
   listSiriModes,
   listMemories,
+  installStartup,
   regenerateMorningBriefing,
+  removeStartup,
   requestTerminalCommandApproval,
   searchRepoIndex,
   searchMemory,
@@ -65,6 +68,7 @@ import {
   startVoicePttRecording,
   switchActiveWorkspaceAgent,
   switchActiveSiriMode,
+  triggerStartupMorningBriefing,
   stopVoicePttRecording,
   syncWorldMonitor,
   transcribeLatestVoiceRecording,
@@ -85,6 +89,7 @@ import type {
   BriefingStatus,
   DailyBriefing,
   MorningEvent,
+  StartupStatus,
   WorldMonitorStatus,
   WorldMonitorSyncStatus,
 } from '../../lib/api';
@@ -2116,29 +2121,144 @@ function FileSearchIcon() {
 }
 
 function SettingsSection() {
+  const [startup, setStartup] = useState<StartupStatus | null>(null);
+  const [status, setStatus] = useState<'loading' | 'ready' | 'offline'>('loading');
+  const [acting, setActing] = useState<'startup' | 'briefing' | ''>('');
+
+  const refreshStartup = async () => {
+    setStatus('loading');
+    try {
+      setStartup(await fetchStartupStatus());
+      setStatus('ready');
+    } catch {
+      setStartup(null);
+      setStatus('offline');
+    }
+  };
+
+  useEffect(() => {
+    refreshStartup();
+  }, []);
+
+  const toggleStartup = async () => {
+    setActing('startup');
+    try {
+      const next = startup?.launch_at_login ? await removeStartup() : await installStartup();
+      setStartup(next);
+      setStatus('ready');
+    } catch {
+      setStatus('offline');
+    } finally {
+      setActing('');
+    }
+  };
+
+  const triggerBriefing = async () => {
+    setActing('briefing');
+    try {
+      const result = await triggerStartupMorningBriefing(true);
+      const next = await fetchStartupStatus();
+      if (result.briefing) {
+        next.scheduler.last_morning_briefing_at = result.last_morning_briefing_at;
+        next.scheduler.last_morning_briefing_date = result.briefing.briefing_date;
+      }
+      setStartup(next);
+      setStatus('ready');
+    } catch {
+      setStatus('offline');
+    } finally {
+      setActing('');
+    }
+  };
+
   return (
-    <ShellPanel title="Settings">
-      <div className="grid gap-3 md:grid-cols-3">
-        {[
-          ['Model routing', 'Balanced'],
-          ['Notifications', 'Priority only'],
-          ['Workspace mode', 'Local'],
-        ].map(([label, value]) => (
-          <div
-            key={label}
-            className="rounded-md border p-4"
-            style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg-secondary)' }}
-          >
-            <div className="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
-              {label}
-            </div>
-            <div className="mt-2 text-sm font-semibold" style={{ color: 'var(--color-text)' }}>
-              {value}
-            </div>
+    <div className="grid gap-4 xl:grid-cols-[1fr_0.9fr]">
+      <ShellPanel title="Startup">
+        <div className="grid gap-3">
+          <div className="grid gap-3 md:grid-cols-2">
+            {[
+              ['Launch at login', startup?.launch_at_login ? 'Enabled' : 'Disabled'],
+              ['Startup status', startup?.launch_agent.valid ? 'Installed' : startup?.launch_agent.installed ? 'Needs repair' : 'Not installed'],
+              ['Scheduler', startup?.scheduler.enabled ? 'Passive' : 'Paused'],
+              ['Last briefing', formatTime(startup?.scheduler.last_morning_briefing_at || '')],
+            ].map(([label, value]) => (
+              <div
+                key={label}
+                className="rounded-md border p-4"
+                style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg-secondary)' }}
+              >
+                <div className="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+                  {label}
+                </div>
+                <div className="mt-2 truncate text-sm font-semibold" style={{ color: 'var(--color-text)' }}>
+                  {value}
+                </div>
+              </div>
+            ))}
           </div>
-        ))}
-      </div>
-    </ShellPanel>
+
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              disabled={acting === 'startup'}
+              onClick={toggleStartup}
+              className="inline-flex h-10 items-center justify-center gap-2 rounded-md border px-3 text-sm font-medium disabled:opacity-50"
+              style={{
+                borderColor: 'var(--color-border)',
+                color: 'var(--color-text)',
+                background: startup?.launch_at_login ? 'var(--color-accent-subtle)' : 'var(--color-bg-secondary)',
+              }}
+            >
+              {startup?.launch_at_login ? <CheckCircle2 size={15} /> : <Circle size={15} />}
+              {acting === 'startup' ? 'Updating' : 'Launch at login'}
+            </button>
+            <button
+              type="button"
+              disabled={acting === 'briefing' || startup?.privacy_mode}
+              onClick={triggerBriefing}
+              className="inline-flex h-10 items-center justify-center gap-2 rounded-md border px-3 text-sm font-medium disabled:opacity-50"
+              style={{
+                borderColor: 'var(--color-border)',
+                color: 'var(--color-text)',
+                background: 'var(--color-bg-secondary)',
+              }}
+            >
+              <RefreshCw size={15} />
+              {acting === 'briefing' ? 'Generating' : startup?.privacy_mode ? 'Privacy cache only' : 'Trigger briefing'}
+            </button>
+          </div>
+          <div className="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+            {status === 'offline'
+              ? 'Startup API unavailable'
+              : startup?.launch_agent.error || 'Local scheduling only; no startup telemetry'}
+          </div>
+        </div>
+      </ShellPanel>
+
+      <ShellPanel title="Runtime">
+        <div className="grid gap-3">
+          {[
+            ['Model routing', 'Balanced'],
+            ['Notifications', 'Manual only'],
+            ['Workspace mode', startup?.privacy_mode ? 'Privacy' : 'Local'],
+            ['Background loop', startup?.scheduler.background_loop ? 'Active' : 'Off'],
+          ].map(([label, value]) => (
+            <div
+              key={label}
+              className="rounded-md border p-4"
+              style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg-secondary)' }}
+            >
+              <div className="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+                {label}
+              </div>
+              <div className="mt-2 text-sm font-semibold" style={{ color: 'var(--color-text)' }}>
+                {value}
+              </div>
+            </div>
+          ))}
+        </div>
+      </ShellPanel>
+    </div>
   );
 }
 

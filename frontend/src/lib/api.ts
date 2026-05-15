@@ -1021,6 +1021,55 @@ export interface BriefingStatus {
   event_count: number;
 }
 
+export interface LaunchAgentStatus {
+  supported: boolean;
+  installed: boolean;
+  valid: boolean;
+  label: string;
+  plist_path: string;
+  expected_program_arguments: string[];
+  installed_program_arguments: string[];
+  error: string;
+}
+
+export interface StartupSchedulerStatus {
+  enabled: boolean;
+  passive_only: boolean;
+  background_loop: boolean;
+  local_only: boolean;
+  telemetry_enabled: boolean;
+  first_launch_today: boolean;
+  last_launch_date: string;
+  last_morning_briefing_at: string;
+  last_morning_briefing_date: string;
+  due_tasks: string[];
+  tasks: Array<Record<string, unknown>>;
+}
+
+export interface StartupStatus {
+  launch_at_login: boolean;
+  launch_agent: LaunchAgentStatus;
+  scheduler: StartupSchedulerStatus;
+  privacy_mode: boolean;
+  local_only: boolean;
+  external_telemetry: boolean;
+  privacy?: {
+    external_startup_telemetry: boolean;
+    local_only_scheduling: boolean;
+  };
+}
+
+export interface StartupMorningBriefingResult {
+  triggered: boolean;
+  duplicate_prevented: boolean;
+  reason: string;
+  last_morning_briefing_at: string;
+  briefing: DailyBriefing | null;
+  privacy_mode: boolean;
+  local_only: boolean;
+  external_startup_telemetry: boolean;
+}
+
 export interface WorldMonitorStatus {
   installed: boolean;
   connected: boolean;
@@ -1095,6 +1144,42 @@ export async function regenerateMorningBriefing(locationName = ''): Promise<Dail
 export async function fetchBriefingStatus(): Promise<BriefingStatus> {
   const res = await fetch(`${getBase()}/v1/morning-briefing/status`);
   if (!res.ok) throw new Error(`Failed to fetch briefing status: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchStartupStatus(): Promise<StartupStatus> {
+  const res = await fetch(`${getBase()}/v1/startup/status`);
+  if (!res.ok) throw new Error(`Failed to fetch startup status: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchStartupSchedulerStatus(): Promise<StartupSchedulerStatus> {
+  const res = await fetch(`${getBase()}/v1/startup/scheduler/status`);
+  if (!res.ok) throw new Error(`Failed to fetch startup scheduler status: ${res.status}`);
+  return res.json();
+}
+
+export async function installStartup(): Promise<StartupStatus> {
+  const res = await fetch(`${getBase()}/v1/startup/install`, { method: 'POST' });
+  if (!res.ok) throw new Error(`Failed to install startup: ${res.status}`);
+  return res.json();
+}
+
+export async function removeStartup(): Promise<StartupStatus> {
+  const res = await fetch(`${getBase()}/v1/startup/remove`, { method: 'POST' });
+  if (!res.ok) throw new Error(`Failed to remove startup: ${res.status}`);
+  return res.json();
+}
+
+export async function triggerStartupMorningBriefing(
+  force = true,
+): Promise<StartupMorningBriefingResult> {
+  const res = await fetch(`${getBase()}/v1/startup/morning-briefing`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ force, max_items: 12, persist_memory: true }),
+  });
+  if (!res.ok) throw new Error(`Failed to trigger startup briefing: ${res.status}`);
   return res.json();
 }
 

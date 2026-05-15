@@ -228,6 +228,13 @@ def create_app(
     except Exception as exc:
         logger.debug("Mode registry init skipped: %s", exc)
 
+    try:
+        from openjarvis.startup import StartupService
+
+        app.state.startup_service = StartupService()
+    except Exception as exc:
+        logger.debug("Startup service init skipped: %s", exc)
+
     # Wire up trace store if traces are enabled
     app.state.trace_store = None
     try:
@@ -251,6 +258,25 @@ def create_app(
     app.include_router(create_digest_router())
     app.include_router(upload_router)
     include_all_routes(app)
+
+    @app.on_event("startup")
+    async def _run_passive_startup_scheduler() -> None:
+        """Evaluate one-shot startup tasks without starting a scheduler loop."""
+
+        service = getattr(app.state, "startup_service", None)
+        if service is None:
+            return
+        privacy = False
+        registry = getattr(app.state, "mode_registry", None)
+        if registry is not None:
+            try:
+                privacy = registry.get_active_mode().mode.id == "privacy"
+            except Exception:
+                privacy = False
+        try:
+            service.run_startup_tasks(privacy_mode=privacy)
+        except Exception as exc:
+            logger.debug("Passive startup scheduler skipped: %s", exc)
 
     # Restore SendBlue channel bindings from database on startup
     _restore_sendblue_bindings(app)
