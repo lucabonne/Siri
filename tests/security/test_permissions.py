@@ -170,6 +170,39 @@ class TestPermissionMiddleware:
         assert decision.action == "deny"
         assert decision.matched_pattern == "privacy-remote-mcp"
 
+    def test_voice_capture_requires_confirmation(self, tmp_path) -> None:
+        middleware = PermissionMiddleware(audit_log_path=tmp_path / "permissions.log")
+
+        decision = middleware.check(
+            PermissionRequest(
+                tool_name="voice_microphone_capture",
+                arguments={"activation": "push_to_talk"},
+            )
+        )
+
+        assert decision.action == "require_confirmation"
+        assert decision.level == PermissionLevel.CONFIRMED_EXECUTION
+
+    def test_privacy_mode_voice_capture_requires_explicit_approval(self, tmp_path) -> None:
+        mode_registry = ModeRegistry(state_path=tmp_path / "current_mode.json")
+        mode_registry.switch_mode("privacy")
+        middleware = PermissionMiddleware(
+            audit_log_path=tmp_path / "permissions.log",
+            mode_registry=mode_registry,
+        )
+
+        denied = middleware.check(PermissionRequest(tool_name="voice_microphone_capture"))
+        approved = middleware.check(
+            PermissionRequest(
+                tool_name="voice_microphone_capture",
+                arguments={"explicit_approval": True},
+            )
+        )
+
+        assert denied.action == "deny"
+        assert denied.matched_pattern == "privacy-voice-capture"
+        assert approved.action == "require_confirmation"
+
 
 class _FakeShellTool(BaseTool):
     tool_id = "shell_exec"

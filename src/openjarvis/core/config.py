@@ -1230,11 +1230,16 @@ class OperatorsConfig:
 class SpeechConfig:
     """Speech-to-text settings."""
 
-    backend: str = "auto"  # "auto", "faster-whisper", "openai", "deepgram"
+    backend: str = "auto"  # "auto", "whisper.cpp", "faster-whisper", "openai", "deepgram"
     model: str = "base"  # Whisper model size: tiny, base, small, medium, large-v3
     language: str = ""  # Empty = auto-detect
     device: str = "auto"  # "auto", "cpu", "cuda"
     compute_type: str = "float16"  # "float16", "int8", "float32"
+    voice_capture_enabled: bool = False
+    require_explicit_voice_approval: bool = True
+    persist_raw_audio: bool = False
+    max_recording_seconds: int = 120
+    macos_input_device: str = ":0"
 
 
 @dataclass(slots=True)
@@ -1896,6 +1901,14 @@ default_agent = "simple"
 # [channel.bluebubbles]
 # url = ""                # Or set BLUEBUBBLES_URL env var
 # password = ""           # Or set BLUEBUBBLES_PASSWORD env var
+
+[speech]
+backend = "auto"          # auto prefers whisper.cpp, then faster-whisper
+voice_capture_enabled = false
+require_explicit_voice_approval = true
+persist_raw_audio = false
+max_recording_seconds = 120
+macos_input_device = ":0" # ffmpeg avfoundation input, e.g. ":0"
 
 [security]
 enabled = true

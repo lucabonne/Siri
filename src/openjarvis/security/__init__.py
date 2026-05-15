@@ -1,29 +1,24 @@
-"""Security guardrails — scanners, engine wrapper, audit, SSRF."""
+"""Security guardrails, scanners, audit, SSRF, and permissions."""
 
 from __future__ import annotations
 
+import importlib
 import logging
 from dataclasses import dataclass
 from typing import Any, Optional
 
 from openjarvis.core.events import EventBus
-from openjarvis.security._stubs import BaseScanner
-from openjarvis.security.approval_queue import ApprovalQueue, ApprovalRecord
-from openjarvis.security.audit import AuditLogger
 from openjarvis.security.file_policy import (
     DEFAULT_SENSITIVE_PATTERNS,
     filter_sensitive_paths,
     is_sensitive_file,
 )
-from openjarvis.security.guardrails import GuardrailsEngine, SecurityBlockError
 from openjarvis.security.permissions import (
     PermissionDecision,
     PermissionLevel,
     PermissionMiddleware,
     PermissionRequest,
 )
-from openjarvis.security.scanner import PIIScanner, SecretScanner
-from openjarvis.security.ssrf import check_ssrf, is_private_ip
 from openjarvis.security.types import (
     RedactionMode,
     ScanFinding,
@@ -45,20 +40,43 @@ class SecurityContext:
     audit_logger: Any = None
 
 
+_LAZY_EXPORTS = {
+    "ApprovalQueue": ("openjarvis.security.approval_queue", "ApprovalQueue"),
+    "ApprovalRecord": ("openjarvis.security.approval_queue", "ApprovalRecord"),
+    "AuditLogger": ("openjarvis.security.audit", "AuditLogger"),
+    "BaseScanner": ("openjarvis.security._stubs", "BaseScanner"),
+    "GuardrailsEngine": ("openjarvis.security.guardrails", "GuardrailsEngine"),
+    "PIIScanner": ("openjarvis.security.scanner", "PIIScanner"),
+    "SecretScanner": ("openjarvis.security.scanner", "SecretScanner"),
+    "SecurityBlockError": ("openjarvis.security.guardrails", "SecurityBlockError"),
+    "check_ssrf": ("openjarvis.security.ssrf", "check_ssrf"),
+    "is_private_ip": ("openjarvis.security.ssrf", "is_private_ip"),
+}
+
+
+def __getattr__(name: str) -> Any:
+    if name in _LAZY_EXPORTS:
+        module_name, attr_name = _LAZY_EXPORTS[name]
+        value = getattr(importlib.import_module(module_name), attr_name)
+        globals()[name] = value
+        return value
+    raise AttributeError(f"module 'openjarvis.security' has no attribute {name!r}")
+
+
 def setup_security(
     config: Any,
     engine: Any,
     bus: Optional[EventBus] = None,
 ) -> SecurityContext:
-    """Apply security guardrails to an engine based on config.
-
-    Returns a SecurityContext. No-ops if config.security.enabled is False.
-    """
+    """Apply security guardrails to an engine based on config."""
     if not config.security.enabled:
         return SecurityContext(engine=engine)
 
-    # Scanners + engine wrapping
     try:
+        from openjarvis.security._stubs import BaseScanner
+        from openjarvis.security.guardrails import GuardrailsEngine
+        from openjarvis.security.scanner import PIIScanner, SecretScanner
+
         scanners: list[BaseScanner] = []
         if config.security.secret_scanner:
             scanners.append(SecretScanner())
@@ -78,7 +96,6 @@ def setup_security(
     except Exception as exc:
         logger.debug("Failed to set up security scanners: %s", exc)
 
-    # Capability policy
     cap_policy = None
     if config.security.capabilities.enabled:
         try:
@@ -90,9 +107,10 @@ def setup_security(
         except Exception as exc:
             logger.debug("Failed to set up capability policy: %s", exc)
 
-    # Audit logger
     audit = None
     try:
+        from openjarvis.security.audit import AuditLogger
+
         audit = AuditLogger(
             db_path=config.security.audit_log_path,
             bus=bus,

@@ -6,7 +6,10 @@ from openjarvis.context.models import (
     ProjectContext,
     RepoIndex,
     RepoSummary,
+    ScreenshotMetadata,
+    VisualContext,
 )
+from openjarvis.context.vision import VisionContextStore
 
 __all__ = [
     "ContextLayer",
@@ -14,4 +17,7 @@ __all__ = [
     "ProjectContext",
     "RepoIndex",
     "RepoSummary",
+    "ScreenshotMetadata",
+    "VisionContextStore",
+    "VisualContext",
 ]

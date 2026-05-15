@@ -19,6 +19,7 @@ class ModeConfig:
     preferred_agents: list[str]
     memory_behavior: dict[str, Any] = field(default_factory=dict)
     privacy_network_policy: dict[str, Any] = field(default_factory=dict)
+    voice_capture_behavior: dict[str, Any] = field(default_factory=dict)
     default_model_overrides: dict[str, Any] = field(default_factory=dict)
     ui_theme_metadata: dict[str, Any] = field(default_factory=dict)
     notification_behavior: dict[str, Any] = field(default_factory=dict)
@@ -35,6 +36,7 @@ class ModeConfig:
             preferred_agents=list(data.get("preferred_agents", [])),
             memory_behavior=dict(data.get("memory_behavior", {})),
             privacy_network_policy=dict(data.get("privacy_network_policy", {})),
+            voice_capture_behavior=dict(data.get("voice_capture_behavior", {})),
             default_model_overrides=dict(data.get("default_model_overrides", {})),
             ui_theme_metadata=dict(data.get("ui_theme_metadata", {})),
             notification_behavior=dict(data.get("notification_behavior", {})),
@@ -51,6 +53,10 @@ class ModeConfig:
     @property
     def localhost_only_network(self) -> bool:
         return self.privacy_network_policy.get("outbound_network") == "localhost_only"
+
+    @property
+    def voice_requires_explicit_approval(self) -> bool:
+        return self.voice_capture_behavior.get("requires_explicit_approval", True)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

@@ -36,6 +36,9 @@ def test_mode_config_includes_behavior_policy_and_ui_metadata(tmp_path) -> None:
     assert privacy.memory_behavior["write"] == "local_only"
     assert privacy.ui_theme_metadata["icon"] == "shield"
     assert privacy.notification_behavior["level"] == "security_only"
+    assert privacy.voice_capture_behavior["activation"] == "push_to_talk_only"
+    assert privacy.voice_capture_behavior["requires_explicit_approval"] is True
+    assert privacy.voice_requires_explicit_approval is True
 
 
 def test_switch_mode_persists_current_mode(tmp_path) -> None:

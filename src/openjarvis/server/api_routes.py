@@ -75,6 +75,16 @@ class OptimizeRunRequest(BaseModel):
     max_samples: int = 50
 
 
+class VoiceStartRecordingRequest(BaseModel):
+    agent_id: str = ""
+    approved: bool = False
+    persist_raw_audio: Optional[bool] = None
+
+
+class VoiceTranscribeLatestRequest(BaseModel):
+    language: str = ""
+
+
 # ---- Agent routes ----
 
 agents_router = APIRouter(prefix="/v1/agents", tags=["agents"])
@@ -950,6 +960,105 @@ async def speech_health(request: Request):
     }
 
 
+# ---- Voice push-to-talk routes ----
+
+voice_router = APIRouter(prefix="/v1/voice/ptt", tags=["voice"])
+
+
+def _get_voice_ptt_service(request: Request):
+    service = getattr(request.app.state, "voice_ptt_service", None)
+    if service is not None:
+        return service
+
+    from openjarvis.agent_workspace import AgentWorkspaceRegistry
+    from openjarvis.security.permissions import PermissionMiddleware
+    from openjarvis.voice import VoicePushToTalkService
+
+    config = getattr(request.app.state, "config", None)
+    mode_registry = getattr(request.app.state, "mode_registry", None)
+    workspace_registry = getattr(
+        request.app.state,
+        "agent_workspace_registry",
+        None,
+    )
+    if workspace_registry is None:
+        workspace_registry = AgentWorkspaceRegistry()
+        request.app.state.agent_workspace_registry = workspace_registry
+    permission_middleware = getattr(
+        request.app.state,
+        "permission_middleware",
+        None,
+    )
+    if permission_middleware is None:
+        permission_middleware = PermissionMiddleware(mode_registry=mode_registry)
+        request.app.state.permission_middleware = permission_middleware
+    service = VoicePushToTalkService(
+        config=config,
+        speech_backend=getattr(request.app.state, "speech_backend", None),
+        permission_middleware=permission_middleware,
+        mode_registry=mode_registry,
+        agent_workspace_registry=workspace_registry,
+        context_layer=getattr(request.app.state, "context_layer", None),
+    )
+    request.app.state.voice_ptt_service = service
+    return service
+
+
+def _voice_error(exc: Exception) -> HTTPException:
+    from openjarvis.voice import VoicePermissionError, VoiceRecordingError
+
+    if isinstance(exc, VoicePermissionError):
+        return HTTPException(status_code=403, detail=str(exc))
+    if isinstance(exc, VoiceRecordingError):
+        return HTTPException(status_code=409, detail=str(exc))
+    return HTTPException(status_code=500, detail=str(exc))
+
+
+@voice_router.post("/start")
+async def start_voice_recording(req: VoiceStartRecordingRequest, request: Request):
+    """Start explicit push-to-talk microphone recording."""
+    service = _get_voice_ptt_service(request)
+    try:
+        metadata = service.start_recording(
+            agent_id=req.agent_id,
+            explicit_approval=req.approved,
+            persist_raw_audio=req.persist_raw_audio,
+        )
+        return {"status": service.status(), "recording": metadata.to_dict()}
+    except Exception as exc:
+        raise _voice_error(exc) from exc
+
+
+@voice_router.post("/stop")
+async def stop_voice_recording(request: Request):
+    """Stop the active push-to-talk recording."""
+    service = _get_voice_ptt_service(request)
+    try:
+        metadata = service.stop_recording()
+        return {"status": service.status(), "recording": metadata.to_dict()}
+    except Exception as exc:
+        raise _voice_error(exc) from exc
+
+
+@voice_router.get("/status")
+async def voice_recording_status(request: Request):
+    """Return push-to-talk recording status."""
+    return _get_voice_ptt_service(request).status()
+
+
+@voice_router.post("/transcribe-latest")
+async def transcribe_latest_voice(
+    req: VoiceTranscribeLatestRequest,
+    request: Request,
+):
+    """Transcribe the latest stopped recording with a local backend."""
+    service = _get_voice_ptt_service(request)
+    try:
+        return service.transcribe_latest(language=req.language or None)
+    except Exception as exc:
+        raise _voice_error(exc) from exc
+
+
 # ---- Feedback routes ----
 
 feedback_router = APIRouter(prefix="/v1/feedback", tags=["feedback"])
@@ -1061,6 +1170,7 @@ def include_all_routes(app) -> None:
     app.include_router(websocket_router)
     app.include_router(learning_router)
     app.include_router(speech_router)
+    app.include_router(voice_router)
     app.include_router(feedback_router)
     app.include_router(optimize_router)
     app.include_router(agent_workspace_router)
@@ -1113,6 +1223,7 @@ __all__ = [
     "websocket_router",
     "learning_router",
     "speech_router",
+    "voice_router",
     "feedback_router",
     "optimize_router",
     "agent_workspace_router",

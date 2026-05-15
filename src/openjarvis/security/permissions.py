@@ -115,6 +115,7 @@ class PermissionMiddleware:
             "skill_manage",
             "text_to_speech",
             "user_profile_manage",
+            "vision_screenshot_capture",
         }
     )
     _CONFIRMED_TOOLS = frozenset(
@@ -139,6 +140,7 @@ class PermissionMiddleware:
             "storage_delete",
             "storage_put",
             "terminal_suggested_command_approval",
+            "voice_microphone_capture",
         }
     )
     _DANGEROUS_TOOLS = frozenset()
@@ -329,6 +331,20 @@ class PermissionMiddleware:
                     "privacy mode blocks outbound non-localhost networking",
                     "privacy-network-localhost-only",
                 )
+
+        if normalized in {"vision_screenshot_capture", "browser_screenshot"}:
+            return (
+                "privacy mode requires approval before screenshot capture",
+                "privacy-vision-screenshot",
+            )
+
+        if normalized == "voice_microphone_capture" and not arguments.get(
+            "explicit_approval"
+        ):
+            return (
+                "privacy mode requires explicit approval before voice capture",
+                "privacy-voice-capture",
+            )
 
         return None
 

@@ -19,6 +19,7 @@ import {
   GitBranch,
   Image,
   LockKeyhole,
+  Mic2,
   Package,
   Pin,
   Plus,
@@ -27,6 +28,7 @@ import {
   Search,
   ShieldAlert,
   ShieldCheck,
+  Square,
   TerminalSquare,
   Trash2,
   XCircle,
@@ -42,14 +44,18 @@ import {
   fetchRecentVisionScreenshots,
   fetchSecurityApprovals,
   fetchTerminalContext,
+  fetchVoicePttStatus,
   listWorkspaceAgents,
   listSiriModes,
   listMemories,
   requestTerminalCommandApproval,
   searchMemory,
   setMemoryPinned,
+  startVoicePttRecording,
   switchActiveWorkspaceAgent,
   switchActiveSiriMode,
+  stopVoicePttRecording,
+  transcribeLatestVoiceRecording,
 } from '../../lib/api';
 import type {
   MemorySearchResult,
@@ -59,6 +65,7 @@ import type {
   StructuredMemory,
   TerminalContextSnapshot,
   VisualContext,
+  VoicePttStatus,
   WorkspaceAgentConfig,
 } from '../../lib/api';
 import {
@@ -1021,6 +1028,176 @@ function TerminalSection() {
   );
 }
 
+function VoiceSection() {
+  const [status, setStatus] = useState<VoicePttStatus | null>(null);
+  const [transcript, setTranscript] = useState('');
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState<'idle' | 'starting' | 'stopping' | 'transcribing'>('idle');
+
+  const loadVoiceStatus = async () => {
+    try {
+      const data = await fetchVoicePttStatus();
+      setStatus(data);
+      setError('');
+    } catch {
+      setStatus(null);
+    }
+  };
+
+  useEffect(() => {
+    loadVoiceStatus();
+  }, []);
+
+  const startHold = async () => {
+    if (busy !== 'idle' || status?.recording) return;
+    setBusy('starting');
+    setTranscript('');
+    setError('');
+    try {
+      const response = await startVoicePttRecording(status?.active_agent_id || '');
+      setStatus(response.status);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Voice start failed');
+    } finally {
+      setBusy('idle');
+    }
+  };
+
+  const stopHold = async () => {
+    if (busy !== 'idle' || !status?.recording) return;
+    setBusy('stopping');
+    setError('');
+    try {
+      const response = await stopVoicePttRecording();
+      setStatus(response.status);
+      setBusy('transcribing');
+      const result = await transcribeLatestVoiceRecording();
+      setTranscript(result.text);
+      await loadVoiceStatus();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Voice stop failed');
+    } finally {
+      setBusy('idle');
+    }
+  };
+
+  const recording = status?.recording ?? false;
+  const latest = status?.latest;
+  const buttonBusy = busy !== 'idle';
+  const buttonLabel = recording ? 'Release to stop' : buttonBusy ? 'Working' : 'Hold to talk';
+  const stateLabel = recording ? 'Recording' : busy === 'transcribing' ? 'Transcribing' : 'Idle';
+
+  return (
+    <div className="grid gap-4 xl:grid-cols-[0.9fr_1.1fr]">
+      <ShellPanel title="Voice Push-to-Talk" action="manual">
+        <div className="grid gap-3 md:grid-cols-3">
+          <ContextTile
+            icon={<Mic2 size={15} />}
+            label="State"
+            value={stateLabel}
+            detail={status?.requires_explicit_approval ? 'Approval required' : 'Approved in settings'}
+          />
+          <ContextTile
+            icon={<ShieldCheck size={15} />}
+            label="Privacy"
+            value={status?.privacy_mode ? 'Privacy Mode' : 'Local'}
+            detail={latest?.persisted_raw_audio ? 'Raw audio kept' : 'Metadata only'}
+          />
+          <ContextTile
+            icon={<Brain size={15} />}
+            label="Agent"
+            value={status?.active_agent_id || 'Workspace'}
+            detail={status?.active_mode_id || 'mode pending'}
+          />
+        </div>
+
+        <div className="mt-5 flex flex-wrap items-center gap-3">
+          <button
+            type="button"
+            onPointerDown={(event) => {
+              event.preventDefault();
+              startHold();
+            }}
+            onPointerUp={(event) => {
+              event.preventDefault();
+              stopHold();
+            }}
+            onPointerLeave={() => {
+              if (recording) stopHold();
+            }}
+            disabled={buttonBusy}
+            className="inline-flex h-12 min-w-40 items-center justify-center gap-2 rounded-md border px-4 text-sm font-semibold transition-colors disabled:opacity-60"
+            style={{
+              borderColor: recording ? 'var(--color-error)' : 'var(--color-border)',
+              color: recording ? 'white' : 'var(--color-text)',
+              background: recording ? 'var(--color-error)' : 'var(--color-bg-secondary)',
+            }}
+            title="Hold to talk"
+          >
+            {recording ? <Square size={16} /> : <Mic2 size={17} />}
+            {buttonLabel}
+          </button>
+          <button
+            type="button"
+            onClick={loadVoiceStatus}
+            className="flex h-12 w-12 items-center justify-center rounded-md border transition-colors"
+            style={{
+              borderColor: 'var(--color-border)',
+              color: 'var(--color-text-secondary)',
+              background: 'var(--color-bg-secondary)',
+            }}
+            title="Refresh"
+          >
+            <RefreshCw size={16} />
+          </button>
+          <StatusPill tone={recording ? 'busy' : status?.privacy_mode ? 'watch' : 'quiet'}>
+            {recording ? 'Live capture' : status?.privacy_mode ? 'Privacy gate' : 'Ready'}
+          </StatusPill>
+        </div>
+
+        {error && (
+          <p className="mt-4 text-sm" style={{ color: 'var(--color-error)' }}>
+            {error}
+          </p>
+        )}
+      </ShellPanel>
+
+      <ShellPanel title="Transcript Preview" action="not sent">
+        <div
+          className="min-h-40 rounded-md border p-4 text-sm leading-6"
+          style={{
+            borderColor: 'var(--color-border)',
+            background: 'var(--color-bg-secondary)',
+            color: transcript ? 'var(--color-text)' : 'var(--color-text-tertiary)',
+          }}
+        >
+          {transcript || latest?.transcript_preview || 'No transcript yet'}
+        </div>
+        <div className="mt-4 grid gap-3 md:grid-cols-3">
+          <ContextTile
+            icon={<Clock3 size={15} />}
+            label="Duration"
+            value={latest?.duration_seconds ? `${latest.duration_seconds.toFixed(1)}s` : '0.0s'}
+            detail={latest?.stopped_at ? new Date(latest.stopped_at * 1000).toLocaleString() : 'No stop event'}
+          />
+          <ContextTile
+            icon={<Package size={15} />}
+            label="Bytes"
+            value={formatBytes(latest?.byte_size)}
+            detail={latest?.raw_audio_available ? 'Temporary audio' : 'No raw audio'}
+          />
+          <ContextTile
+            icon={<Activity size={15} />}
+            label="Backend"
+            value={latest?.backend || 'Local pending'}
+            detail="No agent dispatch"
+          />
+        </div>
+      </ShellPanel>
+    </div>
+  );
+}
+
 function VisionSection() {
   const [visualContext, setVisualContext] = useState<VisualContext | null>(null);
   const [screenshots, setScreenshots] = useState<ScreenshotMetadata[]>([]);
@@ -1453,6 +1630,7 @@ function ActiveSection({ section }: { section: MissionSectionId }) {
   if (section === 'agents') return <AgentsSection />;
   if (section === 'memory') return <MemorySection />;
   if (section === 'projects') return <ProjectsSection />;
+  if (section === 'voice') return <VoiceSection />;
   if (section === 'vision') return <VisionSection />;
   if (section === 'terminal') return <TerminalSection />;
   if (section === 'research') return <ResearchSection />;
@@ -1472,6 +1650,7 @@ const fallbackModes: SiriModeConfig[] = [
     preferred_agents: ['coding', 'engineering'],
     memory_behavior: {},
     privacy_network_policy: { outbound_network: 'allowed' },
+    voice_capture_behavior: {},
     default_model_overrides: {},
     ui_theme_metadata: { accent: 'blue' },
     notification_behavior: {},
@@ -1486,6 +1665,7 @@ const fallbackModes: SiriModeConfig[] = [
     preferred_agents: ['privacy', 'engineering'],
     memory_behavior: {},
     privacy_network_policy: { outbound_network: 'localhost_only', cloud_apis: 'disabled' },
+    voice_capture_behavior: { activation: 'push_to_talk_only', requires_explicit_approval: true },
     default_model_overrides: { engine: 'ollama' },
     ui_theme_metadata: { accent: 'emerald' },
     notification_behavior: {},

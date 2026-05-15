@@ -153,6 +153,47 @@ Deferred work remains intentionally untouched in this phase:
 - no OCR or cloud vision analysis
 - no screen control or click automation
 
+## Voice Push-to-Talk Phase 1
+
+Phase 1 adds explicit voice input for Siri without wake-word detection,
+always-on listening, background recording, or autonomous responses.
+
+- `src/openjarvis/voice/ptt.py` owns the push-to-talk state machine for
+  start, stop, status, and latest-recording transcription. It records only
+  after an explicit API call and never dispatches transcripts to an agent.
+- Local macOS microphone capture is supported through local recording tools
+  (`ffmpeg` avfoundation first, then `sox`/`rec`) and stores raw audio only in
+  a temporary local file unless `persist_raw_audio` is explicitly enabled.
+- Local-first transcription now prefers `whisper.cpp` and then
+  `faster-whisper`. Cloud speech backends remain available for legacy upload
+  transcription but are not used by the push-to-talk latest-recording path.
+- `/v1/voice/ptt/start`, `/stop`, `/status`, and `/transcribe-latest` expose
+  the Phase 1 recording APIs. `/v1/speech/transcribe` remains the existing
+  uploaded-audio compatibility endpoint.
+- `SpeechConfig` now defaults voice capture off, requires explicit voice
+  approval, disables raw audio persistence, and caps local recording duration
+  metadata for future enforcement.
+- `PermissionMiddleware` classifies microphone capture as confirmed execution.
+  Privacy Mode blocks voice capture unless the request includes explicit
+  push-to-talk approval.
+- The mode registry now carries `voice_capture_behavior` metadata for Privacy
+  Mode: push-to-talk only, wake word disabled, background recording disabled,
+  explicit approval required, local-only transcription, and raw audio storage
+  off by default.
+- The voice service records active mode, active workspace agent, agent memory
+  scopes, and passive Context Layer desktop/project snapshots as minimal
+  metadata while avoiding persistent raw audio by default.
+- Mission Control now includes a Voice tab with a hold-to-talk control,
+  recording indicator, local privacy/agent status, and transcript preview.
+
+Deferred work remains intentionally untouched in this phase:
+
+- no wake word
+- no passive listening
+- no autonomous transcript submission
+- no background microphone capture
+- no persistent raw audio unless explicitly enabled
+
 ## Terminal Co-Pilot Phase 1
 
 Phase 1 adds passive terminal awareness and local-only terminal debugging

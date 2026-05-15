@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import importlib
 from typing import TYPE_CHECKING, Optional
 
 if TYPE_CHECKING:
@@ -11,6 +12,7 @@ if TYPE_CHECKING:
 
 # Priority order: local first, then cloud
 DISCOVERY_ORDER = [
+    "whisper.cpp",
     "faster-whisper",
     "openai",
     "deepgram",
@@ -24,12 +26,26 @@ def _create_backend(
     """Try to instantiate a speech backend by registry key."""
     from openjarvis.core.registry import SpeechRegistry
 
+    module_name = {
+        "whisper.cpp": "whisper_cpp",
+        "faster-whisper": "faster_whisper",
+        "openai": "openai_whisper",
+        "deepgram": "deepgram",
+    }.get(key)
+    if module_name:
+        try:
+            importlib.import_module(f"openjarvis.speech.{module_name}")
+        except ImportError:
+            return None
+
     if not SpeechRegistry.contains(key):
         return None
 
     try:
         backend_cls = SpeechRegistry.get(key)
 
+        if key == "whisper.cpp":
+            return backend_cls()
         if key == "faster-whisper":
             return backend_cls(
                 model_size=config.speech.model,
@@ -58,12 +74,11 @@ def get_speech_backend(config: "JarvisConfig") -> Optional["SpeechBackend"]:
     If ``config.speech.backend`` is ``"auto"``, tries backends in
     priority order and returns the first healthy one.
     """
-    # Trigger registration of built-in backends
-    import openjarvis.speech  # noqa: F401
-
     backend_key = config.speech.backend
 
     if backend_key != "auto":
+        if backend_key not in set(DISCOVERY_ORDER):
+            return None
         return _create_backend(backend_key, config)
 
     # Auto-discovery: try each in priority order

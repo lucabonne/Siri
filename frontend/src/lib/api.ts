@@ -314,6 +314,7 @@ export interface SiriModeConfig {
   preferred_agents: string[];
   memory_behavior: Record<string, unknown>;
   privacy_network_policy: Record<string, unknown>;
+  voice_capture_behavior: Record<string, unknown>;
   default_model_overrides: Record<string, unknown>;
   ui_theme_metadata: Record<string, unknown>;
   notification_behavior: Record<string, unknown>;
@@ -645,6 +646,51 @@ export interface SpeechHealth {
   reason?: string;
 }
 
+export interface VoiceRecordingMetadata {
+  id: string;
+  state: string;
+  activation: string;
+  started_at: number;
+  stopped_at: number | null;
+  duration_seconds: number;
+  byte_size: number;
+  format: string;
+  backend: string;
+  agent_id: string;
+  active_mode_id: string;
+  privacy_mode: boolean;
+  explicit_approval: boolean;
+  persisted_raw_audio: boolean;
+  raw_audio_available: boolean;
+  transcript_preview: string;
+  context: Record<string, unknown>;
+}
+
+export interface VoicePttStatus {
+  state: 'idle' | 'recording' | string;
+  recording: boolean;
+  push_to_talk_only: boolean;
+  wake_word_enabled: boolean;
+  passive_listening: boolean;
+  capture_enabled: boolean;
+  requires_explicit_approval: boolean;
+  privacy_mode: boolean;
+  active_mode_id: string;
+  active_agent_id: string;
+  latest: VoiceRecordingMetadata | null;
+}
+
+export interface VoicePttStartResponse {
+  status: VoicePttStatus;
+  recording: VoiceRecordingMetadata;
+}
+
+export interface VoiceTranscriptResult extends TranscriptionResult {
+  metadata: VoiceRecordingMetadata;
+  passive_only: boolean;
+  dispatched_to_agent: boolean;
+}
+
 export async function transcribeAudio(audioBlob: Blob, filename = 'recording.webm'): Promise<TranscriptionResult> {
   if (isTauri()) {
     try {
@@ -677,6 +723,38 @@ export async function fetchSpeechHealth(): Promise<SpeechHealth> {
   }
   const res = await fetch(`${getBase()}/v1/speech/health`);
   if (!res.ok) return { available: false };
+  return res.json();
+}
+
+export async function fetchVoicePttStatus(): Promise<VoicePttStatus> {
+  const res = await fetch(`${getBase()}/v1/voice/ptt/status`);
+  if (!res.ok) throw new Error(`Failed to fetch voice status: ${res.status}`);
+  return res.json();
+}
+
+export async function startVoicePttRecording(agentId = ''): Promise<VoicePttStartResponse> {
+  const res = await fetch(`${getBase()}/v1/voice/ptt/start`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ agent_id: agentId, approved: true }),
+  });
+  if (!res.ok) throw new Error(`Failed to start voice recording: ${res.status}`);
+  return res.json();
+}
+
+export async function stopVoicePttRecording(): Promise<VoicePttStartResponse> {
+  const res = await fetch(`${getBase()}/v1/voice/ptt/stop`, { method: 'POST' });
+  if (!res.ok) throw new Error(`Failed to stop voice recording: ${res.status}`);
+  return res.json();
+}
+
+export async function transcribeLatestVoiceRecording(): Promise<VoiceTranscriptResult> {
+  const res = await fetch(`${getBase()}/v1/voice/ptt/transcribe-latest`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  if (!res.ok) throw new Error(`Failed to transcribe voice recording: ${res.status}`);
   return res.json();
 }
 

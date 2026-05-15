@@ -244,6 +244,15 @@ DEFAULT_MODE_CONFIGS = [
             "localhost_network": "allowed",
             "allowed_engines": ["ollama", "local", "llamacpp", "vllm"],
         },
+        "voice_capture_behavior": {
+            "enabled_by_default": False,
+            "activation": "push_to_talk_only",
+            "wake_word": "disabled",
+            "background_recording": "disabled",
+            "requires_explicit_approval": True,
+            "raw_audio_storage": "off_by_default",
+            "transcription": "local_only",
+        },
         "default_model_overrides": {
             "engine": "ollama",
             "model": "",
