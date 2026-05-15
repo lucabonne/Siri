@@ -13,6 +13,7 @@ import {
   Clock3,
   Clipboard,
   Code2,
+  Cpu,
   Eye,
   FolderGit2,
   Gauge,
@@ -38,6 +39,7 @@ import {
   captureVisionScreenshot,
   decideSecurityApproval,
   deleteMemory,
+  fetchCodingPanel,
   fetchLatestVisualContext,
   fetchLocalContextSnapshot,
   fetchPermissionAudit,
@@ -71,6 +73,7 @@ import type {
   VisualContext,
   VoicePttStatus,
   WorkspaceAgentConfig,
+  CodingPanelSnapshot,
 } from '../../lib/api';
 import {
   approvalQueue,
@@ -1024,6 +1027,191 @@ function RepoSection() {
   );
 }
 
+function CodingSection() {
+  const [panel, setPanel] = useState<CodingPanelSnapshot | null>(null);
+  const [status, setStatus] = useState<'loading' | 'ready' | 'offline'>('loading');
+
+  const loadCodingPanel = async () => {
+    setStatus('loading');
+    try {
+      const data = await fetchCodingPanel();
+      setPanel(data);
+      setStatus('ready');
+    } catch {
+      setPanel(null);
+      setStatus('offline');
+    }
+  };
+
+  useEffect(() => {
+    loadCodingPanel();
+  }, []);
+
+  const stack = panel?.current_stack;
+  const build = panel?.build_health;
+  const health = panel?.repo_health;
+  const architecture = panel?.architecture_overview;
+  const recentErrors = panel?.recent_errors ?? [];
+  const fixes = panel?.suggested_fixes ?? [];
+  const stackLabels = [
+    ...(stack?.specializations ?? []),
+    ...(stack?.frameworks ?? []),
+    ...(stack?.build_systems ?? []),
+  ];
+
+  return (
+    <div className="grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">
+      <ShellPanel title="Build Health" action={status === 'ready' ? 'local only' : status}>
+        <div className="grid gap-3 md:grid-cols-3">
+          <ContextTile
+            icon={<Gauge size={15} />}
+            label="Build"
+            value={build?.status || 'Unknown'}
+            detail={build?.summary || 'No build output captured'}
+          />
+          <ContextTile
+            icon={<Activity size={15} />}
+            label="Repo"
+            value={health ? `${health.score}/100` : 'Unknown'}
+            detail={health?.status || 'No health signal'}
+          />
+          <ContextTile
+            icon={<LockKeyhole size={15} />}
+            label="Mode"
+            value={panel?.privacy_mode ? 'Privacy' : 'Local'}
+            detail={panel?.cloud_uploaded ? 'Cloud upload detected' : 'No cloud upload'}
+          />
+        </div>
+        <div className="mt-4 flex flex-wrap gap-2">
+          {(stackLabels.length ? stackLabels : ['No stack detected']).slice(0, 12).map((item) => (
+            <StatusPill key={item} tone="quiet">{item}</StatusPill>
+          ))}
+        </div>
+        <div className="mt-4 flex gap-2">
+          <button
+            type="button"
+            onClick={loadCodingPanel}
+            className="inline-flex h-10 items-center gap-2 rounded-md border px-3 text-sm"
+            style={{ borderColor: 'var(--color-border)', color: 'var(--color-text)' }}
+          >
+            <RefreshCw size={16} />
+            <span>Refresh</span>
+          </button>
+        </div>
+      </ShellPanel>
+
+      <ShellPanel title="Current Stack" action={stack?.project_type || 'unknown'}>
+        <div className="grid gap-3 md:grid-cols-2">
+          <ContextTile
+            icon={<Code2 size={15} />}
+            label="Languages"
+            value={joinStack(stack?.languages ?? [])}
+            detail={joinStack(stack?.package_managers ?? [])}
+          />
+          <ContextTile
+            icon={<Cpu size={15} />}
+            label="Runtime"
+            value={stack?.java_version ? `Java ${stack.java_version}` : stack?.node_package_manager || 'Mixed'}
+            detail={stack?.minecraft_version ? `Minecraft ${stack.minecraft_version}` : joinStack(stack?.build_systems ?? [])}
+          />
+        </div>
+        <div className="mt-4 grid gap-2">
+          {(health?.strengths ?? []).slice(0, 4).map((item) => (
+            <div key={item} className="rounded-md border px-3 py-2 text-sm" style={{ borderColor: 'var(--color-border)', color: 'var(--color-text-secondary)' }}>
+              {item}
+            </div>
+          ))}
+          {!(health?.strengths ?? []).length && (
+            <div className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
+              Stack signals will appear after the local index runs.
+            </div>
+          )}
+        </div>
+      </ShellPanel>
+
+      <ShellPanel title="Recent Errors" action={`${recentErrors.length} detected`}>
+        <div className="space-y-3">
+          {recentErrors.length === 0 && (
+            <div className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
+              No recent build or terminal errors are captured.
+            </div>
+          )}
+          {recentErrors.slice(0, 5).map((error) => (
+            <div key={error.category} className="rounded-md border p-3" style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg-secondary)' }}>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="text-sm font-semibold" style={{ color: 'var(--color-text)' }}>{error.category}</span>
+                <StatusPill tone={error.severity === 'error' ? 'watch' : 'quiet'}>{error.severity}</StatusPill>
+              </div>
+              <p className="mt-2 text-sm" style={{ color: 'var(--color-text-secondary)' }}>{error.summary}</p>
+              {!!error.evidence.length && (
+                <div className="mt-2 truncate font-mono text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+                  {error.evidence[0]}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      </ShellPanel>
+
+      <ShellPanel title="Suggested Fixes" action="advisory">
+        <div className="space-y-3">
+          {fixes.slice(0, 6).map((fix) => (
+            <div key={`${fix.title}-${fix.command}`} className="rounded-md border p-3" style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg-secondary)' }}>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="text-sm font-semibold" style={{ color: 'var(--color-text)' }}>{fix.title}</span>
+                <StatusPill tone={fix.risk === 'medium' ? 'watch' : 'quiet'}>{fix.risk}</StatusPill>
+              </div>
+              <p className="mt-2 text-sm" style={{ color: 'var(--color-text-secondary)' }}>{fix.rationale}</p>
+              {fix.command && (
+                <div className="mt-2 truncate font-mono text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+                  {fix.command}
+                </div>
+              )}
+            </div>
+          ))}
+          {fixes.length === 0 && (
+            <div className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
+              Suggestions will appear when the analyzer has build output or repo health signals.
+            </div>
+          )}
+        </div>
+      </ShellPanel>
+
+      <ShellPanel title="Architecture Overview" action="repo aware">
+        <p className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
+          {architecture?.summary || 'Architecture explanation will appear after repo indexing completes.'}
+        </p>
+        <div className="mt-4 grid gap-2">
+          {(architecture?.major_systems ?? []).slice(0, 6).map((system) => (
+            <div key={valueAsString(system.name)} className="grid gap-2 rounded-md border p-3 md:grid-cols-[1fr_80px_1.2fr]" style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg-secondary)' }}>
+              <span className="truncate text-sm font-semibold" style={{ color: 'var(--color-text)' }}>{valueAsString(system.name)}</span>
+              <span className="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>{valueAsString(system.file_count)} files</span>
+              <span className="truncate text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+                {Object.keys((system.languages as Record<string, unknown>) || {}).join(', ') || 'mixed'}
+              </span>
+            </div>
+          ))}
+        </div>
+      </ShellPanel>
+
+      <ShellPanel title="Risky Refactors" action="passive">
+        <div className="space-y-2">
+          {(architecture?.risky_refactors ?? health?.concerns ?? []).slice(0, 8).map((item) => (
+            <div key={item} className="rounded-md border px-3 py-2 text-sm" style={{ borderColor: 'var(--color-border)', color: 'var(--color-text-secondary)' }}>
+              {item}
+            </div>
+          ))}
+          {!(architecture?.risky_refactors ?? health?.concerns ?? []).length && (
+            <div className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
+              No refactor risks detected yet.
+            </div>
+          )}
+        </div>
+      </ShellPanel>
+    </div>
+  );
+}
+
 function TerminalSection() {
   const [context, setContext] = useState<TerminalContextSnapshot | null>(null);
   const [live, setLive] = useState(false);
@@ -1847,6 +2035,7 @@ function ActiveSection({ section }: { section: MissionSectionId }) {
   if (section === 'agents') return <AgentsSection />;
   if (section === 'memory') return <MemorySection />;
   if (section === 'projects') return <ProjectsSection />;
+  if (section === 'coding') return <CodingSection />;
   if (section === 'repo') return <RepoSection />;
   if (section === 'voice') return <VoiceSection />;
   if (section === 'vision') return <VisionSection />;

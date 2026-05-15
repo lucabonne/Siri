@@ -554,6 +554,95 @@ export interface TerminalContextSnapshot {
   local_only: boolean;
 }
 
+export interface CodingStackProfile {
+  languages: string[];
+  frameworks: string[];
+  build_systems: string[];
+  package_managers: string[];
+  specializations: string[];
+  project_type: string;
+  java_version: string;
+  minecraft_version: string;
+  loom_version: string;
+  node_package_manager: string;
+  vite_present: boolean;
+  rust_workspace: boolean;
+  python_project: boolean;
+  local_only: boolean;
+  passive_only: boolean;
+}
+
+export interface CodingBuildFailure {
+  category: string;
+  severity: string;
+  summary: string;
+  evidence: string[];
+  likely_causes: string[];
+  safe_fixes: string[];
+  related_stack: string[];
+}
+
+export interface CodingSafeFixSuggestion {
+  title: string;
+  rationale: string;
+  steps: string[];
+  risk: string;
+  command: string;
+  permission_preview: Record<string, unknown>;
+  passive_only: boolean;
+}
+
+export interface CodingBuildAnalysis {
+  has_failure: boolean;
+  status: string;
+  command: string;
+  exit_code: number | null;
+  summary: string;
+  failures: CodingBuildFailure[];
+  suggested_fixes: CodingSafeFixSuggestion[];
+  privacy_mode: boolean;
+  local_only: boolean;
+  passive_only: boolean;
+}
+
+export interface CodingArchitectureOverview {
+  summary: string;
+  entry_points: string[];
+  major_systems: Array<Record<string, unknown>>;
+  dependencies: Array<Record<string, string>>;
+  risky_refactors: string[];
+  debugging_entry_points: string[];
+  privacy_mode: boolean;
+  local_only: boolean;
+  passive_only: boolean;
+}
+
+export interface CodingProjectHealth {
+  status: string;
+  score: number;
+  strengths: string[];
+  concerns: string[];
+  next_steps: string[];
+  stack: CodingStackProfile;
+  privacy_mode: boolean;
+  local_only: boolean;
+  passive_only: boolean;
+}
+
+export interface CodingPanelSnapshot {
+  build_health: CodingBuildAnalysis;
+  repo_health: CodingProjectHealth;
+  current_stack: CodingStackProfile;
+  recent_errors: CodingBuildFailure[];
+  suggested_fixes: CodingSafeFixSuggestion[];
+  architecture_overview: CodingArchitectureOverview | null;
+  active_agent: Record<string, unknown>;
+  privacy_mode: boolean;
+  local_only: boolean;
+  passive_only: boolean;
+  cloud_uploaded: boolean;
+}
+
 export async function fetchDesktopContext(): Promise<DesktopContext> {
   const res = await fetch(`${getBase()}/v1/context/desktop`);
   if (!res.ok) throw new Error(`Failed to fetch desktop context: ${res.status}`);
@@ -606,6 +695,13 @@ export async function searchRepoIndex(
   if (!res.ok) throw new Error(`Failed to search repo index: ${res.status}`);
   const data = await res.json();
   return data.results || [];
+}
+
+export async function fetchCodingPanel(cwd?: string): Promise<CodingPanelSnapshot> {
+  const params = cwd ? `?cwd=${encodeURIComponent(cwd)}` : '';
+  const res = await fetch(`${getBase()}/v1/coding/panel${params}`);
+  if (!res.ok) throw new Error(`Failed to fetch coding panel: ${res.status}`);
+  return res.json();
 }
 
 export async function fetchLocalContextSnapshot(): Promise<LocalContextSnapshot> {

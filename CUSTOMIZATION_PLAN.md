@@ -162,6 +162,47 @@ Deferred work remains intentionally untouched in this phase:
 - no background watchers
 - no cloud embeddings or outbound repository uploads
 
+## Coding Assistant Specialization Phase 1
+
+Phase 1 adds passive developer intelligence on top of the repo index, terminal
+co-pilot, context layer, agent workspace, memory, and permission systems.
+
+- `src/openjarvis/coding_assistant/` owns specialized advisory modules for
+  Gradle, Fabric, Minecraft mods, Java, debugging, architecture guidance,
+  refactor guidance, build analysis, typed models, and the coordinating
+  service.
+- Stack specialization detects Gradle, Fabric, Minecraft mods, Loom, Java 21,
+  Node/Vite, Rust, and Python by reading local manifests and indexed files.
+- Build analysis classifies Gradle task failures, Java/toolchain mismatches,
+  Fabric metadata and mixin issues, Minecraft mapping/remap failures,
+  Node/Vite/TypeScript errors, Rust compiler diagnostics, and Python
+  tracebacks.
+- Repo-aware guidance identifies entry points, major modules, dependency
+  hints, risky refactors, and debugging entry points from the semantic repo
+  index and architecture map.
+- Terminal Co-Pilot output can feed the coding panel, but the coding assistant
+  only summarizes and suggests next diagnostic steps. It does not execute
+  commands or modify code.
+- Suggested diagnostic commands are passed through `PermissionMiddleware` in
+  dry-run mode so Mission Control can show approval metadata without running
+  anything.
+- Memory integration reuses explicit repo-index snapshots when requested and
+  skips memory persistence in Privacy Mode.
+- `/v1/coding/analyze-build`, `/architecture`, `/debugging-summary`,
+  `/safe-fixes`, `/health`, and `/panel` expose local-only passive APIs.
+- Mission Control now includes a Coding tab for build health, repo health,
+  current stack, recent errors, suggested fixes, architecture overview, and
+  risky refactor notes.
+- Privacy Mode keeps analysis local, suppresses memory persistence, and
+  reports no cloud uploads.
+
+Deferred work remains intentionally untouched in this phase:
+
+- no autonomous refactors
+- no automatic code modification
+- no autonomous terminal execution
+- no cloud build/debug analysis
+
 ## Vision Layer Phase 1
 
 Phase 1 adds passive screenshot context for Siri without enabling autonomous
