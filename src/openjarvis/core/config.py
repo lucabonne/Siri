@@ -1230,7 +1230,7 @@ class OperatorsConfig:
 class SpeechConfig:
     """Speech-to-text settings."""
 
-    backend: str = "auto"  # "auto", "whisper.cpp", "faster-whisper", "openai", "deepgram"
+    backend: str = "auto"  # "auto", "faster-whisper", "whisper.cpp", "openai", "deepgram"
     model: str = "base"  # Whisper model size: tiny, base, small, medium, large-v3
     language: str = ""  # Empty = auto-detect
     device: str = "auto"  # "auto", "cpu", "cuda"
@@ -1903,7 +1903,7 @@ default_agent = "simple"
 # password = ""           # Or set BLUEBUBBLES_PASSWORD env var
 
 [speech]
-backend = "auto"          # auto prefers whisper.cpp, then faster-whisper
+backend = "auto"          # auto prefers faster-whisper, then whisper.cpp
 voice_capture_enabled = false
 require_explicit_voice_approval = true
 persist_raw_audio = false

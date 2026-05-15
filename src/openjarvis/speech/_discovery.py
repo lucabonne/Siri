@@ -12,8 +12,8 @@ if TYPE_CHECKING:
 
 # Priority order: local first, then cloud
 DISCOVERY_ORDER = [
-    "whisper.cpp",
     "faster-whisper",
+    "whisper.cpp",
     "openai",
     "deepgram",
 ]

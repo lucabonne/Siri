@@ -971,6 +971,7 @@ def _get_voice_ptt_service(request: Request):
         return service
 
     from openjarvis.agent_workspace import AgentWorkspaceRegistry
+    from openjarvis.security.approval_queue import ApprovalQueue
     from openjarvis.security.permissions import PermissionMiddleware
     from openjarvis.voice import VoicePushToTalkService
 
@@ -992,13 +993,19 @@ def _get_voice_ptt_service(request: Request):
     if permission_middleware is None:
         permission_middleware = PermissionMiddleware(mode_registry=mode_registry)
         request.app.state.permission_middleware = permission_middleware
+    approval_queue = getattr(request.app.state, "approval_queue", None)
+    if approval_queue is None:
+        approval_queue = ApprovalQueue()
+        request.app.state.approval_queue = approval_queue
     service = VoicePushToTalkService(
         config=config,
         speech_backend=getattr(request.app.state, "speech_backend", None),
         permission_middleware=permission_middleware,
+        approval_queue=approval_queue,
         mode_registry=mode_registry,
         agent_workspace_registry=workspace_registry,
         context_layer=getattr(request.app.state, "context_layer", None),
+        memory_service=getattr(request.app.state, "structured_memory_service", None),
     )
     request.app.state.voice_ptt_service = service
     return service
@@ -1008,7 +1015,10 @@ def _voice_error(exc: Exception) -> HTTPException:
     from openjarvis.voice import VoicePermissionError, VoiceRecordingError
 
     if isinstance(exc, VoicePermissionError):
-        return HTTPException(status_code=403, detail=str(exc))
+        return HTTPException(
+            status_code=403,
+            detail={"status": "blocked", "reason": str(exc)},
+        )
     if isinstance(exc, VoiceRecordingError):
         return HTTPException(status_code=409, detail=str(exc))
     return HTTPException(status_code=500, detail=str(exc))
@@ -1019,12 +1029,16 @@ async def start_voice_recording(req: VoiceStartRecordingRequest, request: Reques
     """Start explicit push-to-talk microphone recording."""
     service = _get_voice_ptt_service(request)
     try:
-        metadata = service.start_recording(
+        session = service.start_recording(
             agent_id=req.agent_id,
             explicit_approval=req.approved,
             persist_raw_audio=req.persist_raw_audio,
         )
-        return {"status": service.status(), "recording": metadata.to_dict()}
+        return {
+            "status": service.status(),
+            "session": session.to_dict(),
+            "recording": session.to_dict(),
+        }
     except Exception as exc:
         raise _voice_error(exc) from exc
 
@@ -1034,8 +1048,12 @@ async def stop_voice_recording(request: Request):
     """Stop the active push-to-talk recording."""
     service = _get_voice_ptt_service(request)
     try:
-        metadata = service.stop_recording()
-        return {"status": service.status(), "recording": metadata.to_dict()}
+        session = service.stop_recording()
+        return {
+            "status": service.status(),
+            "session": session.to_dict(),
+            "recording": session.to_dict(),
+        }
     except Exception as exc:
         raise _voice_error(exc) from exc
 

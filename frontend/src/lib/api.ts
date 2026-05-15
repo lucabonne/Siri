@@ -646,23 +646,32 @@ export interface SpeechHealth {
   reason?: string;
 }
 
-export interface VoiceRecordingMetadata {
+export interface VoiceIntentPreview {
+  transcript: string;
+  interpreted_intent: string;
+  planned_actions: string[];
+  risk_level: string;
+  approval_required: boolean;
+}
+
+export interface VoiceSession {
   id: string;
-  state: string;
-  activation: string;
+  status: string;
   started_at: number;
   stopped_at: number | null;
+  duration: number;
   duration_seconds: number;
-  byte_size: number;
-  format: string;
-  backend: string;
-  agent_id: string;
-  active_mode_id: string;
-  privacy_mode: boolean;
-  explicit_approval: boolean;
+  audio_path: string;
+  transcript: string;
+  active_agent: string;
+  active_mode: string;
+  permission_decisions: Array<Record<string, unknown>>;
+  invoked_tools: string[];
   persisted_raw_audio: boolean;
   raw_audio_available: boolean;
-  transcript_preview: string;
+  byte_size: number;
+  backend: string;
+  intent_preview: VoiceIntentPreview | null;
   context: Record<string, unknown>;
 }
 
@@ -677,16 +686,22 @@ export interface VoicePttStatus {
   privacy_mode: boolean;
   active_mode_id: string;
   active_agent_id: string;
-  latest: VoiceRecordingMetadata | null;
+  transcription_available: boolean;
+  latest: VoiceSession | null;
 }
 
 export interface VoicePttStartResponse {
   status: VoicePttStatus;
-  recording: VoiceRecordingMetadata;
+  session: VoiceSession;
+  recording: VoiceSession;
 }
 
 export interface VoiceTranscriptResult extends TranscriptionResult {
-  metadata: VoiceRecordingMetadata;
+  status: string;
+  reason?: string;
+  intent_preview?: VoiceIntentPreview;
+  session: VoiceSession;
+  metadata: VoiceSession;
   passive_only: boolean;
   dispatched_to_agent: boolean;
 }

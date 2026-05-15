@@ -1083,6 +1083,7 @@ function VoiceSection() {
 
   const recording = status?.recording ?? false;
   const latest = status?.latest;
+  const intent = latest?.intent_preview;
   const buttonBusy = busy !== 'idle';
   const buttonLabel = recording ? 'Release to stop' : buttonBusy ? 'Working' : 'Hold to talk';
   const stateLabel = recording ? 'Recording' : busy === 'transcribing' ? 'Transcribing' : 'Idle';
@@ -1106,8 +1107,8 @@ function VoiceSection() {
           <ContextTile
             icon={<Brain size={15} />}
             label="Agent"
-            value={status?.active_agent_id || 'Workspace'}
-            detail={status?.active_mode_id || 'mode pending'}
+            value={latest?.active_agent || status?.active_agent_id || 'Workspace'}
+            detail={latest?.active_mode || status?.active_mode_id || 'mode pending'}
           />
         </div>
 
@@ -1151,7 +1152,10 @@ function VoiceSection() {
             <RefreshCw size={16} />
           </button>
           <StatusPill tone={recording ? 'busy' : status?.privacy_mode ? 'watch' : 'quiet'}>
-            {recording ? 'Live capture' : status?.privacy_mode ? 'Privacy gate' : 'Ready'}
+          {recording ? 'Live capture' : status?.privacy_mode ? 'Privacy gate' : 'Ready'}
+          </StatusPill>
+          <StatusPill tone={status?.transcription_available ? 'good' : 'watch'}>
+            {status?.transcription_available ? 'Local STT' : 'STT unavailable'}
           </StatusPill>
         </div>
 
@@ -1168,10 +1172,10 @@ function VoiceSection() {
           style={{
             borderColor: 'var(--color-border)',
             background: 'var(--color-bg-secondary)',
-            color: transcript ? 'var(--color-text)' : 'var(--color-text-tertiary)',
+            color: transcript || latest?.transcript ? 'var(--color-text)' : 'var(--color-text-tertiary)',
           }}
         >
-          {transcript || latest?.transcript_preview || 'No transcript yet'}
+          {transcript || latest?.transcript || 'No transcript yet'}
         </div>
         <div className="mt-4 grid gap-3 md:grid-cols-3">
           <ContextTile
@@ -1191,6 +1195,26 @@ function VoiceSection() {
             label="Backend"
             value={latest?.backend || 'Local pending'}
             detail="No agent dispatch"
+          />
+        </div>
+        <div className="mt-4 grid gap-3 md:grid-cols-3">
+          <ContextTile
+            icon={<Search size={15} />}
+            label="Intent"
+            value={intent?.interpreted_intent || 'Pending'}
+            detail={intent?.planned_actions?.[0] || 'Preview only'}
+          />
+          <ContextTile
+            icon={<ShieldAlert size={15} />}
+            label="Risk"
+            value={intent?.risk_level || 'Unknown'}
+            detail={intent?.approval_required ? 'Approval required' : 'No execution'}
+          />
+          <ContextTile
+            icon={<LockKeyhole size={15} />}
+            label="Local"
+            value="Local only"
+            detail="No wake word"
           />
         </div>
       </ShellPanel>
