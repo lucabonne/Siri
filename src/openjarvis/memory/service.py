@@ -151,6 +151,17 @@ class MemoryService:
                 FOREIGN KEY(task_id) REFERENCES tasks(id) ON DELETE SET NULL
             );
 
+            CREATE TABLE IF NOT EXISTS repo_index_snapshots (
+                id TEXT PRIMARY KEY,
+                repo_root TEXT NOT NULL,
+                current_branch TEXT NOT NULL DEFAULT '',
+                project_type TEXT NOT NULL DEFAULT 'unknown',
+                detected_stack TEXT NOT NULL DEFAULT '{}',
+                architecture_metadata TEXT NOT NULL DEFAULT '{}',
+                summary TEXT NOT NULL DEFAULT '{}',
+                created_at TEXT NOT NULL
+            );
+
             CREATE TABLE IF NOT EXISTS daily_briefings (
                 id TEXT PRIMARY KEY,
                 briefing_date TEXT NOT NULL,
@@ -165,6 +176,8 @@ class MemoryService:
             CREATE INDEX IF NOT EXISTS idx_memories_type ON memories(memory_type);
             CREATE INDEX IF NOT EXISTS idx_memories_created ON memories(created_at);
             CREATE INDEX IF NOT EXISTS idx_memories_pinned ON memories(pinned);
+            CREATE INDEX IF NOT EXISTS idx_repo_index_root
+            ON repo_index_snapshots(repo_root);
             """
         )
         try:
@@ -434,6 +447,75 @@ class MemoryService:
         ).fetchall()
         return [self._row_to_command_history(row) for row in rows]
 
+    def record_repo_index_summary(self, summary: dict[str, Any]) -> dict[str, Any]:
+        """Persist a local repo indexing snapshot for memory-aware context.
+
+        This stores metadata and summaries only; file contents are not copied
+        into the memory database.
+        """
+        repo_root = str(summary.get("root") or summary.get("git_repository") or "")
+        if not repo_root.strip():
+            raise ValueError("repo root cannot be empty")
+        snapshot_id = str(uuid.uuid4())
+        detected_stack = summary.get("detected_stack") or {}
+        architecture = summary.get("architecture") or {}
+        architecture_metadata = architecture.get("metadata", {})
+        now = _utc_now()
+        self._conn.execute(
+            """
+            INSERT INTO repo_index_snapshots (
+                id, repo_root, current_branch, project_type, detected_stack,
+                architecture_metadata, summary, created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                snapshot_id,
+                repo_root,
+                str(summary.get("current_branch") or ""),
+                str(detected_stack.get("project_type") or "unknown"),
+                _json_dumps(detected_stack),
+                _json_dumps(architecture_metadata),
+                _json_dumps(
+                    {
+                        "file_count": summary.get("file_count", 0),
+                        "indexed_file_count": summary.get("indexed_file_count", 0),
+                        "languages": summary.get("languages", {}),
+                        "local_only": True,
+                        "passive_only": True,
+                    }
+                ),
+                now,
+            ),
+        )
+        self._conn.commit()
+        return self.get_repo_index_snapshot(snapshot_id)
+
+    def get_repo_index_snapshot(self, snapshot_id: str) -> dict[str, Any]:
+        row = self._conn.execute(
+            "SELECT * FROM repo_index_snapshots WHERE id = ?",
+            (snapshot_id,),
+        ).fetchone()
+        if row is None:
+            raise KeyError(snapshot_id)
+        return self._row_to_repo_index_snapshot(row)
+
+    def list_repo_index_snapshots(
+        self,
+        *,
+        repo_root: str | None = None,
+        limit: int = 20,
+    ) -> list[dict[str, Any]]:
+        sql = "SELECT * FROM repo_index_snapshots WHERE 1 = 1"
+        params: list[Any] = []
+        if repo_root:
+            sql += " AND repo_root = ?"
+            params.append(repo_root)
+        sql += " ORDER BY created_at DESC LIMIT ?"
+        params.append(max(1, min(limit, 100)))
+        rows = self._conn.execute(sql, params).fetchall()
+        return [self._row_to_repo_index_snapshot(row) for row in rows]
+
     def count(self) -> int:
         row = self._conn.execute("SELECT COUNT(*) AS count FROM memories").fetchone()
         return int(row["count"])
@@ -606,6 +688,21 @@ class MemoryService:
             "output_preview": row["output_preview"],
             "metadata": _json_loads(row["metadata"], {}),
             "created_at": row["created_at"],
+        }
+
+    @staticmethod
+    def _row_to_repo_index_snapshot(row: sqlite3.Row) -> dict[str, Any]:
+        return {
+            "id": row["id"],
+            "repo_root": row["repo_root"],
+            "current_branch": row["current_branch"],
+            "project_type": row["project_type"],
+            "detected_stack": _json_loads(row["detected_stack"], {}),
+            "architecture_metadata": _json_loads(row["architecture_metadata"], {}),
+            "summary": _json_loads(row["summary"], {}),
+            "created_at": row["created_at"],
+            "local_only": True,
+            "passive_only": True,
         }
 
 

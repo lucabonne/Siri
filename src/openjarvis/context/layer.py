@@ -110,46 +110,49 @@ class ContextLayer:
         )
 
     def current_project_context(self) -> ProjectContext:
-        root = self._git_root(self.cwd)
-        project_root = root or self.cwd
-        inventory = self._file_inventory(project_root, limit=self.max_files)
-        language_counts = self._language_counts(inventory)
-        stack = self._detect_stack(project_root)
+        from openjarvis.repo_index import RepoIndexService
+
+        summary = RepoIndexService(max_files=self.max_files).repo_summary(self.cwd)
+        stack = summary.detected_stack
         return ProjectContext(
             cwd=str(self.cwd),
-            git_repository=str(root or ""),
-            current_branch=self._git_branch(project_root) if root else "",
-            languages=list(language_counts.keys()),
-            framework_build_system=stack["framework_build_system"],
-            package_manager=stack["package_manager"],
-            project_type=self._project_type(project_root, stack, language_counts),
+            git_repository=summary.git_repository,
+            current_branch=summary.current_branch,
+            languages=stack.languages,
+            framework_build_system=sorted(
+                set(stack.frameworks) | set(stack.build_systems)
+            ),
+            package_manager=stack.package_managers,
+            project_type=stack.project_type,
         )
 
     def repo_index(self) -> RepoIndex:
-        root = self._git_root(self.cwd) or self.cwd
-        inventory = self._file_inventory(root, limit=self.max_files)
-        language_counts = self._language_counts(inventory)
-        stack = self._detect_stack(root)
-        module_summaries = self._module_summaries(root, inventory)
-        dependency_hints = self._dependency_hints(root)
-        architecture_metadata = self._architecture_metadata(
-            root,
-            inventory,
-            stack,
-            language_counts,
-        )
+        from openjarvis.repo_index import RepoIndexService
+
+        summary_data = RepoIndexService(max_files=self.max_files).repo_summary(self.cwd)
+        architecture = summary_data.architecture
+        dependency_hints = architecture.dependency_hints
+        architecture_metadata = {
+            **architecture.metadata,
+            "detected_stack": summary_data.detected_stack.to_dict(),
+            "build_files": architecture.build_files,
+            "entry_points": architecture.entry_points,
+            "configuration_files": architecture.configuration_files,
+            "indexed_file_count": summary_data.indexed_file_count,
+            "local_only": True,
+        }
         summary = RepoSummary(
-            root=str(root),
-            file_count=len(inventory),
-            language_breakdown=dict(language_counts),
-            top_level_modules=module_summaries[:12],
+            root=summary_data.root,
+            file_count=summary_data.file_count,
+            language_breakdown=summary_data.languages,
+            top_level_modules=architecture.modules[:12],
             dependency_hints=dependency_hints[:24],
             architecture_metadata=architecture_metadata,
         )
         return RepoIndex(
-            root=str(root),
-            inventory=[str(path.relative_to(root)) for path in inventory],
-            module_summaries=module_summaries,
+            root=summary_data.root,
+            inventory=[item.path for item in summary_data.file_summaries],
+            module_summaries=architecture.modules,
             dependency_hints=dependency_hints,
             architecture_metadata=architecture_metadata,
             summary=summary,

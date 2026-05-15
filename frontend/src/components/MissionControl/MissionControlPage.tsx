@@ -41,6 +41,7 @@ import {
   fetchLatestVisualContext,
   fetchLocalContextSnapshot,
   fetchPermissionAudit,
+  fetchRepoSummary,
   fetchRecentVisionScreenshots,
   fetchSecurityApprovals,
   fetchTerminalContext,
@@ -49,6 +50,7 @@ import {
   listSiriModes,
   listMemories,
   requestTerminalCommandApproval,
+  searchRepoIndex,
   searchMemory,
   setMemoryPinned,
   startVoicePttRecording,
@@ -60,6 +62,8 @@ import {
 import type {
   MemorySearchResult,
   LocalContextSnapshot,
+  RepoSemanticSearchResult,
+  RepoSummaryResponse,
   ScreenshotMetadata,
   SiriModeConfig,
   StructuredMemory,
@@ -828,6 +832,195 @@ function ProjectsSection() {
         ))}
       </div>
     </ShellPanel>
+  );
+}
+
+function valueAsString(value: unknown): string {
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number') return String(value);
+  return '';
+}
+
+function RepoSection() {
+  const [summary, setSummary] = useState<RepoSummaryResponse | null>(null);
+  const [results, setResults] = useState<RepoSemanticSearchResult[]>([]);
+  const [query, setQuery] = useState('');
+  const [status, setStatus] = useState<'loading' | 'ready' | 'offline'>('loading');
+
+  const loadRepo = async () => {
+    setStatus('loading');
+    try {
+      const data = await fetchRepoSummary();
+      setSummary(data);
+      setStatus('ready');
+    } catch {
+      setSummary(null);
+      setStatus('offline');
+    }
+  };
+
+  useEffect(() => {
+    loadRepo();
+  }, []);
+
+  const runRepoSearch = async () => {
+    if (!query.trim()) {
+      setResults([]);
+      return;
+    }
+    try {
+      const data = await searchRepoIndex(query, 8);
+      setResults(data);
+      setStatus('ready');
+    } catch {
+      setResults([]);
+      setStatus('offline');
+    }
+  };
+
+  const stack = summary?.detected_stack;
+  const architecture = summary?.architecture;
+  const graph = summary?.dependency_graph;
+  const modules = architecture?.modules ?? [];
+  const dependencies = graph?.direct_dependencies ?? [];
+
+  return (
+    <div className="grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">
+      <ShellPanel title="Detected Stack" action={status === 'ready' ? 'local index' : status}>
+        <div className="grid gap-3 md:grid-cols-2">
+          <ContextTile
+            icon={<FolderGit2 size={15} />}
+            label="Repository"
+            value={basename(summary?.root || '') || 'Unavailable'}
+            detail={summary?.root ? compactPath(summary.root) : undefined}
+          />
+          <ContextTile
+            icon={<GitBranch size={15} />}
+            label="Branch"
+            value={summary?.current_branch || 'No branch'}
+            detail={stack?.project_type || 'unknown'}
+          />
+          <ContextTile
+            icon={<Code2 size={15} />}
+            label="Languages"
+            value={joinStack(stack?.languages ?? [])}
+            detail={`${summary?.indexed_file_count ?? 0} searchable files`}
+          />
+          <ContextTile
+            icon={<Package size={15} />}
+            label="Build"
+            value={joinStack([...(stack?.package_managers ?? []), ...(stack?.build_systems ?? [])])}
+            detail={joinStack(stack?.frameworks ?? [])}
+          />
+        </div>
+        <div className="mt-4 flex flex-wrap gap-2">
+          {(stack?.frameworks ?? []).slice(0, 12).map((item) => (
+            <StatusPill key={item} tone="quiet">{item}</StatusPill>
+          ))}
+        </div>
+        <div className="mt-4 flex gap-2">
+          <input
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') runRepoSearch();
+            }}
+            placeholder="Search repo"
+            className="min-w-0 flex-1 rounded-md border px-3 py-2 text-sm outline-none"
+            style={{
+              borderColor: 'var(--color-border)',
+              color: 'var(--color-text)',
+              background: 'var(--color-bg-secondary)',
+            }}
+          />
+          <button
+            type="button"
+            onClick={runRepoSearch}
+            className="inline-flex h-10 w-10 items-center justify-center rounded-md border"
+            style={{ borderColor: 'var(--color-border)', color: 'var(--color-text)' }}
+            title="Search"
+          >
+            <Search size={16} />
+          </button>
+          <button
+            type="button"
+            onClick={loadRepo}
+            className="inline-flex h-10 w-10 items-center justify-center rounded-md border"
+            style={{ borderColor: 'var(--color-border)', color: 'var(--color-text)' }}
+            title="Refresh"
+          >
+            <RefreshCw size={16} />
+          </button>
+        </div>
+      </ShellPanel>
+
+      <ShellPanel title="Architecture Summary" action="passive">
+        <div className="grid gap-3 md:grid-cols-2">
+          <div className="rounded-md border p-3" style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg-secondary)' }}>
+            <div className="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>Entry points</div>
+            <div className="mt-2 space-y-1">
+              {(architecture?.entry_points ?? []).slice(0, 6).map((path) => (
+                <div key={path} className="truncate font-mono text-xs" style={{ color: 'var(--color-text)' }}>{path}</div>
+              ))}
+              {!architecture?.entry_points?.length && <div className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>None detected</div>}
+            </div>
+          </div>
+          <div className="rounded-md border p-3" style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg-secondary)' }}>
+            <div className="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>Build files</div>
+            <div className="mt-2 space-y-1">
+              {(architecture?.build_files ?? []).slice(0, 6).map((path) => (
+                <div key={path} className="truncate font-mono text-xs" style={{ color: 'var(--color-text)' }}>{path}</div>
+              ))}
+              {!architecture?.build_files?.length && <div className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>None detected</div>}
+            </div>
+          </div>
+        </div>
+        <div className="mt-4 grid gap-2">
+          {modules.slice(0, 8).map((module) => (
+            <div key={valueAsString(module.name)} className="grid gap-2 rounded-md border p-3 md:grid-cols-[1fr_80px_1.2fr]" style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg-secondary)' }}>
+              <span className="truncate text-sm font-semibold" style={{ color: 'var(--color-text)' }}>{valueAsString(module.name)}</span>
+              <span className="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>{valueAsString(module.file_count)} files</span>
+              <span className="truncate text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+                {Object.keys((module.languages as Record<string, unknown>) || {}).join(', ') || 'mixed'}
+              </span>
+            </div>
+          ))}
+        </div>
+      </ShellPanel>
+
+      <ShellPanel title="Repo Search" action={`${results.length} matches`}>
+        <div className="space-y-2">
+          {results.length === 0 && (
+            <div className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
+              Search results will appear here.
+            </div>
+          )}
+          {results.map((result) => (
+            <div key={result.path} className="rounded-md border p-3" style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg-secondary)' }}>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="truncate font-mono text-sm" style={{ color: 'var(--color-text)' }}>{result.path}</span>
+                <StatusPill tone="quiet">{result.score.toFixed(2)}</StatusPill>
+              </div>
+              <p className="mt-2 text-sm" style={{ color: 'var(--color-text-secondary)' }}>{result.summary}</p>
+            </div>
+          ))}
+        </div>
+      </ShellPanel>
+
+      <ShellPanel title="Dependency Overview" action={`${dependencies.length} direct`}>
+        <div className="grid gap-2 md:grid-cols-2">
+          {dependencies.slice(0, 18).map((dependency) => (
+            <div key={`${dependency.ecosystem}-${dependency.name}-${dependency.source}`} className="rounded-md border px-3 py-2" style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg-secondary)' }}>
+              <div className="truncate text-sm font-semibold" style={{ color: 'var(--color-text)' }}>{dependency.name}</div>
+              <div className="mt-1 truncate text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+                {dependency.ecosystem} / {basename(dependency.source)}
+              </div>
+            </div>
+          ))}
+          {dependencies.length === 0 && <div className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>No manifest dependencies detected.</div>}
+        </div>
+      </ShellPanel>
+    </div>
   );
 }
 
@@ -1654,6 +1847,7 @@ function ActiveSection({ section }: { section: MissionSectionId }) {
   if (section === 'agents') return <AgentsSection />;
   if (section === 'memory') return <MemorySection />;
   if (section === 'projects') return <ProjectsSection />;
+  if (section === 'repo') return <RepoSection />;
   if (section === 'voice') return <VoiceSection />;
   if (section === 'vision') return <VisionSection />;
   if (section === 'terminal') return <TerminalSection />;

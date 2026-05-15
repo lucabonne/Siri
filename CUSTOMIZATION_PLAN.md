@@ -122,7 +122,45 @@ Deferred work remains intentionally untouched in this phase:
 - no autonomous execution
 - no desktop control
 - no outbound context transmission
-- no deep semantic code indexing
+
+## Repo Semantic Indexing Phase 1
+
+Phase 1 gives Siri deeper local repository understanding while keeping the
+indexer passive, local-only, and privacy-aware.
+
+- `src/openjarvis/repo_index/` owns scanner, models, semantic index,
+  architecture, dependency graph, language detection, build detection, and
+  service APIs.
+- The scanner detects git repositories and branches, respects git ignored
+  paths, skips common build/cache/vendor directories, and avoids sensitive
+  path names such as `.env`, credentials, tokens, keys, and local databases.
+- Stack detection covers languages, frameworks, package managers, build
+  systems, and project type, with specialized handling for Java, Gradle,
+  Fabric, Minecraft mods, Loom, Rust, Python, and Node/Vite projects.
+- Architecture maps summarize packages/modules, build files, entry points,
+  major directories, configuration files, dependency hints, and repo metadata.
+- Semantic indexing creates compact file summaries and deterministic local
+  hash embeddings for repo-wide search. It performs no outbound uploads and
+  does not download embedding models.
+- Dependency graph extraction reads manifests and import statements to expose
+  direct dependency hints and lightweight internal edges.
+- `/v1/repo/summary`, `/v1/repo/architecture`, `/v1/repo/search`,
+  `/v1/repo/dependency-graph`, and `/v1/repo/stack` expose read-only local
+  APIs for Mission Control and future context assembly.
+- The Context Layer now delegates project/repo understanding to the repo index
+  service, Terminal Co-Pilot records repo architecture hints with command
+  context, Agent Workspace declares `repo_index` memory scope for coding,
+  engineering, and terminal agents, and the memory service can store explicit
+  repo-index metadata snapshots.
+- Mission Control now includes a Repo tab for detected stack, architecture
+  summary, semantic repo search, and dependency overview.
+
+Deferred work remains intentionally untouched in this phase:
+
+- no autonomous repo modification
+- no automatic refactors
+- no background watchers
+- no cloud embeddings or outbound repository uploads
 
 ## Vision Layer Phase 1
 

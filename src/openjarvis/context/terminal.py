@@ -436,6 +436,7 @@ class TerminalContextStore:
         cwd_path = Path(cwd or os.getcwd()).expanduser()
         layer = ContextLayer(cwd=cwd_path)
         project = layer.current_project_context()
+        repo = layer.repo_index()
         sanitized_output = _truncate(_sanitize(output), _MAX_OUTPUT_CHARS)
         record = TerminalCommandRecord(
             command=_sanitize(command.strip()),
@@ -449,6 +450,11 @@ class TerminalContextStore:
                 "languages": project.languages,
                 "package_manager": project.package_manager,
                 "framework_build_system": project.framework_build_system,
+                "architecture": {
+                    "build_files": repo.architecture_metadata.get("build_files", []),
+                    "entry_points": repo.architecture_metadata.get("entry_points", []),
+                    "dependency_hints": repo.dependency_hints[:12],
+                },
             },
             shell_type=_shell_type(shell_type),
             timestamp=timestamp or _now(),

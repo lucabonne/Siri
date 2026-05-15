@@ -395,6 +395,77 @@ export interface RepoIndex {
   passive_only: boolean;
 }
 
+export interface RepoDetectedStack {
+  git_repository: string;
+  current_branch: string;
+  languages: string[];
+  frameworks: string[];
+  package_managers: string[];
+  build_systems: string[];
+  project_type: string;
+  local_only: boolean;
+  passive_only: boolean;
+}
+
+export interface RepoArchitectureMap {
+  root: string;
+  packages: Array<Record<string, unknown>>;
+  modules: Array<Record<string, unknown>>;
+  build_files: string[];
+  entry_points: string[];
+  major_directories: Array<Record<string, unknown>>;
+  configuration_files: string[];
+  dependency_hints: string[];
+  metadata: Record<string, unknown>;
+  local_only: boolean;
+  passive_only: boolean;
+}
+
+export interface RepoDependencyGraph {
+  root: string;
+  direct_dependencies: Array<Record<string, string>>;
+  internal_edges: Array<Record<string, string>>;
+  build_files: string[];
+  package_managers: string[];
+  local_only: boolean;
+  passive_only: boolean;
+}
+
+export interface RepoFileSummary {
+  path: string;
+  language: string;
+  summary: string;
+  symbols: string[];
+  imports: string[];
+  size_bytes: number;
+}
+
+export interface RepoSummaryResponse {
+  root: string;
+  git_repository: string;
+  current_branch: string;
+  file_count: number;
+  indexed_file_count: number;
+  languages: Record<string, number>;
+  detected_stack: RepoDetectedStack;
+  architecture: RepoArchitectureMap;
+  dependency_graph: RepoDependencyGraph;
+  file_summaries: RepoFileSummary[];
+  skipped_paths: string[];
+  privacy_mode: boolean;
+  local_only: boolean;
+  passive_only: boolean;
+}
+
+export interface RepoSemanticSearchResult {
+  path: string;
+  summary: string;
+  score: number;
+  language: string;
+  symbols: string[];
+  imports: string[];
+}
+
 export interface LocalContextSnapshot {
   desktop: DesktopContext;
   project: ProjectContext;
@@ -499,6 +570,42 @@ export async function fetchRepoContext(): Promise<RepoIndex> {
   const res = await fetch(`${getBase()}/v1/context/repo`);
   if (!res.ok) throw new Error(`Failed to fetch repo context: ${res.status}`);
   return res.json();
+}
+
+export async function fetchRepoSummary(cwd?: string): Promise<RepoSummaryResponse> {
+  const params = cwd ? `?cwd=${encodeURIComponent(cwd)}` : '';
+  const res = await fetch(`${getBase()}/v1/repo/summary${params}`);
+  if (!res.ok) throw new Error(`Failed to fetch repo summary: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchRepoArchitecture(cwd?: string): Promise<RepoArchitectureMap> {
+  const params = cwd ? `?cwd=${encodeURIComponent(cwd)}` : '';
+  const res = await fetch(`${getBase()}/v1/repo/architecture${params}`);
+  if (!res.ok) throw new Error(`Failed to fetch repo architecture: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchRepoDependencyGraph(cwd?: string): Promise<RepoDependencyGraph> {
+  const params = cwd ? `?cwd=${encodeURIComponent(cwd)}` : '';
+  const res = await fetch(`${getBase()}/v1/repo/dependency-graph${params}`);
+  if (!res.ok) throw new Error(`Failed to fetch dependency graph: ${res.status}`);
+  return res.json();
+}
+
+export async function searchRepoIndex(
+  query: string,
+  limit: number = 10,
+  cwd?: string,
+): Promise<RepoSemanticSearchResult[]> {
+  const res = await fetch(`${getBase()}/v1/repo/search`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ query, limit, cwd }),
+  });
+  if (!res.ok) throw new Error(`Failed to search repo index: ${res.status}`);
+  const data = await res.json();
+  return data.results || [];
 }
 
 export async function fetchLocalContextSnapshot(): Promise<LocalContextSnapshot> {
