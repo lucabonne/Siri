@@ -18,6 +18,7 @@ from openjarvis.security.permissions import (
     PermissionMiddleware,
     PermissionRequest,
 )
+from openjarvis.server.worldmonitor_routes import get_worldmonitor_service
 
 context_router = APIRouter(prefix="/v1/context", tags=["context"])
 
@@ -101,6 +102,15 @@ async def get_project_context(cwd: str | None = Query(default=None)):
 async def get_repo_context(cwd: str | None = Query(default=None)):
     """Return lightweight repository inventory and summary metadata."""
     return _layer(cwd).repo_index().to_dict()
+
+
+@context_router.get("/worldmonitor")
+async def get_worldmonitor_context(request: Request):
+    """Return passive local WorldMonitor integration context."""
+
+    return get_worldmonitor_service(request).status(
+        privacy_mode=_privacy_mode(request)
+    ).to_dict()
 
 
 @context_router.post("/vision/screenshots")

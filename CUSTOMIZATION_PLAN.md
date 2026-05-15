@@ -1,5 +1,73 @@
 # Customization Plan
 
+## Morning Briefing + World Map Phase 1
+
+Phase 1 adds a proactive-but-quiet daily briefing layer for Siri without
+autonomous interruptions, background notifications, cloud persistence, or
+LaunchAgent installation.
+
+- `src/openjarvis/morning_briefing/` owns RSS/Atom fetching, deterministic
+  summarization, event categorization, world-map event shaping, typed models,
+  a scheduler abstraction, and the coordinating service.
+- SQLite storage now covers cached `daily_briefings` plus categorized
+  `morning_events` with title, category, latitude/longitude, source URL,
+  source name, short summary, published timestamp, and metadata.
+- Briefings are timestamped, source-linked, categorized, and location-aware
+  where lightweight local inference can identify a place.
+- `/v1/morning-briefing/latest`, list, `/world-events`, `/events`,
+  `/regenerate`, and `/status` expose the local cache and explicit regeneration
+  flow for Mission Control.
+- Privacy Mode disables external news fetching. Existing cached briefings and
+  events remain readable, and regeneration returns cached content only when it
+  exists.
+- Memory integration records generated briefing summaries as local structured
+  memories outside Privacy Mode.
+- Mission Control now includes Today, World Map, Daily Briefing, and Important
+  Events surfaces backed by the briefing APIs with local fallbacks.
+- The scheduler is intentionally only an abstraction that can report due
+  status; it does not install or run a macOS LaunchAgent.
+
+Deferred work remains intentionally untouched in this phase:
+
+- no autonomous interruptions
+- no background notifications
+- no cloud persistence
+- no LaunchAgent installation
+
+## WorldMonitor Integration Phase 1
+
+Phase 1 adds `koala73/worldmonitor` as an optional local-first intelligence
+source for Siri while keeping Siri as the orchestrator and operating layer.
+
+- `src/openjarvis/worldmonitor/` owns local API detection, payload adapters,
+  event normalization, map filtering, SQLite caching, typed models, and the
+  passive integration service.
+- The integration detects localhost WorldMonitor APIs and nearby local repos
+  but does not clone, fork, vendor, or modify the WorldMonitor repository.
+- Imported WorldMonitor data is cached locally as source-aware events with
+  categories, summaries/signals, latitude/longitude, source URLs, import
+  timestamps, and raw-domain metadata.
+- `/v1/worldmonitor/status`, `/events`, `/briefing-data`, `/sync`, and
+  `/sync-status` expose passive sync and cached reads. There is no background
+  polling daemon.
+- Morning Briefing can enrich generated briefings with cached/local
+  WorldMonitor events. In Privacy Mode it may ingest from a detected local
+  WorldMonitor instance only; RSS/news fetching remains disabled.
+- The Context Layer exposes passive WorldMonitor status through
+  `/v1/context/worldmonitor`.
+- Memory integration records local sync summaries outside Privacy Mode only.
+- Mission Control shows WorldMonitor connection state, cache counts, source
+  indicators, source links, and sync timestamps in the World Map and Daily
+  Briefing surfaces.
+
+Deferred work remains intentionally untouched in this phase:
+
+- no autonomous monitoring
+- no background polling daemon
+- no remote telemetry
+- no external uploads
+- no changes to the WorldMonitor repo itself
+
 ## Memory Architecture Phase 1
 
 Phase 1 adds the local-first memory foundation for Siri without enabling

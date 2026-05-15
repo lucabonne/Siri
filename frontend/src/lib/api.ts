@@ -977,6 +977,151 @@ export async function transcribeLatestVoiceRecording(): Promise<VoiceTranscriptR
 }
 
 // ---------------------------------------------------------------------------
+// Morning briefing
+// ---------------------------------------------------------------------------
+
+export interface MorningEvent {
+  id: string;
+  title: string;
+  category: string;
+  summary: string;
+  source_url: string;
+  source_name: string;
+  published_at: string;
+  latitude: number | null;
+  longitude: number | null;
+  location_name: string;
+  importance: number;
+  metadata: Record<string, unknown>;
+  created_at: string;
+}
+
+export interface DailyBriefing {
+  id: string;
+  briefing_date: string;
+  title: string;
+  summary: string;
+  content: string;
+  events: MorningEvent[];
+  source_links: string[];
+  location_name: string;
+  generated_at: string;
+  updated_at: string;
+  metadata: Record<string, unknown>;
+}
+
+export interface BriefingStatus {
+  has_cached_briefing: boolean;
+  latest_generated_at: string;
+  latest_briefing_date: string;
+  external_fetching_enabled: boolean;
+  privacy_mode: boolean;
+  scheduler: Record<string, unknown>;
+  source_count: number;
+  event_count: number;
+}
+
+export interface WorldMonitorStatus {
+  installed: boolean;
+  connected: boolean;
+  base_url: string;
+  local_repo_path: string;
+  api_available: boolean;
+  last_sync_at: string;
+  cached_event_count: number;
+  privacy_mode: boolean;
+  passive_only: boolean;
+  local_only: boolean;
+  remote_telemetry: boolean;
+  error: string;
+}
+
+export interface WorldMonitorSyncStatus {
+  status: string;
+  imported_event_count: number;
+  source_count: number;
+  started_at: string;
+  completed_at: string;
+  base_url: string;
+  privacy_mode: boolean;
+  error: string;
+  passive_only: boolean;
+  local_only: boolean;
+}
+
+export async function fetchLatestMorningBriefing(): Promise<DailyBriefing | null> {
+  const res = await fetch(`${getBase()}/v1/morning-briefing/latest`);
+  if (!res.ok) throw new Error(`Failed to fetch morning briefing: ${res.status}`);
+  const data = await res.json();
+  return data.briefing || null;
+}
+
+export async function listMorningBriefings(limit = 20): Promise<DailyBriefing[]> {
+  const res = await fetch(`${getBase()}/v1/morning-briefing?limit=${limit}`);
+  if (!res.ok) throw new Error(`Failed to list morning briefings: ${res.status}`);
+  const data = await res.json();
+  return data.briefings || [];
+}
+
+export async function fetchMorningEvents(limit = 100, category?: string): Promise<MorningEvent[]> {
+  const params = new URLSearchParams({ limit: String(limit) });
+  if (category) params.set('category', category);
+  const res = await fetch(`${getBase()}/v1/morning-briefing/events?${params.toString()}`);
+  if (!res.ok) throw new Error(`Failed to fetch morning events: ${res.status}`);
+  const data = await res.json();
+  return data.events || [];
+}
+
+export async function fetchWorldEvents(limit = 100, category?: string): Promise<MorningEvent[]> {
+  const params = new URLSearchParams({ limit: String(limit) });
+  if (category) params.set('category', category);
+  const res = await fetch(`${getBase()}/v1/morning-briefing/world-events?${params.toString()}`);
+  if (!res.ok) throw new Error(`Failed to fetch world events: ${res.status}`);
+  const data = await res.json();
+  return data.events || [];
+}
+
+export async function regenerateMorningBriefing(locationName = ''): Promise<DailyBriefing> {
+  const res = await fetch(`${getBase()}/v1/morning-briefing/regenerate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ location_name: locationName, max_items: 12, persist_memory: true }),
+  });
+  if (!res.ok) throw new Error(`Failed to regenerate morning briefing: ${res.status}`);
+  const data = await res.json();
+  return data.briefing;
+}
+
+export async function fetchBriefingStatus(): Promise<BriefingStatus> {
+  const res = await fetch(`${getBase()}/v1/morning-briefing/status`);
+  if (!res.ok) throw new Error(`Failed to fetch briefing status: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchWorldMonitorStatus(): Promise<WorldMonitorStatus> {
+  const res = await fetch(`${getBase()}/v1/worldmonitor/status`);
+  if (!res.ok) throw new Error(`Failed to fetch WorldMonitor status: ${res.status}`);
+  return res.json();
+}
+
+export async function syncWorldMonitor(): Promise<WorldMonitorSyncStatus> {
+  const res = await fetch(`${getBase()}/v1/worldmonitor/sync`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  if (!res.ok) throw new Error(`Failed to sync WorldMonitor: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchWorldMonitorSyncStatus(): Promise<WorldMonitorSyncStatus | null> {
+  const res = await fetch(`${getBase()}/v1/worldmonitor/sync-status`);
+  if (!res.ok) throw new Error(`Failed to fetch WorldMonitor sync status: ${res.status}`);
+  const data = await res.json();
+  return data.sync || null;
+}
+
+// ---------------------------------------------------------------------------
 // Agent Manager
 // ---------------------------------------------------------------------------
 

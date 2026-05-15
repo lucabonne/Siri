@@ -172,12 +172,33 @@ class MemoryService:
                 updated_at TEXT NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS morning_events (
+                id TEXT PRIMARY KEY,
+                briefing_id TEXT NOT NULL,
+                title TEXT NOT NULL,
+                category TEXT NOT NULL DEFAULT 'world',
+                summary TEXT NOT NULL DEFAULT '',
+                latitude REAL,
+                longitude REAL,
+                location_name TEXT NOT NULL DEFAULT '',
+                source_url TEXT NOT NULL DEFAULT '',
+                source_name TEXT NOT NULL DEFAULT '',
+                published_at TEXT NOT NULL DEFAULT '',
+                importance INTEGER NOT NULL DEFAULT 3,
+                metadata TEXT NOT NULL DEFAULT '{}',
+                created_at TEXT NOT NULL
+            );
+
             CREATE INDEX IF NOT EXISTS idx_memories_project ON memories(project_id);
             CREATE INDEX IF NOT EXISTS idx_memories_type ON memories(memory_type);
             CREATE INDEX IF NOT EXISTS idx_memories_created ON memories(created_at);
             CREATE INDEX IF NOT EXISTS idx_memories_pinned ON memories(pinned);
             CREATE INDEX IF NOT EXISTS idx_repo_index_root
             ON repo_index_snapshots(repo_root);
+            CREATE INDEX IF NOT EXISTS idx_morning_events_briefing
+            ON morning_events(briefing_id);
+            CREATE INDEX IF NOT EXISTS idx_morning_events_category
+            ON morning_events(category);
             """
         )
         try:

@@ -40,17 +40,24 @@ import {
   decideSecurityApproval,
   deleteMemory,
   fetchCodingPanel,
+  fetchBriefingStatus,
   fetchLatestVisualContext,
   fetchLocalContextSnapshot,
+  fetchLatestMorningBriefing,
+  fetchMorningEvents,
   fetchPermissionAudit,
   fetchRepoSummary,
   fetchRecentVisionScreenshots,
   fetchSecurityApprovals,
   fetchTerminalContext,
   fetchVoicePttStatus,
+  fetchWorldEvents,
+  fetchWorldMonitorStatus,
+  fetchWorldMonitorSyncStatus,
   listWorkspaceAgents,
   listSiriModes,
   listMemories,
+  regenerateMorningBriefing,
   requestTerminalCommandApproval,
   searchRepoIndex,
   searchMemory,
@@ -59,6 +66,7 @@ import {
   switchActiveWorkspaceAgent,
   switchActiveSiriMode,
   stopVoicePttRecording,
+  syncWorldMonitor,
   transcribeLatestVoiceRecording,
 } from '../../lib/api';
 import type {
@@ -74,6 +82,11 @@ import type {
   VoicePttStatus,
   WorkspaceAgentConfig,
   CodingPanelSnapshot,
+  BriefingStatus,
+  DailyBriefing,
+  MorningEvent,
+  WorldMonitorStatus,
+  WorldMonitorSyncStatus,
 } from '../../lib/api';
 import {
   approvalQueue,
@@ -186,6 +199,28 @@ function formatBytes(value: number | null | undefined): string {
   if (value < 1024) return `${value} B`;
   if (value < 1024 * 1024) return `${Math.round(value / 1024)} KB`;
   return `${(value / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function formatTime(value: string): string {
+  if (!value) return 'Not generated';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+}
+
+function eventTone(category: string): StatusTone {
+  if (category === 'security' || category === 'climate') return 'watch';
+  if (category === 'economy' || category === 'technology') return 'busy';
+  if (category === 'health') return 'good';
+  return 'quiet';
+}
+
+function eventPosition(event: MorningEvent): { left: string; top: string } {
+  const lon = typeof event.longitude === 'number' ? event.longitude : 0;
+  const lat = typeof event.latitude === 'number' ? event.latitude : 0;
+  const left = Math.max(4, Math.min(96, ((lon + 180) / 360) * 100));
+  const top = Math.max(8, Math.min(92, ((90 - lat) / 180) * 100));
+  return { left: `${left}%`, top: `${top}%` };
 }
 
 function ContextTile({
@@ -338,16 +373,83 @@ function TodaySection() {
 }
 
 function WorldMapSection() {
+  const [events, setEvents] = useState<MorningEvent[]>([]);
+  const [worldMonitor, setWorldMonitor] = useState<WorldMonitorStatus | null>(null);
+  const [syncStatus, setSyncStatus] = useState<WorldMonitorSyncStatus | null>(null);
+  const [live, setLive] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all([
+      fetchWorldEvents(24),
+      fetchWorldMonitorStatus().catch(() => null),
+      fetchWorldMonitorSyncStatus().catch(() => null),
+    ])
+      .then(([items, wmStatus, wmSync]) => {
+        if (cancelled) return;
+        setEvents(items);
+        setWorldMonitor(wmStatus);
+        setSyncStatus(wmSync);
+        setLive(true);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setEvents([]);
+        setLive(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const runWorldMonitorSync = async () => {
+    setSyncing(true);
+    try {
+      const sync = await syncWorldMonitor();
+      setSyncStatus(sync);
+      const [items, wmStatus] = await Promise.all([
+        fetchWorldEvents(24),
+        fetchWorldMonitorStatus(),
+      ]);
+      setEvents(items);
+      setWorldMonitor(wmStatus);
+      setLive(true);
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  const mapSignals = events.length
+    ? events
+    : worldSignals.map((signal, index) => ({
+        id: `mock-${signal.city}`,
+        title: signal.label,
+        category: signal.tone,
+        summary: signal.label,
+        source_url: '',
+        source_name: 'Mock fallback',
+        published_at: '',
+        latitude: null,
+        longitude: null,
+        location_name: signal.city,
+        importance: 2,
+        metadata: { x: signal.x, y: signal.y },
+        created_at: '',
+        fallbackIndex: index,
+      } as MorningEvent & { fallbackIndex: number }));
+
   return (
-    <ShellPanel title="World Map" action="signals">
-      <div
-        className="relative min-h-[340px] overflow-hidden rounded-md border"
-        style={{
-          borderColor: 'var(--color-border)',
-          background:
-            'linear-gradient(135deg, color-mix(in srgb, var(--color-bg-secondary) 88%, transparent), var(--color-surface))',
-        }}
-      >
+    <div className="grid gap-4 lg:grid-cols-[1fr_280px]">
+      <ShellPanel title="World Map" action={live ? 'cached events' : 'mock signals'}>
+        <div
+          className="relative min-h-[340px] overflow-hidden rounded-md border"
+          style={{
+            borderColor: 'var(--color-border)',
+            background:
+              'linear-gradient(135deg, color-mix(in srgb, var(--color-bg-secondary) 88%, transparent), var(--color-surface))',
+          }}
+        >
         <div
           className="absolute inset-6 rounded-[50%]"
           style={{
@@ -364,13 +466,19 @@ function WorldMapSection() {
           className="absolute inset-y-8 left-1/2 w-px"
           style={{ background: 'var(--color-border)' }}
         />
-        {worldSignals.map((signal) => {
-          const style = toneStyle(signal.tone);
+        {mapSignals.map((event) => {
+          const tone = eventTone(event.category);
+          const style = toneStyle(tone);
+          const fallback = worldSignals[(event as MorningEvent & { fallbackIndex?: number }).fallbackIndex ?? 0];
+          const position =
+            typeof event.latitude === 'number' && typeof event.longitude === 'number'
+              ? eventPosition(event)
+              : { left: fallback.x, top: fallback.y };
           return (
             <div
-              key={signal.city}
+              key={event.id}
               className="absolute -translate-x-1/2 -translate-y-1/2"
-              style={{ left: signal.x, top: signal.y }}
+              style={position}
             >
               <div
                 className="h-3 w-3 rounded-full border"
@@ -388,14 +496,230 @@ function WorldMapSection() {
                   color: 'var(--color-text)',
                 }}
               >
-                <div className="font-semibold">{signal.city}</div>
+                <div className="font-semibold">{event.location_name || event.category}</div>
                 <div className="mt-1" style={{ color: 'var(--color-text-secondary)' }}>
-                  {signal.label}
+                  {event.title}
                 </div>
               </div>
             </div>
           );
         })}
+        </div>
+      </ShellPanel>
+
+      <ShellPanel title="WorldMonitor" action={worldMonitor?.connected ? 'connected' : 'optional'}>
+        <div className="grid gap-3">
+          <StatusPill tone={worldMonitor?.connected ? 'good' : worldMonitor?.installed ? 'watch' : 'quiet'}>
+            {worldMonitor?.connected ? 'Local API' : worldMonitor?.installed ? 'Repo detected' : 'Not connected'}
+          </StatusPill>
+          <div className="grid gap-2 text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+            <span>Cache: {worldMonitor?.cached_event_count ?? 0} events</span>
+            <span>Sync: {formatTime(syncStatus?.completed_at || worldMonitor?.last_sync_at || '')}</span>
+            <span>Source: {worldMonitor?.base_url || worldMonitor?.local_repo_path || 'Not detected'}</span>
+          </div>
+          <button
+            type="button"
+            disabled={syncing}
+            onClick={runWorldMonitorSync}
+            className="inline-flex h-9 items-center justify-center gap-2 rounded-md border px-3 text-xs font-medium disabled:opacity-50"
+            style={{
+              borderColor: 'var(--color-border)',
+              color: 'var(--color-text)',
+              background: 'var(--color-bg-secondary)',
+            }}
+          >
+            <RefreshCw size={14} />
+            {syncing ? 'Syncing' : 'Sync local'}
+          </button>
+        </div>
+      </ShellPanel>
+    </div>
+  );
+}
+
+function DailyBriefingSection() {
+  const [briefing, setBriefing] = useState<DailyBriefing | null>(null);
+  const [status, setStatus] = useState<BriefingStatus | null>(null);
+  const [worldMonitor, setWorldMonitor] = useState<WorldMonitorStatus | null>(null);
+  const [live, setLive] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  const loadBriefing = async () => {
+    try {
+      const [latest, currentStatus] = await Promise.all([
+        fetchLatestMorningBriefing(),
+        fetchBriefingStatus(),
+      ]);
+      setBriefing(latest);
+      setStatus(currentStatus);
+      setWorldMonitor(await fetchWorldMonitorStatus().catch(() => null));
+      setLive(true);
+    } catch {
+      setBriefing(null);
+      setStatus(null);
+      setLive(false);
+    }
+  };
+
+  useEffect(() => {
+    loadBriefing();
+  }, []);
+
+  const regenerate = async () => {
+    setBusy(true);
+    try {
+      const next = await regenerateMorningBriefing();
+      setBriefing(next);
+      setLive(true);
+      const currentStatus = await fetchBriefingStatus();
+      setStatus(currentStatus);
+      setWorldMonitor(await fetchWorldMonitorStatus().catch(() => null));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="grid gap-4 lg:grid-cols-[0.9fr_1.1fr]">
+      <ShellPanel title="Daily Briefing" action={live ? 'live cache' : 'waiting for backend'}>
+        <div className="grid gap-3">
+          <div className="grid grid-cols-3 gap-3">
+            {[
+              ['Sources', String(status?.source_count ?? briefing?.source_links.length ?? 0)],
+              ['Events', String(status?.event_count ?? briefing?.events.length ?? 0)],
+              ['WorldMonitor', worldMonitor?.connected ? 'Local API' : 'Optional'],
+            ].map(([label, value]) => (
+              <div
+                key={label}
+                className="rounded-md border p-3"
+                style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg-secondary)' }}
+              >
+                <div className="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>{label}</div>
+                <div className="mt-1 text-lg font-semibold" style={{ color: 'var(--color-text)' }}>{value}</div>
+              </div>
+            ))}
+          </div>
+          <button
+            type="button"
+            disabled={busy || status?.privacy_mode}
+            onClick={regenerate}
+            className="inline-flex h-10 items-center justify-center gap-2 rounded-md border px-3 text-sm font-medium disabled:opacity-50"
+            style={{
+              borderColor: 'var(--color-border)',
+              color: 'var(--color-text)',
+              background: 'var(--color-bg-secondary)',
+            }}
+          >
+            <RefreshCw size={15} />
+            {busy ? 'Regenerating' : status?.privacy_mode ? 'Privacy cache only' : 'Regenerate'}
+          </button>
+        </div>
+      </ShellPanel>
+
+      <ShellPanel title={briefing?.title || 'Latest Briefing'} action={formatTime(briefing?.generated_at || '')}>
+        {briefing ? (
+          <div className="grid gap-4">
+            <p className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
+              {briefing.summary}
+            </p>
+            <div className="grid gap-2">
+              {briefing.events.slice(0, 5).map((event) => (
+                <div
+                  key={event.id}
+                  className="rounded-md border p-3"
+                  style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg-secondary)' }}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>
+                      {event.title}
+                    </div>
+                    <StatusPill tone={eventTone(event.category)}>{event.category}</StatusPill>
+                  </div>
+                  <p className="mt-2 text-sm" style={{ color: 'var(--color-text-secondary)' }}>
+                    {event.summary}
+                  </p>
+                  <div className="mt-2 flex flex-wrap gap-2 text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+                    <span>{event.source_name || 'Source'}</span>
+                    {event.metadata?.source === 'worldmonitor' && <span>WorldMonitor</span>}
+                    {event.source_url && (
+                      <a href={event.source_url} target="_blank" rel="noreferrer" style={{ color: 'var(--color-accent)' }}>
+                        Source
+                      </a>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <p className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
+            No cached briefing yet.
+          </p>
+        )}
+      </ShellPanel>
+    </div>
+  );
+}
+
+function ImportantEventsSection() {
+  const [events, setEvents] = useState<MorningEvent[]>([]);
+  const [live, setLive] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchMorningEvents(40)
+      .then((items) => {
+        if (cancelled) return;
+        setEvents(items);
+        setLive(true);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setEvents([]);
+        setLive(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const visible = events.slice(0, 12);
+
+  return (
+    <ShellPanel title="Important Events" action={live ? 'cached events' : 'waiting for backend'}>
+      <div className="grid gap-3 md:grid-cols-2">
+        {visible.length ? (
+          visible.map((event) => (
+            <div
+              key={event.id}
+              className="rounded-md border p-4"
+              style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg-secondary)' }}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="text-sm font-semibold" style={{ color: 'var(--color-text)' }}>
+                  {event.title}
+                </div>
+                <StatusPill tone={eventTone(event.category)}>{event.category}</StatusPill>
+              </div>
+              <p className="mt-2 text-sm" style={{ color: 'var(--color-text-secondary)' }}>
+                {event.summary}
+              </p>
+              <div className="mt-3 flex flex-wrap gap-2 text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+                <span>{event.location_name || 'Global'}</span>
+                <span>{event.source_name || 'Source'}</span>
+                {event.source_url && (
+                  <a href={event.source_url} target="_blank" rel="noreferrer" style={{ color: 'var(--color-accent)' }}>
+                    Source
+                  </a>
+                )}
+              </div>
+            </div>
+          ))
+        ) : (
+          <p className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
+            No cached events yet.
+          </p>
+        )}
       </div>
     </ShellPanel>
   );
@@ -2031,6 +2355,8 @@ function PermissionsSection() {
 function ActiveSection({ section }: { section: MissionSectionId }) {
   if (section === 'today') return <TodaySection />;
   if (section === 'world-map') return <WorldMapSection />;
+  if (section === 'daily-briefing') return <DailyBriefingSection />;
+  if (section === 'important-events') return <ImportantEventsSection />;
   if (section === 'tasks') return <TasksSection />;
   if (section === 'agents') return <AgentsSection />;
   if (section === 'memory') return <MemorySection />;
