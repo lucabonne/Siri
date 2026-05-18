@@ -495,6 +495,82 @@ export interface DesktopContext {
   recent_files: string[];
   privacy_mode: boolean;
   passive_only: boolean;
+  desktop_status?: DesktopStatus;
+}
+
+export interface DesktopAppInfo {
+  name: string;
+  bundle_id: string;
+  process_id: number | null;
+  executable: string;
+  frontmost: boolean;
+  local_only: boolean;
+  passive_only: boolean;
+}
+
+export interface DesktopWindowInfo {
+  application_name: string;
+  title: string;
+  process_id: number | null;
+  platform: string;
+  privacy_mode: boolean;
+  passive_only: boolean;
+  local_only: boolean;
+}
+
+export interface DesktopWorkspaceFocus {
+  path: string;
+  name: string;
+  git_repository: string;
+  current_branch: string;
+  project_type: string;
+  source: string;
+  local_only: boolean;
+  passive_only: boolean;
+}
+
+export interface DesktopLaunchResult {
+  action: string;
+  target: string;
+  status: string;
+  message: string;
+  app_name: string;
+  workspace_path: string;
+  coding_environment: string;
+  launched_at: string;
+  command_preview: string[];
+  privacy_mode: boolean;
+  local_only: boolean;
+  autonomous: boolean;
+  background_monitoring: boolean;
+  telemetry_enabled: boolean;
+}
+
+export interface DesktopSessionState {
+  focused_workspace: DesktopWorkspaceFocus;
+  recent_launches: DesktopLaunchResult[];
+  updated_at: string;
+  local_only: boolean;
+  passive_only: boolean;
+  telemetry_enabled: boolean;
+}
+
+export interface DesktopStatus {
+  active_window: DesktopWindowInfo;
+  active_application: DesktopAppInfo | null;
+  open_apps: DesktopAppInfo[];
+  focused_workspace: DesktopWorkspaceFocus;
+  session_state: DesktopSessionState;
+  clipboard_preview: string;
+  clipboard_sensitive: boolean;
+  recent_launches: DesktopLaunchResult[];
+  integrations: Record<string, unknown>;
+  privacy_mode: boolean;
+  local_only: boolean;
+  passive_only: boolean;
+  autonomous_launching: boolean;
+  background_monitoring: boolean;
+  telemetry_enabled: boolean;
 }
 
 export interface ProjectContext {
@@ -777,6 +853,38 @@ export async function fetchDesktopContext(): Promise<DesktopContext> {
   const res = await fetch(`${getBase()}/v1/context/desktop`);
   if (!res.ok) throw new Error(`Failed to fetch desktop context: ${res.status}`);
   return res.json();
+}
+
+export async function fetchDesktopStatus(cwd?: string): Promise<DesktopStatus> {
+  const params = cwd ? `?cwd=${encodeURIComponent(cwd)}` : '';
+  const res = await fetch(`${getBase()}/v1/desktop/status${params}`);
+  if (!res.ok) throw new Error(`Failed to fetch desktop status: ${res.status}`);
+  return res.json();
+}
+
+export async function launchDesktopApp(appName: string): Promise<DesktopLaunchResult> {
+  const res = await fetch(`${getBase()}/v1/desktop/launch-app`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ app_name: appName }),
+  });
+  if (!res.ok) throw new Error(`Failed to launch app: ${res.status}`);
+  const data = await res.json();
+  return data.launch;
+}
+
+export async function launchDesktopWorkspace(
+  path: string,
+  appName = '',
+): Promise<DesktopLaunchResult> {
+  const res = await fetch(`${getBase()}/v1/desktop/launch-workspace`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path, app_name: appName }),
+  });
+  if (!res.ok) throw new Error(`Failed to launch workspace: ${res.status}`);
+  const data = await res.json();
+  return data.launch;
 }
 
 export async function fetchProjectContext(): Promise<ProjectContext> {

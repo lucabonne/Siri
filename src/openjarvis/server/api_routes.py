@@ -13,6 +13,7 @@ from pydantic import BaseModel
 from openjarvis.server.agent_workspace_routes import agent_workspace_router
 from openjarvis.server.coding_assistant_routes import coding_assistant_router
 from openjarvis.server.context_routes import context_router
+from openjarvis.server.desktop_routes import desktop_router
 from openjarvis.server.mode_routes import mode_router
 from openjarvis.server.morning_briefing_routes import morning_briefing_router
 from openjarvis.server.repo_index_routes import repo_index_router
@@ -1205,6 +1206,7 @@ def include_all_routes(app) -> None:
     app.include_router(worldmonitor_router)
     app.include_router(research_router)
     app.include_router(context_router)
+    app.include_router(desktop_router)
     app.include_router(repo_index_router)
     app.include_router(coding_assistant_router)
     app.include_router(workflow_router)

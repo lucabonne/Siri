@@ -1,5 +1,39 @@
 # Customization Plan
 
+## Desktop Integration Phase 1
+
+Phase 1 makes Siri aware of the local desktop as an operating layer while
+keeping all actions explicit, local, and user-triggered.
+
+- `src/openjarvis/desktop/` owns passive window/app awareness, local clipboard
+  preview redaction, focused workspace resolution, launch helpers, session
+  state, typed models, and the coordinating desktop service.
+- Desktop awareness covers active window, active application, open apps,
+  focused project/workspace, clipboard preview, session state, and recent
+  explicit launches.
+- Launch capabilities cover opening a local application, repository,
+  workspace, and coding environment. These are exposed only through explicit
+  API calls and do not run autonomously.
+- `/v1/desktop/status`, `/active-app`, `/open-apps`, `/launch-app`,
+  `/launch-workspace`, `/launch-repo`, and `/launch-coding-environment`
+  expose the desktop surface for Mission Control and local clients.
+- Integration points are local and conservative: Context Layer status can
+  include the desktop snapshot; Memory can record explicit non-Privacy launch
+  events; Workflow, Mode, and Coding Assistant state are summarized in the
+  desktop status payload.
+- Mission Control now includes a Desktop panel showing active app, open apps,
+  focused workspace, privacy posture, and recent explicit launches.
+- Privacy Mode remains local-only: clipboard/window titles are redacted where
+  applicable, no external sync is performed, and launch telemetry/memory writes
+  are disabled.
+
+Deferred work remains intentionally untouched in this phase:
+
+- no autonomous launching
+- no background desktop monitoring
+- no remote telemetry
+- no scheduler-driven launch actions
+
 ## Frontend Build Stability
 
 Production frontend builds now avoid the Vite/Rollup transform hang without

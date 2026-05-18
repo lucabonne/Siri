@@ -43,6 +43,7 @@ import {
   deleteMemory,
   fetchCodingPanel,
   fetchBriefingStatus,
+  fetchDesktopStatus,
   fetchLatestVisualContext,
   fetchLocalContextSnapshot,
   fetchLatestMorningBriefing,
@@ -98,6 +99,7 @@ import type {
   CodingPanelSnapshot,
   BriefingStatus,
   DailyBriefing,
+  DesktopStatus,
   MorningEvent,
   ResearchReport,
   ResearchSession,
@@ -275,6 +277,133 @@ function ContextTile({
           {detail}
         </div>
       )}
+    </div>
+  );
+}
+
+function DesktopSection() {
+  const [status, setStatus] = useState<DesktopStatus | null>(null);
+  const [live, setLive] = useState(false);
+
+  const refresh = async () => {
+    try {
+      const data = await fetchDesktopStatus();
+      setStatus(data);
+      setLive(true);
+    } catch {
+      setLive(false);
+    }
+  };
+
+  useEffect(() => {
+    refresh();
+  }, []);
+
+  const openApps = status?.open_apps ?? [];
+  const recentLaunches = status?.recent_launches ?? [];
+  const focus = status?.focused_workspace;
+
+  return (
+    <div className="grid gap-4 xl:grid-cols-[1fr_0.9fr]">
+      <ShellPanel title="Desktop Layer" action={live ? 'Live local status' : 'Fallback unavailable'}>
+        <div className="grid gap-3 md:grid-cols-3">
+          <ContextTile
+            icon={<AppWindow size={14} />}
+            label="Active App"
+            value={status?.active_application?.name || status?.active_window.application_name || 'Unavailable'}
+            detail={status?.active_window.title || 'No active window title'}
+          />
+          <ContextTile
+            icon={<FolderGit2 size={14} />}
+            label="Focused Workspace"
+            value={focus?.name || 'No workspace'}
+            detail={focus?.path ? compactPath(focus.path) : 'Session or cwd focus'}
+          />
+          <ContextTile
+            icon={<ShieldCheck size={14} />}
+            label="Privacy"
+            value={status?.privacy_mode ? 'Privacy Mode' : 'Local only'}
+            detail={status?.telemetry_enabled ? 'Telemetry enabled' : 'No telemetry'}
+          />
+        </div>
+        <div className="mt-4 flex items-center justify-between gap-3">
+          <div className="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+            Launches are explicit only; no background desktop monitor is active.
+          </div>
+          <button
+            type="button"
+            onClick={refresh}
+            className="flex h-9 w-9 items-center justify-center rounded-md border transition-colors"
+            style={{
+              borderColor: 'var(--color-border)',
+              color: 'var(--color-text-secondary)',
+              background: 'var(--color-bg-secondary)',
+            }}
+            title="Refresh desktop"
+          >
+            <RefreshCw size={16} />
+          </button>
+        </div>
+      </ShellPanel>
+
+      <ShellPanel title="Open Apps" action={`${openApps.length} visible`}>
+        <div className="space-y-2">
+          {(openApps.length ? openApps.slice(0, 8) : [{ name: 'No apps reported', frontmost: false }]).map((app) => (
+            <div
+              key={`${app.name}-${'process_id' in app ? app.process_id ?? '' : ''}`}
+              className="flex items-center justify-between gap-3 rounded-md border px-3 py-2"
+              style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg-secondary)' }}
+            >
+              <span className="min-w-0 truncate text-sm font-medium" style={{ color: 'var(--color-text)' }}>
+                {app.name}
+              </span>
+              {'frontmost' in app && app.frontmost ? <StatusPill tone="good">Active</StatusPill> : null}
+            </div>
+          ))}
+        </div>
+      </ShellPanel>
+
+      <ShellPanel title="Focused Workspace" action={focus?.source || 'cwd'}>
+        <div className="grid gap-3 md:grid-cols-2">
+          <ContextTile icon={<Code2 size={14} />} label="Project Type" value={focus?.project_type || 'unknown'} />
+          <ContextTile icon={<GitBranch size={14} />} label="Branch" value={focus?.current_branch || 'No branch'} />
+        </div>
+        <div className="mt-3 rounded-md border p-3 text-sm" style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg-secondary)', color: 'var(--color-text-secondary)' }}>
+          {focus?.path || 'No focused project has been resolved yet.'}
+        </div>
+      </ShellPanel>
+
+      <ShellPanel title="Recent Launches" action={`${recentLaunches.length} local`}>
+        <div className="space-y-2">
+          {(recentLaunches.length ? recentLaunches.slice(0, 6) : []).map((launch) => (
+            <div
+              key={`${launch.action}-${launch.target}-${launch.launched_at}`}
+              className="grid gap-1 rounded-md border p-3"
+              style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg-secondary)' }}
+            >
+              <div className="flex items-center justify-between gap-3">
+                <span className="flex min-w-0 items-center gap-2 text-sm font-medium" style={{ color: 'var(--color-text)' }}>
+                  <Play size={14} />
+                  <span className="truncate">{launch.action.replace(/_/g, ' ')}</span>
+                </span>
+                <StatusPill tone={launch.status === 'launched' ? 'good' : 'watch'}>{launch.status}</StatusPill>
+              </div>
+              <div className="truncate text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+                {launch.workspace_path || launch.app_name || launch.target}
+              </div>
+              <div className="flex items-center gap-2 text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+                <History size={12} />
+                {formatTime(launch.launched_at)}
+              </div>
+            </div>
+          ))}
+          {!recentLaunches.length && (
+            <div className="rounded-md border p-3 text-sm" style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg-secondary)', color: 'var(--color-text-secondary)' }}>
+              Recent explicit launches will appear here.
+            </div>
+          )}
+        </div>
+      </ShellPanel>
     </div>
   );
 }
@@ -2933,6 +3062,7 @@ function ActiveSection({ section }: { section: MissionSectionId }) {
   if (section === 'agents') return <AgentsSection />;
   if (section === 'memory') return <MemorySection />;
   if (section === 'projects') return <ProjectsSection />;
+  if (section === 'desktop') return <DesktopSection />;
   if (section === 'coding') return <CodingSection />;
   if (section === 'repo') return <RepoSection />;
   if (section === 'voice') return <VoiceSection />;
