@@ -1,5 +1,28 @@
 # Customization Plan
 
+## Frontend Build Stability
+
+Production frontend builds now avoid the Vite/Rollup transform hang without
+changing Siri UI behavior.
+
+- `frontend/vite.config.ts` keeps the existing React, Tailwind, shadcn, and
+  alias setup, and adds an `openjarvis-lucide-direct-imports` Vite transform
+  that rewrites `lucide-react` named imports to per-icon imports during build.
+  This preserves source ergonomics while avoiding the full Lucide barrel graph
+  in production transforms.
+- Vite is pinned to `6.3.5` and Rollup to `4.34.9` to avoid the floated
+  `vite@6.4.1` / `rollup@4.60.0` build hang observed after TypeScript passed.
+- `vite-plugin-pwa` is preserved but gated behind
+  `OPENJARVIS_ENABLE_PWA=1`. Normal `npm run build` and Tauri/static builds no
+  longer wait on PWA generation after chunks are written.
+- `npm run build:diagnostics` verifies CSS package resolution for
+  `tailwindcss`, `tw-animate-css`, and `shadcn/tailwind.css`, runs a tiny
+  Tailwind utility build, checks Lucide icon direct-import coverage, and
+  validates the `@/*` alias contract.
+- `npm run build:verify` runs diagnostics before the production build.
+- Verified: `npm run build:diagnostics && npm run build` completes and writes
+  the production assets under `src/openjarvis/server/static`.
+
 ## Controlled Automation Workflows Phase 1
 
 Phase 1 adds explicit, reusable workflow scaffolding on top of Siri's existing
