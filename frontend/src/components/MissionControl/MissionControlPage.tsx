@@ -33,6 +33,8 @@ import {
   Square,
   TerminalSquare,
   Trash2,
+  Volume2,
+  VolumeX,
   Workflow,
   XCircle,
 } from 'lucide-react';
@@ -58,6 +60,8 @@ import {
   fetchStartupStatus,
   fetchSecurityApprovals,
   fetchTerminalContext,
+  fetchTTSStatus,
+  fetchTTSVoices,
   fetchVoicePttStatus,
   fetchWorldEvents,
   fetchWorldMonitorStatus,
@@ -77,10 +81,12 @@ import {
   startResearch,
   runWorkflow,
   startVoicePttRecording,
+  speakTTS,
   switchActiveWorkspaceAgent,
   switchActiveSiriMode,
   triggerStartupMorningBriefing,
   stopVoicePttRecording,
+  stopTTS,
   syncWorldMonitor,
   transcribeLatestVoiceRecording,
 } from '../../lib/api';
@@ -93,6 +99,8 @@ import type {
   SiriModeConfig,
   StructuredMemory,
   TerminalContextSnapshot,
+  TTSStatus,
+  TTSVoice,
   VisualContext,
   VoicePttStatus,
   WorkspaceAgentConfig,
@@ -2083,9 +2091,14 @@ function WorkflowsSection() {
 
 function VoiceSection() {
   const [status, setStatus] = useState<VoicePttStatus | null>(null);
+  const [ttsStatus, setTtsStatus] = useState<TTSStatus | null>(null);
+  const [ttsVoices, setTtsVoices] = useState<TTSVoice[]>([]);
+  const [selectedVoiceId, setSelectedVoiceId] = useState('');
   const [transcript, setTranscript] = useState('');
   const [error, setError] = useState('');
+  const [ttsError, setTtsError] = useState('');
   const [busy, setBusy] = useState<'idle' | 'starting' | 'stopping' | 'transcribing'>('idle');
+  const [ttsBusy, setTtsBusy] = useState<'idle' | 'speaking' | 'stopping'>('idle');
 
   const loadVoiceStatus = async () => {
     try {
@@ -2097,8 +2110,25 @@ function VoiceSection() {
     }
   };
 
+  const loadTtsStatus = async () => {
+    try {
+      const [nextStatus, voices] = await Promise.all([
+        fetchTTSStatus(),
+        fetchTTSVoices(),
+      ]);
+      setTtsStatus(nextStatus);
+      setTtsVoices(voices.voices);
+      setSelectedVoiceId((current) => current || nextStatus.selected_voice_id || voices.voices[0]?.id || '');
+      setTtsError('');
+    } catch {
+      setTtsStatus(null);
+      setTtsVoices([]);
+    }
+  };
+
   useEffect(() => {
     loadVoiceStatus();
+    loadTtsStatus();
   }, []);
 
   const startHold = async () => {
@@ -2137,9 +2167,40 @@ function VoiceSection() {
   const recording = status?.recording ?? false;
   const latest = status?.latest;
   const intent = latest?.intent_preview;
+  const selectedVoice = ttsVoices.find((voice) => voice.id === selectedVoiceId);
+  const speaking = ttsStatus?.speaking ?? false;
   const buttonBusy = busy !== 'idle';
   const buttonLabel = recording ? 'Release to stop' : buttonBusy ? 'Working' : 'Hold to talk';
   const stateLabel = recording ? 'Recording' : busy === 'transcribing' ? 'Transcribing' : 'Idle';
+
+  const speakTestPhrase = async () => {
+    if (ttsBusy !== 'idle') return;
+    setTtsBusy('speaking');
+    setTtsError('');
+    try {
+      const response = await speakTTS('Siri voice output is local and ready.', selectedVoiceId, true);
+      setTtsStatus(response.status);
+      setSelectedVoiceId(response.status.selected_voice_id || selectedVoiceId);
+    } catch (err) {
+      setTtsError(err instanceof Error ? err.message : 'Speech failed');
+    } finally {
+      setTtsBusy('idle');
+    }
+  };
+
+  const stopSpeaking = async () => {
+    if (ttsBusy !== 'idle') return;
+    setTtsBusy('stopping');
+    setTtsError('');
+    try {
+      const response = await stopTTS();
+      setTtsStatus(response.status);
+    } catch (err) {
+      setTtsError(err instanceof Error ? err.message : 'Stop speech failed');
+    } finally {
+      setTtsBusy('idle');
+    }
+  };
 
   return (
     <div className="grid gap-4 xl:grid-cols-[0.9fr_1.1fr]">
@@ -2217,6 +2278,107 @@ function VoiceSection() {
             {error}
           </p>
         )}
+
+        <div
+          className="mt-5 rounded-md border p-4"
+          style={{
+            borderColor: 'var(--color-border)',
+            background: 'var(--color-bg-secondary)',
+          }}
+        >
+          <div className="grid gap-3 md:grid-cols-3">
+            <ContextTile
+              icon={ttsStatus?.muted ? <VolumeX size={15} /> : <Volume2 size={15} />}
+              label="Output"
+              value={speaking ? 'Speaking' : ttsStatus?.muted ? 'Muted' : 'Ready'}
+              detail={ttsStatus?.response_style || 'local voice'}
+            />
+            <ContextTile
+              icon={<ShieldCheck size={15} />}
+              label="TTS"
+              value={ttsStatus?.local_only ? 'Local only' : 'Unavailable'}
+              detail={ttsStatus?.cloud_tts_enabled ? 'Cloud enabled' : 'No cloud TTS'}
+            />
+            <ContextTile
+              icon={<LockKeyhole size={15} />}
+              label="Mode"
+              value={ttsStatus?.privacy_mode ? 'Privacy' : ttsStatus?.quiet_mode ? 'Quiet' : ttsStatus?.active_mode_id || 'Mode'}
+              detail={ttsStatus?.muted ? 'Quiet indicator' : 'Manual output'}
+            />
+          </div>
+
+          <div className="mt-4 flex flex-wrap items-center gap-3">
+            <select
+              value={selectedVoiceId}
+              onChange={(event) => setSelectedVoiceId(event.target.value)}
+              className="h-10 min-w-44 rounded-md border px-3 text-sm outline-none"
+              style={{
+                borderColor: 'var(--color-border)',
+                background: 'var(--color-bg-primary)',
+                color: 'var(--color-text)',
+              }}
+              aria-label="Selected voice"
+            >
+              {ttsVoices.map((voice) => (
+                <option key={`${voice.engine}:${voice.id}`} value={voice.id}>
+                  {voice.name} / {voice.engine}
+                </option>
+              ))}
+              {!ttsVoices.length && <option value="">No local voice</option>}
+            </select>
+            <button
+              type="button"
+              onClick={speakTestPhrase}
+              disabled={ttsBusy !== 'idle' || !ttsStatus?.available}
+              className="inline-flex h-10 items-center justify-center gap-2 rounded-md border px-3 text-sm font-semibold transition-colors disabled:opacity-60"
+              style={{
+                borderColor: 'var(--color-border)',
+                color: 'var(--color-text)',
+                background: 'var(--color-bg-primary)',
+              }}
+              title="Speak test phrase"
+            >
+              <Volume2 size={16} />
+              Test
+            </button>
+            <button
+              type="button"
+              onClick={stopSpeaking}
+              disabled={ttsBusy !== 'idle' || !speaking}
+              className="inline-flex h-10 items-center justify-center gap-2 rounded-md border px-3 text-sm font-semibold transition-colors disabled:opacity-60"
+              style={{
+                borderColor: 'var(--color-border)',
+                color: 'var(--color-text)',
+                background: 'var(--color-bg-primary)',
+              }}
+              title="Stop speaking"
+            >
+              <Square size={15} />
+              Stop
+            </button>
+            <button
+              type="button"
+              onClick={loadTtsStatus}
+              className="flex h-10 w-10 items-center justify-center rounded-md border transition-colors"
+              style={{
+                borderColor: 'var(--color-border)',
+                color: 'var(--color-text-secondary)',
+                background: 'var(--color-bg-primary)',
+              }}
+              title="Refresh voice output"
+            >
+              <RefreshCw size={15} />
+            </button>
+            <StatusPill tone={ttsStatus?.local_only ? 'good' : 'watch'}>
+              {selectedVoice ? selectedVoice.engine : 'Local only'}
+            </StatusPill>
+          </div>
+          {ttsError && (
+            <p className="mt-3 text-sm" style={{ color: 'var(--color-error)' }}>
+              {ttsError}
+            </p>
+          )}
+        </div>
       </ShellPanel>
 
       <ShellPanel title="Transcript Preview" action="not sent">

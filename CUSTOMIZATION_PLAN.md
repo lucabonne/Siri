@@ -518,6 +518,39 @@ Deferred work remains intentionally untouched in this phase:
 - no background microphone capture
 - no persistent raw audio unless explicitly enabled
 
+## Voice Output / TTS Phase 1
+
+Phase 1 adds explicit local voice output for Siri without autonomous speech,
+cloud TTS, wake-word behavior, or always-on listening.
+
+- `src/openjarvis/tts/` owns a dedicated local-only TTS subsystem:
+  `engines.py` supports macOS `say` as the default local fallback and optional
+  Piper when a local model is configured, `models.py` defines voice/status
+  payloads, `permissions.py` integrates PermissionMiddleware, `state.py` owns
+  active/latest speech state, and `service.py` coordinates user-triggered
+  speech and stop behavior.
+- `/v1/tts/speak`, `/v1/tts/stop`, `/v1/tts/status`, and `/v1/tts/voices`
+  expose local voice output controls for Mission Control and local clients.
+- Privacy Mode remains local-only: the service reports cloud TTS disabled and
+  blocks any non-local output path.
+- Quiet Mode marks output muted and blocks speech by default unless the caller
+  explicitly opts into a user-triggered phrase. Focus Mode truncates spoken
+  text to short responses, while Research Mode allows longer summaries.
+- The service records active mode, active workspace agent, agent memory scope,
+  passive voice-input status, and Context Layer snapshots as minimal metadata.
+  Privacy Mode skips memory persistence.
+- PermissionMiddleware continues to classify `text_to_speech` as a safe local
+  action, and the TTS gate blocks non-user-triggered speech before playback.
+- Mission Control's Voice tab now includes output controls for a test phrase,
+  stop speaking, selected voice, local-only status, and quiet/muted mode state.
+
+Deferred work remains intentionally untouched in this phase:
+
+- no autonomous speech
+- no response auto-play after chat completions
+- no cloud TTS providers
+- no scheduled or background voice output
+
 ## Terminal Co-Pilot Phase 1
 
 Phase 1 adds passive terminal awareness and local-only terminal debugging

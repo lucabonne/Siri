@@ -93,6 +93,15 @@ class VoiceTranscribeLatestRequest(BaseModel):
     language: str = ""
 
 
+class TTSSpeakApiRequest(BaseModel):
+    text: str
+    voice_id: str = ""
+    engine: str = ""
+    user_triggered: bool = True
+    allow_quiet: bool = False
+    speed: float = 1.0
+
+
 # ---- Agent routes ----
 
 agents_router = APIRouter(prefix="/v1/agents", tags=["agents"])
@@ -1085,6 +1094,112 @@ async def transcribe_latest_voice(
         raise _voice_error(exc) from exc
 
 
+# ---- Local voice output routes ----
+
+tts_router = APIRouter(prefix="/v1/tts", tags=["tts"])
+
+
+def _get_tts_service(request: Request):
+    service = getattr(request.app.state, "tts_service", None)
+    if service is not None:
+        return service
+
+    from openjarvis.agent_workspace import AgentWorkspaceRegistry
+    from openjarvis.security.permissions import PermissionMiddleware
+    from openjarvis.tts import LocalTTSService
+
+    mode_registry = getattr(request.app.state, "mode_registry", None)
+    workspace_registry = getattr(
+        request.app.state,
+        "agent_workspace_registry",
+        None,
+    )
+    if workspace_registry is None:
+        workspace_registry = AgentWorkspaceRegistry()
+        request.app.state.agent_workspace_registry = workspace_registry
+    permission_middleware = getattr(
+        request.app.state,
+        "permission_middleware",
+        None,
+    )
+    if permission_middleware is None:
+        permission_middleware = PermissionMiddleware(mode_registry=mode_registry)
+        request.app.state.permission_middleware = permission_middleware
+
+    service = LocalTTSService(
+        permission_middleware=permission_middleware,
+        mode_registry=mode_registry,
+        agent_workspace_registry=workspace_registry,
+        context_layer=getattr(request.app.state, "context_layer", None),
+        memory_service=getattr(request.app.state, "structured_memory_service", None),
+        voice_service=getattr(request.app.state, "voice_ptt_service", None),
+    )
+    request.app.state.tts_service = service
+    return service
+
+
+def _tts_error(exc: Exception) -> HTTPException:
+    from openjarvis.tts import TTSPermissionError, TTSUnavailableError
+
+    if isinstance(exc, TTSPermissionError):
+        return HTTPException(
+            status_code=403,
+            detail={"status": "blocked", "reason": str(exc)},
+        )
+    if isinstance(exc, TTSUnavailableError):
+        return HTTPException(status_code=503, detail=str(exc))
+    return HTTPException(status_code=500, detail=str(exc))
+
+
+@tts_router.post("/speak")
+async def speak_tts(req: TTSSpeakApiRequest, request: Request):
+    """Speak text through a local-only TTS engine."""
+    service = _get_tts_service(request)
+    try:
+        speech = service.speak(
+            req.text,
+            voice_id=req.voice_id,
+            engine=req.engine,
+            user_triggered=req.user_triggered,
+            allow_quiet=req.allow_quiet,
+            speed=req.speed,
+        )
+        return {"status": service.status(), "speech": speech.to_dict()}
+    except Exception as exc:
+        raise _tts_error(exc) from exc
+
+
+@tts_router.post("/stop")
+async def stop_tts(request: Request):
+    """Stop active local voice output."""
+    service = _get_tts_service(request)
+    try:
+        speech = service.stop()
+        return {
+            "status": service.status(),
+            "speech": speech.to_dict() if speech is not None else None,
+        }
+    except Exception as exc:
+        raise _tts_error(exc) from exc
+
+
+@tts_router.get("/status")
+async def tts_status(request: Request):
+    """Return local voice output status."""
+    return _get_tts_service(request).status()
+
+
+@tts_router.get("/voices")
+async def tts_voices(request: Request):
+    """List local voice output voices."""
+    voices = _get_tts_service(request).voices()
+    return {
+        "local_only": True,
+        "cloud_tts_enabled": False,
+        "voices": [voice.to_dict() for voice in voices],
+    }
+
+
 # ---- Feedback routes ----
 
 feedback_router = APIRouter(prefix="/v1/feedback", tags=["feedback"])
@@ -1197,6 +1312,7 @@ def include_all_routes(app) -> None:
     app.include_router(learning_router)
     app.include_router(speech_router)
     app.include_router(voice_router)
+    app.include_router(tts_router)
     app.include_router(feedback_router)
     app.include_router(optimize_router)
     app.include_router(agent_workspace_router)
@@ -1258,6 +1374,7 @@ __all__ = [
     "learning_router",
     "speech_router",
     "voice_router",
+    "tts_router",
     "feedback_router",
     "optimize_router",
     "agent_workspace_router",

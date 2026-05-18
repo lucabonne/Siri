@@ -1137,6 +1137,74 @@ export interface VoicePttStartResponse {
   recording: VoiceSession;
 }
 
+export interface TTSVoice {
+  id: string;
+  name: string;
+  engine: string;
+  locale: string;
+  local_only: boolean;
+  metadata: Record<string, unknown>;
+}
+
+export interface TTSSpeech {
+  id: string;
+  text: string;
+  spoken_text: string;
+  text_length: number;
+  spoken_text_length: number;
+  started_at: number;
+  stopped_at: number | null;
+  status: string;
+  engine: string;
+  voice_id: string;
+  active_agent: string;
+  active_mode: string;
+  local_only: boolean;
+  user_triggered: boolean;
+  passive_only: boolean;
+  autonomous_speech: boolean;
+  truncated: boolean;
+  permission_decisions: Array<Record<string, unknown>>;
+  context: Record<string, unknown>;
+}
+
+export interface TTSStatus {
+  state: 'idle' | 'speaking' | string;
+  speaking: boolean;
+  local_only: boolean;
+  cloud_tts_enabled: boolean;
+  autonomous_speech: boolean;
+  passive_only: boolean;
+  quiet_mode: boolean;
+  muted: boolean;
+  privacy_mode: boolean;
+  active_mode_id: string;
+  active_agent_id: string;
+  selected_voice_id: string;
+  selected_engine: string;
+  available: boolean;
+  available_engines: string[];
+  response_style: string;
+  voice_input: Record<string, unknown>;
+  latest: TTSSpeech | null;
+}
+
+export interface TTSSpeakResponse {
+  status: TTSStatus;
+  speech: TTSSpeech;
+}
+
+export interface TTSStopResponse {
+  status: TTSStatus;
+  speech: TTSSpeech | null;
+}
+
+export interface TTSVoicesResponse {
+  local_only: boolean;
+  cloud_tts_enabled: boolean;
+  voices: TTSVoice[];
+}
+
 export interface VoiceTranscriptResult extends TranscriptionResult {
   status: string;
   reason?: string;
@@ -1211,6 +1279,39 @@ export async function transcribeLatestVoiceRecording(): Promise<VoiceTranscriptR
     body: JSON.stringify({}),
   });
   if (!res.ok) throw new Error(`Failed to transcribe voice recording: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchTTSStatus(): Promise<TTSStatus> {
+  const res = await fetch(`${getBase()}/v1/tts/status`);
+  if (!res.ok) throw new Error(`Failed to fetch TTS status: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchTTSVoices(): Promise<TTSVoicesResponse> {
+  const res = await fetch(`${getBase()}/v1/tts/voices`);
+  if (!res.ok) throw new Error(`Failed to fetch TTS voices: ${res.status}`);
+  return res.json();
+}
+
+export async function speakTTS(text: string, voiceId = '', allowQuiet = false): Promise<TTSSpeakResponse> {
+  const res = await fetch(`${getBase()}/v1/tts/speak`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      text,
+      voice_id: voiceId,
+      user_triggered: true,
+      allow_quiet: allowQuiet,
+    }),
+  });
+  if (!res.ok) throw new Error(`Failed to speak: ${res.status}`);
+  return res.json();
+}
+
+export async function stopTTS(): Promise<TTSStopResponse> {
+  const res = await fetch(`${getBase()}/v1/tts/stop`, { method: 'POST' });
+  if (!res.ok) throw new Error(`Failed to stop speech: ${res.status}`);
   return res.json();
 }
 
