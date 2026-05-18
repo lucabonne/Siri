@@ -26,6 +26,7 @@ DEFAULT_MODE_CONFIGS = [
             "outbound_network": "allowed",
             "localhost_network": "allowed",
             "allowed_engines": ["ollama", "local", "cloud"],
+            "research_external_search": "allowed",
         },
         "default_model_overrides": {
             "engine": "",
@@ -56,7 +57,13 @@ DEFAULT_MODE_CONFIGS = [
         "memory_behavior": {
             "read": True,
             "write": "sources_and_findings",
-            "scopes": ["research_reports", "sources", "project", "agent_runs"],
+            "scopes": [
+                "research_reports",
+                "research_sources",
+                "sources",
+                "project",
+                "agent_runs",
+            ],
         },
         "privacy_network_policy": {
             "cloud_apis": "allowed",
@@ -64,6 +71,7 @@ DEFAULT_MODE_CONFIGS = [
             "outbound_network": "allowed",
             "localhost_network": "allowed",
             "allowed_engines": ["ollama", "local", "cloud"],
+            "research_external_search": "allowed",
         },
         "default_model_overrides": {
             "engine": "",
@@ -253,6 +261,7 @@ DEFAULT_MODE_CONFIGS = [
             "outbound_network": "localhost_only",
             "localhost_network": "allowed",
             "allowed_engines": ["ollama", "local", "llamacpp", "vllm"],
+            "research_external_search": "disabled",
         },
         "voice_capture_behavior": {
             "enabled_by_default": False,

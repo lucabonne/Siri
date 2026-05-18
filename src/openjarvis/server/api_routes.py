@@ -16,6 +16,7 @@ from openjarvis.server.context_routes import context_router
 from openjarvis.server.mode_routes import mode_router
 from openjarvis.server.morning_briefing_routes import morning_briefing_router
 from openjarvis.server.repo_index_routes import repo_index_router
+from openjarvis.server.research_routes import research_router
 from openjarvis.server.startup_routes import startup_router
 from openjarvis.server.worldmonitor_routes import worldmonitor_router
 
@@ -1201,6 +1202,7 @@ def include_all_routes(app) -> None:
     app.include_router(morning_briefing_router)
     app.include_router(startup_router)
     app.include_router(worldmonitor_router)
+    app.include_router(research_router)
     app.include_router(context_router)
     app.include_router(repo_index_router)
     app.include_router(coding_assistant_router)
@@ -1258,4 +1260,5 @@ __all__ = [
     "coding_assistant_router",
     "mode_router",
     "repo_index_router",
+    "research_router",
 ]

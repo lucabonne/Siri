@@ -1928,3 +1928,136 @@ export async function getMemoryConfig(): Promise<MemoryConfig> {
   if (!res.ok) throw new Error('Failed to fetch memory config');
   return res.json();
 }
+
+// ---------------------------------------------------------------------------
+// Autonomous Research Mode
+// ---------------------------------------------------------------------------
+
+export interface ResearchPlan {
+  question: string;
+  search_strategy: string[];
+  subtopics: string[];
+  open_questions: string[];
+  created_at: string;
+}
+
+export interface ResearchSource {
+  id: string;
+  title: string;
+  url: string;
+  access_date: string;
+  relevance: number;
+  extracted_claims: string[];
+  snippet: string;
+  source_type: string;
+  metadata: Record<string, unknown>;
+}
+
+export interface ResearchCitation {
+  id: string;
+  source_id: string;
+  label: string;
+  title: string;
+  url: string;
+  access_date: string;
+  relevance: number;
+}
+
+export interface ResearchReport {
+  id: string;
+  question: string;
+  title: string;
+  notes: string[];
+  summary: string;
+  citations: ResearchCitation[];
+  unresolved_questions: string[];
+  body: string;
+  created_at: string;
+  metadata: Record<string, unknown>;
+}
+
+export interface ResearchSession {
+  id: string;
+  question: string;
+  status: string;
+  plan: ResearchPlan;
+  sources: ResearchSource[];
+  report: ResearchReport | null;
+  memory_ids: string[];
+  privacy_mode: boolean;
+  cached_sources_only: boolean;
+  local_only: boolean;
+  passive_only: boolean;
+  active_mode_id: string;
+  workspace_agent_id: string;
+  created_at: string;
+  updated_at: string;
+  metadata: Record<string, unknown>;
+}
+
+export interface ResearchStatus {
+  id: string;
+  question: string;
+  status: string;
+  source_count: number;
+  citation_count: number;
+  memory_count: number;
+  privacy_mode: boolean;
+  cached_sources_only: boolean;
+  local_only: boolean;
+  passive_only: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export async function listResearch(limit: number = 20): Promise<ResearchSession[]> {
+  const res = await fetch(`${getBase()}/v1/research?limit=${limit}`);
+  if (!res.ok) throw new Error(`Failed to list research: ${res.status}`);
+  const data = await res.json();
+  return data.research;
+}
+
+export async function startResearch(data: {
+  question: string;
+  sources?: Array<Record<string, unknown>>;
+  allow_external_search?: boolean;
+  max_sources?: number;
+}): Promise<ResearchSession> {
+  const res = await fetch(`${getBase()}/v1/research/start`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error(`Failed to start research: ${res.status}`);
+  const body = await res.json();
+  return body.research;
+}
+
+export async function fetchResearchStatus(researchId: string): Promise<ResearchStatus> {
+  const res = await fetch(`${getBase()}/v1/research/${encodeURIComponent(researchId)}/status`);
+  if (!res.ok) throw new Error(`Failed to fetch research status: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchResearchReport(researchId: string): Promise<ResearchReport | null> {
+  const res = await fetch(`${getBase()}/v1/research/${encodeURIComponent(researchId)}/report`);
+  if (!res.ok) throw new Error(`Failed to fetch research report: ${res.status}`);
+  const data = await res.json();
+  return data.report;
+}
+
+export async function fetchResearchCitations(researchId: string): Promise<{
+  citations: ResearchCitation[];
+  sources: ResearchSource[];
+}> {
+  const res = await fetch(`${getBase()}/v1/research/${encodeURIComponent(researchId)}/citations`);
+  if (!res.ok) throw new Error(`Failed to fetch research citations: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchResearchMemoryEntries(researchId: string): Promise<StructuredMemory[]> {
+  const res = await fetch(`${getBase()}/v1/research/${encodeURIComponent(researchId)}/memory`);
+  if (!res.ok) throw new Error(`Failed to fetch research memory entries: ${res.status}`);
+  const data = await res.json();
+  return data.memories;
+}

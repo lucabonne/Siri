@@ -24,7 +24,6 @@ import {
   Package,
   Pin,
   Plus,
-  Radar,
   RefreshCw,
   Search,
   ShieldAlert,
@@ -48,6 +47,10 @@ import {
   fetchPermissionAudit,
   fetchRepoSummary,
   fetchRecentVisionScreenshots,
+  fetchResearchCitations,
+  fetchResearchMemoryEntries,
+  fetchResearchReport,
+  fetchResearchStatus,
   fetchStartupStatus,
   fetchSecurityApprovals,
   fetchTerminalContext,
@@ -58,6 +61,7 @@ import {
   listWorkspaceAgents,
   listSiriModes,
   listMemories,
+  listResearch,
   installStartup,
   regenerateMorningBriefing,
   removeStartup,
@@ -65,6 +69,7 @@ import {
   searchRepoIndex,
   searchMemory,
   setMemoryPinned,
+  startResearch,
   startVoicePttRecording,
   switchActiveWorkspaceAgent,
   switchActiveSiriMode,
@@ -89,6 +94,9 @@ import type {
   BriefingStatus,
   DailyBriefing,
   MorningEvent,
+  ResearchReport,
+  ResearchSession,
+  ResearchSource,
   StartupStatus,
   WorldMonitorStatus,
   WorldMonitorSyncStatus,
@@ -2086,36 +2094,274 @@ function VisionSection() {
 }
 
 function ResearchSection() {
-  return (
-    <ShellPanel title="Research">
-      <div className="grid gap-3 md:grid-cols-3">
-        {['Local-first agents', 'Permission UX', 'Memory ranking'].map((topic, index) => (
-          <div
-            key={topic}
-            className="rounded-md border p-4"
-            style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg-secondary)' }}
-          >
-            <FileSearchIcon />
-            <div className="mt-3 text-sm font-semibold" style={{ color: 'var(--color-text)' }}>
-              {topic}
-            </div>
-            <div className="mt-2 text-xs" style={{ color: 'var(--color-text-secondary)' }}>
-              {[12, 8, 15][index]} sources grouped
-            </div>
-          </div>
-        ))}
-      </div>
-    </ShellPanel>
-  );
-}
+  const [sessions, setSessions] = useState<ResearchSession[]>([]);
+  const [selected, setSelected] = useState<ResearchSession | null>(null);
+  const [report, setReport] = useState<ResearchReport | null>(null);
+  const [sources, setSources] = useState<ResearchSource[]>([]);
+  const [memoryEntries, setMemoryEntries] = useState<StructuredMemory[]>([]);
+  const [query, setQuery] = useState('local-first research workflow');
+  const [status, setStatus] = useState<'loading' | 'ready' | 'offline' | 'running'>('loading');
 
-function FileSearchIcon() {
+  const loadResearch = async () => {
+    setStatus('loading');
+    try {
+      const items = await listResearch(12);
+      setSessions(items);
+      setSelected((current) => current ?? items[0] ?? null);
+      setStatus('ready');
+    } catch {
+      setSessions([]);
+      setSelected(null);
+      setReport(null);
+      setSources([]);
+      setMemoryEntries([]);
+      setStatus('offline');
+    }
+  };
+
+  useEffect(() => {
+    loadResearch();
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!selected) {
+      setReport(null);
+      setSources([]);
+      setMemoryEntries([]);
+      return;
+    }
+    Promise.all([
+      fetchResearchStatus(selected.id).catch(() => null),
+      fetchResearchReport(selected.id).catch(() => selected.report),
+      fetchResearchCitations(selected.id).catch(() => ({
+        citations: selected.report?.citations ?? [],
+        sources: selected.sources,
+      })),
+      fetchResearchMemoryEntries(selected.id).catch(() => []),
+    ]).then(([nextStatus, nextReport, citationData, memories]) => {
+      if (cancelled) return;
+      setReport(nextReport);
+      setSources(citationData.sources);
+      setMemoryEntries(memories);
+      if (nextStatus) setStatus('ready');
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [selected]);
+
+  const runResearch = async () => {
+    if (!query.trim()) return;
+    setStatus('running');
+    try {
+      const session = await startResearch({
+        question: query.trim(),
+        allow_external_search: false,
+        max_sources: 8,
+      });
+      setSessions((items) => [session, ...items.filter((item) => item.id !== session.id)]);
+      setSelected(session);
+      setReport(session.report);
+      setSources(session.sources);
+      setStatus('ready');
+    } catch {
+      setStatus('offline');
+    }
+  };
+
+  const activeReport = report ?? selected?.report ?? null;
+  const activeSources = sources.length ? sources : selected?.sources ?? [];
+  const openQuestions = activeReport?.unresolved_questions ?? selected?.plan.open_questions ?? [];
+  const notes = activeReport?.notes ?? [];
+
   return (
-    <div
-      className="flex h-9 w-9 items-center justify-center rounded-md"
-      style={{ background: 'var(--color-accent-subtle)', color: 'var(--color-accent)' }}
-    >
-      <Radar size={18} />
+    <div className="grid gap-4 xl:grid-cols-[0.9fr_1.1fr]">
+      <ShellPanel title="Active Research" action={status}>
+        <div className="flex gap-2">
+          <input
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') runResearch();
+            }}
+            placeholder="Research question"
+            className="min-w-0 flex-1 rounded-md border px-3 py-2 text-sm outline-none"
+            style={{
+              borderColor: 'var(--color-border)',
+              color: 'var(--color-text)',
+              background: 'var(--color-bg-secondary)',
+            }}
+          />
+          <button
+            type="button"
+            onClick={runResearch}
+            disabled={status === 'running' || !query.trim()}
+            className="inline-flex h-10 w-10 items-center justify-center rounded-md border disabled:opacity-60"
+            style={{ borderColor: 'var(--color-border)', color: 'var(--color-text)' }}
+            title="Start research"
+          >
+            {status === 'running' ? <RefreshCw size={16} /> : <Search size={16} />}
+          </button>
+        </div>
+
+        <div className="mt-4 grid gap-2">
+          {sessions.length === 0 && (
+            <div className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
+              No research reports cached yet.
+            </div>
+          )}
+          {sessions.slice(0, 8).map((session) => {
+            const active = selected?.id === session.id;
+            return (
+              <button
+                key={session.id}
+                type="button"
+                onClick={() => setSelected(session)}
+                className="rounded-md border p-3 text-left transition-colors"
+                style={{
+                  borderColor: active ? 'var(--color-accent)' : 'var(--color-border)',
+                  background: active ? 'var(--color-accent-subtle)' : 'var(--color-bg-secondary)',
+                  color: 'var(--color-text)',
+                }}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="truncate text-sm font-semibold">{session.question}</div>
+                    <div className="mt-1 text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+                      {session.sources.length} sources · {session.memory_ids.length} memories
+                    </div>
+                  </div>
+                  <StatusPill tone={session.privacy_mode ? 'watch' : 'good'}>
+                    {session.cached_sources_only ? 'Cached' : session.status}
+                  </StatusPill>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </ShellPanel>
+
+      <div className="grid gap-4">
+        <ShellPanel title={activeReport?.title || 'Report'} action={formatTime(activeReport?.created_at || selected?.created_at || '')}>
+          {activeReport ? (
+            <div className="grid gap-4">
+              <p className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
+                {activeReport.summary}
+              </p>
+              <div className="grid gap-3 md:grid-cols-3">
+                {[
+                  ['Notes', String(notes.length)],
+                  ['Sources', String(activeSources.length)],
+                  ['Citations', String(activeReport.citations.length)],
+                ].map(([label, value]) => (
+                  <div
+                    key={label}
+                    className="rounded-md border p-3"
+                    style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg-secondary)' }}
+                  >
+                    <div className="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>{label}</div>
+                    <div className="mt-1 text-xl font-semibold" style={{ color: 'var(--color-text)' }}>{value}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <p className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
+              Select or start a research run.
+            </p>
+          )}
+        </ShellPanel>
+
+        <div className="grid gap-4 lg:grid-cols-2">
+          <ShellPanel title="Notes" action={`${notes.length} claims`}>
+            <div className="space-y-2">
+              {notes.length === 0 && (
+                <div className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
+                  No extracted notes yet.
+                </div>
+              )}
+              {notes.slice(0, 8).map((note) => (
+                <div
+                  key={note}
+                  className="rounded-md border p-3 text-sm"
+                  style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg-secondary)', color: 'var(--color-text)' }}
+                >
+                  {note}
+                </div>
+              ))}
+            </div>
+          </ShellPanel>
+
+          <ShellPanel title="Open Questions" action={`${openQuestions.length} unresolved`}>
+            <div className="space-y-2">
+              {openQuestions.map((question) => (
+                <div
+                  key={question}
+                  className="rounded-md border p-3 text-sm"
+                  style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg-secondary)', color: 'var(--color-text-secondary)' }}
+                >
+                  {question}
+                </div>
+              ))}
+            </div>
+          </ShellPanel>
+        </div>
+
+        <ShellPanel title="Sources" action={`${activeSources.length} collected`}>
+          <div className="grid gap-2">
+            {activeSources.length === 0 && (
+              <div className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
+                No cached sources matched.
+              </div>
+            )}
+            {activeSources.slice(0, 8).map((source) => (
+              <div
+                key={source.id}
+                className="grid gap-2 rounded-md border p-3 md:grid-cols-[1fr_120px_90px]"
+                style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg-secondary)' }}
+              >
+                <div className="min-w-0">
+                  <div className="truncate text-sm font-semibold" style={{ color: 'var(--color-text)' }}>
+                    {source.title}
+                  </div>
+                  <div className="mt-1 truncate text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+                    {source.url || source.source_type}
+                  </div>
+                </div>
+                <span className="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+                  {source.source_type}
+                </span>
+                <span className="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+                  {Math.round(source.relevance * 100)}%
+                </span>
+              </div>
+            ))}
+          </div>
+        </ShellPanel>
+
+        <ShellPanel title="Memory Entries" action={`${memoryEntries.length} stored`}>
+          <div className="space-y-2">
+            {memoryEntries.length === 0 && (
+              <div className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
+                No stored research memories found.
+              </div>
+            )}
+            {memoryEntries.slice(0, 5).map((memory) => (
+              <div
+                key={memory.id}
+                className="rounded-md border p-3"
+                style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg-secondary)' }}
+              >
+                <div className="truncate text-sm" style={{ color: 'var(--color-text)' }}>{memory.content}</div>
+                <div className="mt-1 text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+                  {memory.memory_type}
+                </div>
+              </div>
+            ))}
+          </div>
+        </ShellPanel>
+      </div>
     </div>
   );
 }

@@ -1,5 +1,44 @@
 # Customization Plan
 
+## Autonomous Research Mode Phase 1
+
+Phase 1 turns Siri Research Agent into an explicit local-first research
+workflow without autonomous loops, background agents, sync, or notifications.
+
+- `src/openjarvis/research/` owns planning, local/cached source search,
+  claim extraction, citation generation, deterministic summarization, report
+  rendering, memory writes, typed models, and the coordinating service.
+- A research run is a synchronous one-shot workflow:
+  question → plan → search → source collection → extraction → citations →
+  summary → report → memory storage.
+- Research plans include the original question, search strategy, subtopics,
+  and open questions.
+- Source records include title, URL, access date, relevance, snippets, source
+  type, metadata, and extracted claims.
+- Reports include notes, summaries, citations, unresolved questions, and a
+  Markdown body suitable for local review.
+- Storage is local SQLite. Research sessions and sources are cached in
+  `research_sessions` and `research_sources`; summaries and source claims are
+  also written to structured Memory as `research_report` and
+  `research_source` memories.
+- `/v1/research/start`, list, `/{id}/status`, `/{id}/report`,
+  `/{id}/citations`, and `/{id}/memory` expose explicit research APIs.
+- Integration points are passive: active Mode and active Agent Workspace ids
+  are captured as metadata; cached Morning Briefing events, WorldMonitor
+  imports, and structured Memory are searched as local sources.
+- Privacy Mode forces cached/local sources only, blocks optional external
+  search, marks artifacts local-only, and performs no external sync.
+- Mission Control's Research tab now shows active research, notes, sources,
+  reports, open questions, and stored memory entries from the backend.
+
+Deferred work remains intentionally untouched in this phase:
+
+- no autonomous research loops
+- no background research agents
+- no notifications
+- no external sync
+- no scheduler-driven research
+
 ## Morning Briefing + World Map Phase 1
 
 Phase 1 adds a proactive-but-quiet daily briefing layer for Siri without
