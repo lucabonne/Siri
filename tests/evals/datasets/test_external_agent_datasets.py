@@ -15,8 +15,17 @@ unreachable since all three provider modules exist.
 from __future__ import annotations
 
 import importlib
+import os
 
 import pytest
+
+pytestmark = pytest.mark.skipif(
+    os.environ.get("OPENJARVIS_RUN_EXTERNAL_DATASET_TESTS") != "1",
+    reason=(
+        "external HuggingFace dataset smoke tests require "
+        "OPENJARVIS_RUN_EXTERNAL_DATASET_TESTS=1"
+    ),
+)
 
 PROVIDERS = [
     ("openjarvis.evals.datasets.adp", "ADPDataset"),

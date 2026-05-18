@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib
 from unittest import mock
 
 from click.testing import CliRunner
@@ -49,9 +50,10 @@ class TestPullCliMultiEngine:
     def test_pull_llamacpp_uses_huggingface_cli(self) -> None:
         from openjarvis.cli import cli
 
+        model_module = importlib.import_module("openjarvis.cli.model")
         runner = CliRunner()
         with (
-            mock.patch("openjarvis.cli.model.load_config") as mock_cfg,
+            mock.patch.object(model_module, "load_config") as mock_cfg,
             mock.patch("subprocess.run") as mock_run,
         ):
             mock_cfg.return_value.engine.default = "llamacpp"
@@ -71,9 +73,10 @@ class TestPullCliMultiEngine:
     def test_pull_mlx_uses_huggingface_cli(self) -> None:
         from openjarvis.cli import cli
 
+        model_module = importlib.import_module("openjarvis.cli.model")
         runner = CliRunner()
         with (
-            mock.patch("openjarvis.cli.model.load_config") as mock_cfg,
+            mock.patch.object(model_module, "load_config") as mock_cfg,
             mock.patch("subprocess.run") as mock_run,
         ):
             mock_cfg.return_value.engine.default = "mlx"
@@ -93,9 +96,10 @@ class TestPullCliMultiEngine:
     def test_pull_llamacpp_huggingface_cli_not_found(self) -> None:
         from openjarvis.cli import cli
 
+        model_module = importlib.import_module("openjarvis.cli.model")
         runner = CliRunner()
         with (
-            mock.patch("openjarvis.cli.model.load_config") as mock_cfg,
+            mock.patch.object(model_module, "load_config") as mock_cfg,
             mock.patch("subprocess.run", side_effect=FileNotFoundError),
         ):
             mock_cfg.return_value.engine.default = "llamacpp"

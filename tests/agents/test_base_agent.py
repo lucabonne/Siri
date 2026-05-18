@@ -285,7 +285,13 @@ class TestToolUsingAgent:
         assert agent._executor is not None
         assert len(agent._tools) == 1
 
-    def test_default_max_turns(self):
+    def test_default_max_turns(self, monkeypatch):
+        from openjarvis.core.config import JarvisConfig
+
+        cfg = JarvisConfig()
+        cfg.agent.max_turns = 10
+        monkeypatch.setattr("openjarvis.agents._stubs.load_config", lambda: cfg)
+
         engine = MagicMock()
         agent = _ConcreteToolAgent(engine, "m")
         assert agent._max_turns == 10

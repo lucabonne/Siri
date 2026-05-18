@@ -6,6 +6,7 @@ import json
 import sqlite3
 import time
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -36,6 +37,18 @@ def _utc_now() -> str:
 
 def _today() -> str:
     return time.strftime("%Y-%m-%d", time.localtime())
+
+
+def _date_for(now: datetime | None = None) -> str:
+    return now.date().isoformat() if now is not None else _today()
+
+
+def _timestamp_for(now: datetime | None = None) -> str:
+    if now is None:
+        return _utc_now()
+    if now.tzinfo is not None:
+        now = now.astimezone(timezone.utc)
+    return now.strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _json_dumps(value: Any) -> str:
@@ -182,6 +195,7 @@ class MorningBriefingService:
         max_items: int = 12,
         privacy_mode: bool = False,
         persist_memory: bool = True,
+        now: datetime | None = None,
     ) -> DailyBriefing:
         """Generate and store a new briefing.
 
@@ -201,7 +215,7 @@ class MorningBriefingService:
                     location_name=location_name,
                 )
                 return self._store_briefing(
-                    title=f"Morning Briefing - {_today()}",
+                    title=f"Morning Briefing - {_date_for(now)}",
                     summary=summary,
                     content=content,
                     events=worldmonitor_events,
@@ -224,6 +238,7 @@ class MorningBriefingService:
                         "notifications": False,
                         "cloud_persistence": False,
                     },
+                    now=now,
                 )
             cached = self.latest_briefing()
             if cached is not None:
@@ -244,7 +259,7 @@ class MorningBriefingService:
             location_name=location_name,
         )
         briefing = self._store_briefing(
-            title=f"Morning Briefing - {_today()}",
+            title=f"Morning Briefing - {_date_for(now)}",
             summary=summary,
             content=content,
             events=events,
@@ -260,6 +275,7 @@ class MorningBriefingService:
                 "notifications": False,
                 "cloud_persistence": False,
             },
+            now=now,
         )
         if persist_memory:
             self._record_memory(briefing)
@@ -305,9 +321,11 @@ class MorningBriefingService:
         events: list[MorningEvent],
         location_name: str,
         metadata: dict[str, Any],
+        now: datetime | None = None,
     ) -> DailyBriefing:
         briefing_id = str(uuid.uuid4())
-        now = _utc_now()
+        generated_at = _timestamp_for(now)
+        briefing_date = _date_for(now)
         source_links = sorted(
             {event.source_url for event in events if event.source_url}
         )
@@ -316,7 +334,7 @@ class MorningBriefingService:
             "summary": summary,
             "source_links": source_links,
             "location_name": location_name,
-            "generated_at": now,
+            "generated_at": generated_at,
         }
         with self._conn:
             self._conn.execute(
@@ -328,16 +346,16 @@ class MorningBriefingService:
                 """,
                 (
                     briefing_id,
-                    _today(),
+                    briefing_date,
                     title,
                     content,
                     _json_dumps(enriched_metadata),
-                    now,
-                    now,
+                    generated_at,
+                    generated_at,
                 ),
             )
             for event in events:
-                event.created_at = now
+                event.created_at = generated_at
                 stored_event_id = f"{event.id}-{briefing_id[:8]}"
                 self._conn.execute(
                     """
@@ -362,7 +380,7 @@ class MorningBriefingService:
                         event.published_at,
                         event.importance,
                         _json_dumps(event.metadata),
-                        now,
+                        generated_at,
                     ),
                 )
         return self._row_to_briefing(

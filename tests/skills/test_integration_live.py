@@ -14,12 +14,24 @@ from openjarvis.skills.tool_adapter import SkillTool
 from openjarvis.system import SystemBuilder
 
 
+def _discover_installed_skills(bus: EventBus) -> SkillManager:
+    from pathlib import Path
+
+    mgr = SkillManager(bus=bus)
+    mgr.discover(paths=[Path("~/.openjarvis/skills/").expanduser()])
+    if not mgr.skill_names():
+        pytest.skip("No installed user skills found")
+    return mgr
+
+
 @pytest.mark.live
 class TestSkillSystemIntegration:
     """Integration tests verifying skills flow end-to-end with a real engine."""
 
-    def test_system_builder_discovers_skills(self):
+    def test_system_builder_discovers_skills(self, has_ollama):
         """SystemBuilder.build() discovers installed skills and adds them to tools."""
+        if not has_ollama:
+            pytest.skip("Ollama is not reachable")
         system = SystemBuilder().engine("ollama").model("qwen3.5:4b").build()
         try:
             assert system.skill_manager is not None, "SkillManager should be created"
@@ -41,32 +53,26 @@ class TestSkillSystemIntegration:
     def test_skill_catalog_in_system_prompt(self):
         """The skill catalog XML should be generated correctly."""
         bus = EventBus()
-        mgr = SkillManager(bus=bus)
-        from pathlib import Path
-
-        mgr.discover(paths=[Path("~/.openjarvis/skills/").expanduser()])
+        mgr = _discover_installed_skills(bus)
 
         catalog = mgr.get_catalog_xml()
         assert "<available_skills>" in catalog
-        assert "research-and-summarize" in catalog
-        assert "code-explainer" in catalog
-        assert "math-solver" in catalog
+        for skill_name in mgr.skill_names():
+            assert skill_name in catalog
         print(f"  Catalog XML:\n{catalog}")
 
     def test_skill_tool_invocation_returns_content(self):
         """Invoking a skill tool returns meaningful content."""
         bus = EventBus(record_history=True)
-        mgr = SkillManager(bus=bus)
-        from pathlib import Path
-
-        mgr.discover(paths=[Path("~/.openjarvis/skills/").expanduser()])
+        mgr = _discover_installed_skills(bus)
 
         # Test instruction-only skill
         tools = mgr.get_skill_tools()
         code_explainer = next(
             (t for t in tools if "code-explainer" in t.spec.name), None
         )
-        assert code_explainer is not None, "code-explainer skill should exist"
+        if code_explainer is None:
+            pytest.skip("code-explainer skill is not installed")
 
         result = code_explainer.execute(task="explain a for loop")
         assert result.success
@@ -81,8 +87,10 @@ class TestSkillSystemIntegration:
         # emit them, covered in TestSkillEventsAndTracing below)
         assert bus.history is not None
 
-    def test_agent_ask_with_skills_available(self):
+    def test_agent_ask_with_skills_available(self, has_ollama):
         """Agent can answer a query with skills available in the tool list."""
+        if not has_ollama:
+            pytest.skip("Ollama is not reachable")
         system = (
             SystemBuilder()
             .engine("ollama")

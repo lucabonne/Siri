@@ -3,17 +3,49 @@
 from __future__ import annotations
 
 import importlib
+import os
 
 import pytest
 
+EXTERNAL_DATASET_TESTS_ENABLED = (
+    os.environ.get("OPENJARVIS_RUN_EXTERNAL_DATASET_TESTS") == "1"
+)
+EXTERNAL_DATASET_MARK = pytest.mark.skipif(
+    not EXTERNAL_DATASET_TESTS_ENABLED,
+    reason=(
+        "external dataset split tests require "
+        "OPENJARVIS_RUN_EXTERNAL_DATASET_TESTS=1"
+    ),
+)
+
 PROVIDERS = [
     ("openjarvis.evals.datasets.pinchbench", "PinchBenchDataset"),
-    ("openjarvis.evals.datasets.liveresearch", "LiveResearchBenchDataset"),
-    ("openjarvis.evals.datasets.gaia", "GAIADataset"),
-    ("openjarvis.evals.datasets.liveresearchbench", "LiveResearchBenchDataset"),
-    ("openjarvis.evals.datasets.taubench", "TauBenchDataset"),
+    pytest.param(
+        "openjarvis.evals.datasets.liveresearch",
+        "LiveResearchBenchDataset",
+        marks=EXTERNAL_DATASET_MARK,
+    ),
+    pytest.param(
+        "openjarvis.evals.datasets.gaia",
+        "GAIADataset",
+        marks=EXTERNAL_DATASET_MARK,
+    ),
+    pytest.param(
+        "openjarvis.evals.datasets.liveresearchbench",
+        "LiveResearchBenchDataset",
+        marks=EXTERNAL_DATASET_MARK,
+    ),
+    pytest.param(
+        "openjarvis.evals.datasets.taubench",
+        "TauBenchDataset",
+        marks=EXTERNAL_DATASET_MARK,
+    ),
     ("openjarvis.evals.datasets.toolcall15", "ToolCall15Dataset"),
-    ("openjarvis.evals.datasets.livecodebench", "LiveCodeBenchDataset"),
+    pytest.param(
+        "openjarvis.evals.datasets.livecodebench",
+        "LiveCodeBenchDataset",
+        marks=EXTERNAL_DATASET_MARK,
+    ),
 ]
 
 

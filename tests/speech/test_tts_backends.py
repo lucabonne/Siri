@@ -39,7 +39,8 @@ def test_tts_result_save(tmp_path):
 def test_cartesia_registered():
     from openjarvis.speech.cartesia_tts import CartesiaTTSBackend
 
-    TTSRegistry.register_value("cartesia", CartesiaTTSBackend)
+    if not TTSRegistry.contains("cartesia"):
+        TTSRegistry.register_value("cartesia", CartesiaTTSBackend)
     assert TTSRegistry.contains("cartesia")
 
 
@@ -67,7 +68,8 @@ def test_cartesia_synthesize():
 def test_kokoro_registered():
     from openjarvis.speech.kokoro_tts import KokoroTTSBackend
 
-    TTSRegistry.register_value("kokoro", KokoroTTSBackend)
+    if not TTSRegistry.contains("kokoro"):
+        TTSRegistry.register_value("kokoro", KokoroTTSBackend)
     assert TTSRegistry.contains("kokoro")
 
 
@@ -87,7 +89,8 @@ def test_kokoro_health_false_without_package():
 def test_openai_tts_registered():
     from openjarvis.speech.openai_tts import OpenAITTSBackend
 
-    TTSRegistry.register_value("openai_tts", OpenAITTSBackend)
+    if not TTSRegistry.contains("openai_tts"):
+        TTSRegistry.register_value("openai_tts", OpenAITTSBackend)
     assert TTSRegistry.contains("openai_tts")
 
 

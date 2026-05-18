@@ -378,6 +378,12 @@ class TestGemmaCppLive:
     GEMMA_CPP_MODEL_TYPE env vars before running.
     """
 
+    def setup_method(self) -> None:
+        if not os.environ.get("GEMMA_CPP_MODEL_PATH"):
+            pytest.skip("GEMMA_CPP_MODEL_PATH is not configured")
+        if not os.environ.get("GEMMA_CPP_TOKENIZER_PATH"):
+            pytest.skip("GEMMA_CPP_TOKENIZER_PATH is not configured")
+
     def _make_engine(self):
         from openjarvis.engine.gemma_cpp import GemmaCppEngine
 

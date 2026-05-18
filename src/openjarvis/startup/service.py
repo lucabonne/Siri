@@ -115,6 +115,7 @@ class StartupService:
                 max_items=max(1, min(max_items, 50)),
                 privacy_mode=privacy_mode,
                 persist_memory=persist_memory and not privacy_mode,
+                now=current,
             )
         except PrivacyModeError:
             if not force:
