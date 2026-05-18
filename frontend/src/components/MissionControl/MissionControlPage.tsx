@@ -18,11 +18,13 @@ import {
   FolderGit2,
   Gauge,
   GitBranch,
+  History,
   Image,
   LockKeyhole,
   Mic2,
   Package,
   Pin,
+  Play,
   Plus,
   RefreshCw,
   Search,
@@ -31,6 +33,7 @@ import {
   Square,
   TerminalSquare,
   Trash2,
+  Workflow,
   XCircle,
 } from 'lucide-react';
 import {
@@ -58,6 +61,7 @@ import {
   fetchWorldEvents,
   fetchWorldMonitorStatus,
   fetchWorldMonitorSyncStatus,
+  fetchWorkflowPanel,
   listWorkspaceAgents,
   listSiriModes,
   listMemories,
@@ -70,6 +74,7 @@ import {
   searchMemory,
   setMemoryPinned,
   startResearch,
+  runWorkflow,
   startVoicePttRecording,
   switchActiveWorkspaceAgent,
   switchActiveSiriMode,
@@ -100,6 +105,9 @@ import type {
   StartupStatus,
   WorldMonitorStatus,
   WorldMonitorSyncStatus,
+  WorkflowDefinition,
+  WorkflowPanelSnapshot,
+  WorkflowRun,
 } from '../../lib/api';
 import {
   approvalQueue,
@@ -1746,6 +1754,204 @@ function TerminalSection() {
   );
 }
 
+function workflowTone(status: string): StatusTone {
+  if (status === 'completed') return 'good';
+  if (status === 'waiting_approval' || status === 'running') return 'busy';
+  if (status === 'blocked' || status === 'failed') return 'watch';
+  return 'quiet';
+}
+
+function WorkflowCard({
+  workflow,
+  running,
+  onRun,
+}: {
+  workflow: WorkflowDefinition;
+  running: boolean;
+  onRun: (workflowId: string) => void;
+}) {
+  return (
+    <div
+      className="rounded-md border p-4"
+      style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg-secondary)' }}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <Workflow size={16} style={{ color: 'var(--color-accent)' }} />
+            <h3 className="truncate text-sm font-semibold" style={{ color: 'var(--color-text)' }}>
+              {workflow.name}
+            </h3>
+          </div>
+          <p className="mt-2 line-clamp-2 text-sm" style={{ color: 'var(--color-text-secondary)' }}>
+            {workflow.description}
+          </p>
+        </div>
+        <button
+          type="button"
+          disabled={running}
+          onClick={() => onRun(workflow.id)}
+          className="inline-flex h-9 shrink-0 items-center justify-center rounded-md border px-3 text-xs font-semibold disabled:opacity-50"
+          style={{
+            borderColor: 'var(--color-border)',
+            color: 'var(--color-text)',
+            background: 'var(--color-bg)',
+          }}
+          title={`Run ${workflow.name}`}
+        >
+          <Play size={14} />
+        </button>
+      </div>
+      <div className="mt-4 flex flex-wrap gap-2">
+        <StatusPill tone={workflow.requires_approval ? 'watch' : 'good'}>
+          {workflow.requires_approval ? 'Approval gated' : 'Local safe'}
+        </StatusPill>
+        <StatusPill tone="quiet">{workflow.steps.length} steps</StatusPill>
+        <StatusPill tone="quiet">{workflow.allowed_agents.slice(0, 2).join(', ')}</StatusPill>
+      </div>
+    </div>
+  );
+}
+
+function WorkflowRunRow({ run }: { run: WorkflowRun }) {
+  return (
+    <div
+      className="grid gap-3 rounded-md border p-3 md:grid-cols-[1fr_auto]"
+      style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg-secondary)' }}
+    >
+      <div className="min-w-0">
+        <div className="flex items-center gap-2">
+          <span className="truncate text-sm font-semibold" style={{ color: 'var(--color-text)' }}>
+            {run.workflow_name}
+          </span>
+          <StatusPill tone={workflowTone(run.status)}>{run.status}</StatusPill>
+        </div>
+        <div className="mt-1 truncate text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+          {run.mode_id || 'mode'} / {run.agent_id || 'agent'} / {formatTime(run.updated_at)}
+        </div>
+      </div>
+      <div className="flex items-center gap-2 text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+        <History size={14} />
+        {run.steps.length} steps
+      </div>
+    </div>
+  );
+}
+
+function WorkflowsSection() {
+  const [snapshot, setSnapshot] = useState<WorkflowPanelSnapshot | null>(null);
+  const [live, setLive] = useState(false);
+  const [runningId, setRunningId] = useState<string | null>(null);
+
+  const loadWorkflows = async () => {
+    try {
+      const data = await fetchWorkflowPanel();
+      setSnapshot(data);
+      setLive(true);
+    } catch {
+      setSnapshot(null);
+      setLive(false);
+    }
+  };
+
+  useEffect(() => {
+    loadWorkflows();
+  }, []);
+
+  const launch = async (workflowId: string) => {
+    setRunningId(workflowId);
+    try {
+      await runWorkflow(workflowId, { requested_by: 'mission_control' });
+      await loadWorkflows();
+    } finally {
+      setRunningId(null);
+    }
+  };
+
+  const workflows = snapshot?.available_workflows ?? [];
+  const running = snapshot?.running_workflows ?? [];
+  const history = snapshot?.history ?? [];
+  const approvals = snapshot?.approvals ?? [];
+  const failures = snapshot?.failures ?? [];
+
+  return (
+    <div className="grid gap-4 xl:grid-cols-[1fr_340px]">
+      <ShellPanel title="Available Workflows" action={live ? 'local registry' : 'waiting'}>
+        <div className="grid gap-3 md:grid-cols-2">
+          {workflows.map((workflow) => (
+            <WorkflowCard
+              key={workflow.id}
+              workflow={workflow}
+              running={runningId === workflow.id}
+              onRun={launch}
+            />
+          ))}
+          {!workflows.length && (
+            <div className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
+              Workflow registry is not available yet.
+            </div>
+          )}
+        </div>
+      </ShellPanel>
+
+      <div className="grid gap-4">
+        <ShellPanel title="Running" action={`${running.length} active`}>
+          <div className="space-y-2">
+            {running.map((run) => <WorkflowRunRow key={run.id} run={run} />)}
+            {!running.length && (
+              <div className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
+                No workflows are currently active.
+              </div>
+            )}
+          </div>
+        </ShellPanel>
+
+        <ShellPanel title="Approvals" action={`${approvals.length} pending`}>
+          <div className="space-y-2">
+            {approvals.slice(0, 5).map((approval) => (
+              <div key={approval.id} className="rounded-md border p-3" style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg-secondary)' }}>
+                <div className="truncate text-sm font-semibold" style={{ color: 'var(--color-text)' }}>
+                  {approval.tool}
+                </div>
+                <div className="mt-1 truncate text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+                  {approval.reason}
+                </div>
+              </div>
+            ))}
+            {!approvals.length && (
+              <div className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
+                No workflow approvals are pending.
+              </div>
+            )}
+          </div>
+        </ShellPanel>
+
+        <ShellPanel title="Failures" action={`${failures.length} recent`}>
+          <div className="space-y-2">
+            {failures.map((run) => <WorkflowRunRow key={run.id} run={run} />)}
+            {!failures.length && (
+              <div className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
+                No recent workflow failures.
+              </div>
+            )}
+          </div>
+        </ShellPanel>
+      </div>
+
+      <ShellPanel title="History" action="recent">
+        <div className="grid gap-2">
+          {history.slice(0, 10).map((run) => <WorkflowRunRow key={run.id} run={run} />)}
+          {!history.length && (
+            <div className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
+              Workflow history will appear after the first run.
+            </div>
+          )}
+        </div>
+      </ShellPanel>
+    </div>
+  );
+}
+
 function VoiceSection() {
   const [status, setStatus] = useState<VoicePttStatus | null>(null);
   const [transcript, setTranscript] = useState('');
@@ -2732,6 +2938,7 @@ function ActiveSection({ section }: { section: MissionSectionId }) {
   if (section === 'voice') return <VoiceSection />;
   if (section === 'vision') return <VisionSection />;
   if (section === 'terminal') return <TerminalSection />;
+  if (section === 'workflows') return <WorkflowsSection />;
   if (section === 'research') return <ResearchSection />;
   if (section === 'settings') return <SettingsSection />;
   if (section === 'permissions') return <PermissionsSection />;

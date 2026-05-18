@@ -1,5 +1,39 @@
 # Customization Plan
 
+## Controlled Automation Workflows Phase 1
+
+Phase 1 adds explicit, reusable workflow scaffolding on top of Siri's existing
+permission, approval, memory, context, mode, agent workspace, and terminal
+co-pilot layers.
+
+- `src/openjarvis/workflows/` owns workflow definitions, typed models,
+  validation, approval bridging, local run history, memory recording, the
+  conservative runner, and the coordinating service.
+- Built-in workflows cover opening a project environment, running tests,
+  summarizing a repo, preparing research, collecting logs, backing up notes,
+  launching a coding workspace, and starting a morning workflow.
+- Workflow definitions declare id, name, steps, required permissions,
+  approval requirements, rollback hints, allowed agents, mode restrictions,
+  and local-only privacy metadata.
+- Runs are user-triggered only. Safe local/passive steps can complete
+  synchronously; approval-gated steps enqueue shared approval records and stop
+  at `waiting_approval` instead of executing shell, file-write, memory-write,
+  or agent-spawn style actions.
+- Privacy Mode remains local-only and rejects workflows or steps that are not
+  explicitly local-only. No external workflow sync is supported.
+- `/v1/workflows`, `/{id}/run`, `/status/{run_id}`, `/history`,
+  `/approvals`, and `/mission-control` expose workflow registry, runs,
+  status, history, approval queue, and panel data.
+- Mission Control now includes a Workflows panel for available workflows,
+  running/waiting workflows, history, approvals, and failures.
+
+Deferred work remains intentionally untouched in this phase:
+
+- no autonomous workflow execution
+- no background agents
+- no external workflow sync
+- no scheduler-driven workflow launches
+
 ## Autonomous Research Mode Phase 1
 
 Phase 1 turns Siri Research Agent into an explicit local-first research

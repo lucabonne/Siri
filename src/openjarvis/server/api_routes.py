@@ -18,6 +18,7 @@ from openjarvis.server.morning_briefing_routes import morning_briefing_router
 from openjarvis.server.repo_index_routes import repo_index_router
 from openjarvis.server.research_routes import research_router
 from openjarvis.server.startup_routes import startup_router
+from openjarvis.server.workflow_routes import workflow_router
 from openjarvis.server.worldmonitor_routes import worldmonitor_router
 
 logger = logging.getLogger(__name__)
@@ -1206,6 +1207,7 @@ def include_all_routes(app) -> None:
     app.include_router(context_router)
     app.include_router(repo_index_router)
     app.include_router(coding_assistant_router)
+    app.include_router(workflow_router)
 
     # Agent Manager routes (if available)
     try:
@@ -1261,4 +1263,5 @@ __all__ = [
     "mode_router",
     "repo_index_router",
     "research_router",
+    "workflow_router",
 ]

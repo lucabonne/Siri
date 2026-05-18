@@ -353,6 +353,136 @@ export async function switchActiveSiriMode(modeId: string): Promise<ActiveSiriMo
 }
 
 // ---------------------------------------------------------------------------
+// Controlled automation workflows
+// ---------------------------------------------------------------------------
+
+export interface WorkflowStepDefinition {
+  id: string;
+  name: string;
+  tool_name: string;
+  description: string;
+  arguments: Record<string, unknown>;
+  required_permission: string;
+  approval_required: boolean;
+  rollback_hint: string;
+  allowed_agents: string[];
+  mode_restrictions: string[];
+  local_only: boolean;
+  passive_only: boolean;
+}
+
+export interface WorkflowDefinition {
+  id: string;
+  name: string;
+  description: string;
+  steps: WorkflowStepDefinition[];
+  required_permissions: string[];
+  approval_requirements: string[];
+  rollback_hints: string[];
+  allowed_agents: string[];
+  mode_restrictions: string[];
+  privacy_local_only: boolean;
+  external_sync: boolean;
+  requires_approval: boolean;
+}
+
+export interface WorkflowStepRun {
+  step_id: string;
+  name: string;
+  tool_name: string;
+  status: string;
+  permission_action: string;
+  permission_level: string;
+  reason: string;
+  approval_id: string;
+  rollback_hint: string;
+  output: Record<string, unknown>;
+}
+
+export interface WorkflowRun {
+  id: string;
+  workflow_id: string;
+  workflow_name: string;
+  status: string;
+  requested_at: string;
+  updated_at: string;
+  completed_at: string | null;
+  requested_by: string;
+  agent_id: string;
+  mode_id: string;
+  cwd: string;
+  privacy_mode: boolean;
+  local_only: boolean;
+  external_sync: boolean;
+  current_step_id: string;
+  failure_reason: string;
+  approvals: string[];
+  context_summary: Record<string, unknown>;
+  steps: WorkflowStepRun[];
+}
+
+export interface WorkflowPanelSnapshot {
+  available_workflows: WorkflowDefinition[];
+  running_workflows: WorkflowRun[];
+  history: WorkflowRun[];
+  approvals: SecurityApproval[];
+  failures: WorkflowRun[];
+  privacy: {
+    local_only: boolean;
+    external_sync: boolean;
+  };
+}
+
+export async function fetchWorkflows(): Promise<WorkflowDefinition[]> {
+  const res = await fetch(`${getBase()}/v1/workflows`);
+  if (!res.ok) throw new Error(`Failed to fetch workflows: ${res.status}`);
+  const data = await res.json();
+  return data.workflows || [];
+}
+
+export async function runWorkflow(
+  workflowId: string,
+  body: {
+    agent_id?: string;
+    mode_id?: string;
+    cwd?: string;
+    requested_by?: string;
+    dry_run?: boolean;
+  } = {},
+): Promise<WorkflowRun> {
+  const res = await fetch(`${getBase()}/v1/workflows/${encodeURIComponent(workflowId)}/run`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(`Failed to run workflow: ${res.status}`);
+  const data = await res.json();
+  return data.run;
+}
+
+export async function fetchWorkflowHistory(limit = 50): Promise<WorkflowRun[]> {
+  const res = await fetch(`${getBase()}/v1/workflows/history?limit=${limit}`);
+  if (!res.ok) throw new Error(`Failed to fetch workflow history: ${res.status}`);
+  const data = await res.json();
+  return data.history || [];
+}
+
+export async function fetchWorkflowApprovals(
+  status: 'pending' | 'approved' | 'denied' | 'all' = 'pending',
+): Promise<SecurityApproval[]> {
+  const res = await fetch(`${getBase()}/v1/workflows/approvals?status=${status}`);
+  if (!res.ok) throw new Error(`Failed to fetch workflow approvals: ${res.status}`);
+  const data = await res.json();
+  return data.approvals || [];
+}
+
+export async function fetchWorkflowPanel(): Promise<WorkflowPanelSnapshot> {
+  const res = await fetch(`${getBase()}/v1/workflows/mission-control`);
+  if (!res.ok) throw new Error(`Failed to fetch workflow panel: ${res.status}`);
+  return res.json();
+}
+
+// ---------------------------------------------------------------------------
 // Passive local context
 // ---------------------------------------------------------------------------
 
