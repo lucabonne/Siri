@@ -20,11 +20,13 @@ import {
   GitBranch,
   History,
   Image,
+  Keyboard,
   LockKeyhole,
   Mic2,
   Package,
   Pin,
   Play,
+  Power,
   Plus,
   RefreshCw,
   Search,
@@ -43,9 +45,12 @@ import {
   captureVisionScreenshot,
   decideSecurityApproval,
   deleteMemory,
+  disableHotkey,
+  enableHotkey,
   fetchCodingPanel,
   fetchBriefingStatus,
   fetchDesktopStatus,
+  fetchHotkeyStatus,
   fetchLatestVisualContext,
   fetchLocalContextSnapshot,
   fetchLatestMorningBriefing,
@@ -88,6 +93,7 @@ import {
   stopVoicePttRecording,
   stopTTS,
   syncWorldMonitor,
+  testHotkeyTrigger,
   transcribeLatestVoiceRecording,
 } from '../../lib/api';
 import type {
@@ -108,6 +114,7 @@ import type {
   BriefingStatus,
   DailyBriefing,
   DesktopStatus,
+  HotkeyStatus,
   MorningEvent,
   ResearchReport,
   ResearchSession,
@@ -2091,6 +2098,7 @@ function WorkflowsSection() {
 
 function VoiceSection() {
   const [status, setStatus] = useState<VoicePttStatus | null>(null);
+  const [hotkeyStatus, setHotkeyStatus] = useState<HotkeyStatus | null>(null);
   const [ttsStatus, setTtsStatus] = useState<TTSStatus | null>(null);
   const [ttsVoices, setTtsVoices] = useState<TTSVoice[]>([]);
   const [selectedVoiceId, setSelectedVoiceId] = useState('');
@@ -2098,6 +2106,7 @@ function VoiceSection() {
   const [error, setError] = useState('');
   const [ttsError, setTtsError] = useState('');
   const [busy, setBusy] = useState<'idle' | 'starting' | 'stopping' | 'transcribing'>('idle');
+  const [hotkeyBusy, setHotkeyBusy] = useState<'idle' | 'toggle' | 'test'>('idle');
   const [ttsBusy, setTtsBusy] = useState<'idle' | 'speaking' | 'stopping'>('idle');
 
   const loadVoiceStatus = async () => {
@@ -2107,6 +2116,15 @@ function VoiceSection() {
       setError('');
     } catch {
       setStatus(null);
+    }
+  };
+
+  const loadHotkeyStatus = async () => {
+    try {
+      const data = await fetchHotkeyStatus();
+      setHotkeyStatus(data);
+    } catch {
+      setHotkeyStatus(null);
     }
   };
 
@@ -2128,6 +2146,7 @@ function VoiceSection() {
 
   useEffect(() => {
     loadVoiceStatus();
+    loadHotkeyStatus();
     loadTtsStatus();
   }, []);
 
@@ -2164,14 +2183,43 @@ function VoiceSection() {
     }
   };
 
+  const toggleHotkey = async () => {
+    if (hotkeyBusy !== 'idle') return;
+    setHotkeyBusy('toggle');
+    setError('');
+    try {
+      const next = hotkeyStatus?.enabled ? await disableHotkey() : await enableHotkey();
+      setHotkeyStatus(next);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Hotkey update failed');
+    } finally {
+      setHotkeyBusy('idle');
+    }
+  };
+
+  const runHotkeyTest = async () => {
+    if (hotkeyBusy !== 'idle') return;
+    setHotkeyBusy('test');
+    setError('');
+    try {
+      const result = await testHotkeyTrigger();
+      setHotkeyStatus(result.status);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Hotkey test failed');
+    } finally {
+      setHotkeyBusy('idle');
+    }
+  };
+
   const recording = status?.recording ?? false;
+  const hotkeyActive = hotkeyStatus?.active ?? false;
   const latest = status?.latest;
   const intent = latest?.intent_preview;
   const selectedVoice = ttsVoices.find((voice) => voice.id === selectedVoiceId);
   const speaking = ttsStatus?.speaking ?? false;
   const buttonBusy = busy !== 'idle';
   const buttonLabel = recording ? 'Release to stop' : buttonBusy ? 'Working' : 'Hold to talk';
-  const stateLabel = recording ? 'Recording' : busy === 'transcribing' ? 'Transcribing' : 'Idle';
+  const stateLabel = recording || hotkeyActive ? 'Recording' : busy === 'transcribing' ? 'Transcribing' : 'Idle';
 
   const speakTestPhrase = async () => {
     if (ttsBusy !== 'idle') return;
@@ -2224,6 +2272,83 @@ function VoiceSection() {
             value={latest?.active_agent || status?.active_agent_id || 'Workspace'}
             detail={latest?.active_mode || status?.active_mode_id || 'mode pending'}
           />
+        </div>
+
+        <div
+          className="mt-5 rounded-md border p-4"
+          style={{
+            borderColor: 'var(--color-border)',
+            background: 'var(--color-bg-secondary)',
+          }}
+        >
+          <div className="grid gap-3 md:grid-cols-3">
+            <ContextTile
+              icon={<Keyboard size={15} />}
+              label="Global Trigger"
+              value={hotkeyStatus?.effective_enabled ? 'Enabled' : hotkeyStatus?.enabled ? 'Privacy held' : 'Disabled'}
+              detail={hotkeyStatus?.listener_running ? 'Listener active' : 'Listener idle'}
+            />
+            <ContextTile
+              icon={<Power size={15} />}
+              label="Binding"
+              value={hotkeyStatus?.binding?.display_name || 'Fn'}
+              detail={hotkeyStatus?.binding?.fallback_display_name || 'Ctrl+Space'}
+            />
+            <ContextTile
+              icon={<ShieldCheck size={15} />}
+              label="Last Trigger"
+              value={hotkeyStatus?.active ? 'Pressed' : hotkeyStatus?.last_trigger?.phase || 'None'}
+              detail={hotkeyStatus?.privacy_mode ? 'Privacy Mode' : hotkeyStatus?.last_trigger?.binding || 'Explicit only'}
+            />
+          </div>
+          <div className="mt-4 flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              onClick={toggleHotkey}
+              disabled={hotkeyBusy !== 'idle' || hotkeyStatus?.privacy_mode}
+              className="inline-flex h-10 items-center justify-center gap-2 rounded-md border px-3 text-sm font-semibold transition-colors disabled:opacity-60"
+              style={{
+                borderColor: hotkeyStatus?.effective_enabled ? 'var(--color-success)' : 'var(--color-border)',
+                color: 'var(--color-text)',
+                background: 'var(--color-bg-primary)',
+              }}
+              title="Toggle global trigger"
+            >
+              <Keyboard size={16} />
+              {hotkeyStatus?.enabled ? 'Disable' : 'Enable'}
+            </button>
+            <button
+              type="button"
+              onClick={runHotkeyTest}
+              disabled={hotkeyBusy !== 'idle' || hotkeyStatus?.privacy_mode}
+              className="inline-flex h-10 items-center justify-center gap-2 rounded-md border px-3 text-sm font-semibold transition-colors disabled:opacity-60"
+              style={{
+                borderColor: 'var(--color-border)',
+                color: 'var(--color-text)',
+                background: 'var(--color-bg-primary)',
+              }}
+              title="Test trigger"
+            >
+              <Play size={15} />
+              Test
+            </button>
+            <button
+              type="button"
+              onClick={loadHotkeyStatus}
+              className="flex h-10 w-10 items-center justify-center rounded-md border transition-colors"
+              style={{
+                borderColor: 'var(--color-border)',
+                color: 'var(--color-text-secondary)',
+                background: 'var(--color-bg-primary)',
+              }}
+              title="Refresh global trigger"
+            >
+              <RefreshCw size={15} />
+            </button>
+            <StatusPill tone={hotkeyStatus?.active ? 'busy' : hotkeyStatus?.privacy_mode ? 'watch' : hotkeyStatus?.effective_enabled ? 'good' : 'quiet'}>
+              {hotkeyStatus?.active ? 'Active' : hotkeyStatus?.privacy_mode ? 'Privacy off' : hotkeyStatus?.effective_enabled ? 'Ready' : 'Off'}
+            </StatusPill>
+          </div>
         </div>
 
         <div className="mt-5 flex flex-wrap items-center gap-3">

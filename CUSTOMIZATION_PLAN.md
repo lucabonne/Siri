@@ -518,6 +518,42 @@ Deferred work remains intentionally untouched in this phase:
 - no background microphone capture
 - no persistent raw audio unless explicitly enabled
 
+## Global Voice Trigger / Fn Hotkey Phase 1
+
+Phase 1 adds explicit system-level voice activation for Siri through hold-style
+keyboard triggers without wake-word detection, background transcription,
+continuous microphone access, or autonomous speech.
+
+- `src/openjarvis/hotkeys/` owns the global trigger subsystem:
+  `listener.py` adapts optional keyboard listener backends, `state.py` tracks
+  enabled/active/latest-trigger state, `permissions.py` gates listener actions
+  through `PermissionMiddleware`, `models.py` defines binding/status payloads,
+  and `service.py` coordinates press/release events with the existing voice PTT
+  service.
+- Fn hold is the primary binding and `Ctrl+Space` is the configurable fallback.
+  The keyboard listener observes key state only; microphone capture starts only
+  on a matching press and stops on release.
+- `/v1/hotkeys/status`, `/enable`, `/disable`, `/binding`, and
+  `/test-trigger` expose Mission Control and local-client APIs. The test
+  trigger records a dry trigger event without opening the microphone.
+- `SpeechConfig` now includes `global_voice_trigger_enabled`,
+  `global_voice_trigger_binding`, and `global_voice_trigger_fallback`, all
+  defaulting to explicit opt-in behavior.
+- `PermissionMiddleware` classifies the global voice hotkey listener as a
+  confirmed action. Privacy Mode disables the global listener entirely; voice
+  capture remains available only through explicit user-approved PTT surfaces.
+- Mission Control's Voice tab now shows the global trigger toggle, current
+  binding, active state, Privacy Mode status, and last trigger while preserving
+  local-only PTT and TTS status.
+
+Deferred work remains intentionally untouched in this phase:
+
+- no wake word
+- no always-listening mode
+- no background transcription
+- no autonomous speech
+- no continuous microphone access
+
 ## Voice Output / TTS Phase 1
 
 Phase 1 adds explicit local voice output for Siri without autonomous speech,

@@ -1131,6 +1131,46 @@ export interface VoicePttStatus {
   latest: VoiceSession | null;
 }
 
+export interface HotkeyBinding {
+  kind: string;
+  keys: string[];
+  fallback_keys: string[];
+  display_name: string;
+  fallback_display_name: string;
+}
+
+export interface HotkeyTriggerEvent {
+  source: string;
+  phase: string;
+  binding: string;
+  timestamp: number;
+  active: boolean;
+  approved: boolean;
+  test: boolean;
+  blocked: boolean;
+  reason: string;
+}
+
+export interface HotkeyStatus {
+  enabled: boolean;
+  effective_enabled: boolean;
+  listener_running: boolean;
+  active: boolean;
+  binding: HotkeyBinding;
+  privacy_mode: boolean;
+  approval_required: boolean;
+  last_trigger: HotkeyTriggerEvent | null;
+  voice_status: Record<string, unknown>;
+  tts_status: Record<string, unknown>;
+  desktop_status: Record<string, unknown>;
+  push_to_talk_only: boolean;
+  wake_word_enabled: boolean;
+  background_transcription: boolean;
+  always_listening: boolean;
+  autonomous_speech: boolean;
+  local_only: boolean;
+}
+
 export interface VoicePttStartResponse {
   status: VoicePttStatus;
   session: VoiceSession;
@@ -1279,6 +1319,41 @@ export async function transcribeLatestVoiceRecording(): Promise<VoiceTranscriptR
     body: JSON.stringify({}),
   });
   if (!res.ok) throw new Error(`Failed to transcribe voice recording: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchHotkeyStatus(): Promise<HotkeyStatus> {
+  const res = await fetch(`${getBase()}/v1/hotkeys/status`);
+  if (!res.ok) throw new Error(`Failed to fetch hotkey status: ${res.status}`);
+  return res.json();
+}
+
+export async function enableHotkey(binding = '', fallback = ''): Promise<HotkeyStatus> {
+  const res = await fetch(`${getBase()}/v1/hotkeys/enable`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ approved: true, binding, fallback }),
+  });
+  if (!res.ok) throw new Error(`Failed to enable hotkey: ${res.status}`);
+  return res.json();
+}
+
+export async function disableHotkey(): Promise<HotkeyStatus> {
+  const res = await fetch(`${getBase()}/v1/hotkeys/disable`, { method: 'POST' });
+  if (!res.ok) throw new Error(`Failed to disable hotkey: ${res.status}`);
+  return res.json();
+}
+
+export async function testHotkeyTrigger(): Promise<{
+  status: HotkeyStatus;
+  trigger: HotkeyTriggerEvent;
+}> {
+  const res = await fetch(`${getBase()}/v1/hotkeys/test-trigger`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ approved: true }),
+  });
+  if (!res.ok) throw new Error(`Failed to test hotkey: ${res.status}`);
   return res.json();
 }
 

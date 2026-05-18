@@ -93,6 +93,16 @@ class VoiceTranscribeLatestRequest(BaseModel):
     language: str = ""
 
 
+class HotkeyEnableRequest(BaseModel):
+    approved: bool = True
+    binding: str = ""
+    fallback: str = ""
+
+
+class HotkeyTestTriggerRequest(BaseModel):
+    approved: bool = True
+
+
 class TTSSpeakApiRequest(BaseModel):
     text: str
     voice_id: str = ""
@@ -1094,6 +1104,125 @@ async def transcribe_latest_voice(
         raise _voice_error(exc) from exc
 
 
+# ---- Global voice hotkey routes ----
+
+hotkey_router = APIRouter(prefix="/v1/hotkeys", tags=["hotkeys"])
+
+
+def _get_hotkey_service(request: Request):
+    service = getattr(request.app.state, "hotkey_service", None)
+    if service is not None:
+        return service
+
+    from openjarvis.hotkeys import GlobalVoiceHotkeyService
+    from openjarvis.security.permissions import PermissionMiddleware
+
+    mode_registry = getattr(request.app.state, "mode_registry", None)
+    permission_middleware = getattr(
+        request.app.state,
+        "permission_middleware",
+        None,
+    )
+    if permission_middleware is None:
+        permission_middleware = PermissionMiddleware(mode_registry=mode_registry)
+        request.app.state.permission_middleware = permission_middleware
+
+    service = GlobalVoiceHotkeyService(
+        config=getattr(request.app.state, "config", None),
+        voice_service=_get_voice_ptt_service(request),
+        tts_service=getattr(request.app.state, "tts_service", None),
+        permission_middleware=permission_middleware,
+        mode_registry=mode_registry,
+        desktop_service=getattr(request.app.state, "desktop_service", None),
+    )
+    request.app.state.hotkey_service = service
+    return service
+
+
+def _hotkey_error(exc: Exception) -> HTTPException:
+    from openjarvis.hotkeys import HotkeyListenerUnavailableError, HotkeyPermissionError
+
+    if isinstance(exc, HotkeyPermissionError):
+        return HTTPException(
+            status_code=403,
+            detail={"status": "blocked", "reason": str(exc)},
+        )
+    if isinstance(exc, HotkeyListenerUnavailableError):
+        return HTTPException(status_code=503, detail=str(exc))
+    return HTTPException(status_code=500, detail=str(exc))
+
+
+@hotkey_router.get("/status")
+async def hotkey_status(request: Request):
+    """Return global voice trigger status."""
+    return _get_hotkey_service(request).status()
+
+
+@hotkey_router.post("/enable")
+async def enable_hotkey(req: HotkeyEnableRequest, request: Request):
+    """Enable explicit system-level voice trigger listening."""
+    service = _get_hotkey_service(request)
+    try:
+        binding = None
+        if req.binding or req.fallback:
+            from openjarvis.hotkeys import HotkeyBinding
+
+            current = service.current_binding()
+            binding = HotkeyBinding.from_config(
+                getattr(request.app.state, "config", None)
+            )
+            if req.binding:
+                binding.keys = [
+                    part.strip().lower().replace("control", "ctrl")
+                    for part in req.binding.replace("-", "+").split("+")
+                    if part.strip()
+                ]
+                binding.display_name = "+".join(part.title() for part in binding.keys)
+                binding.kind = "fn_hold" if binding.keys == ["fn"] else "hotkey_hold"
+            if req.fallback:
+                binding.fallback_keys = [
+                    part.strip().lower().replace("control", "ctrl")
+                    for part in req.fallback.replace("-", "+").split("+")
+                    if part.strip()
+                ]
+                binding.fallback_display_name = "+".join(
+                    part.title() for part in binding.fallback_keys
+                )
+            if not req.binding and current.get("keys"):
+                binding.keys = list(current["keys"])
+            if not req.fallback and current.get("fallback_keys"):
+                binding.fallback_keys = list(current["fallback_keys"])
+        return service.enable(binding=binding, explicit_approval=req.approved)
+    except Exception as exc:
+        raise _hotkey_error(exc) from exc
+
+
+@hotkey_router.post("/disable")
+async def disable_hotkey(request: Request):
+    """Disable global voice trigger listening."""
+    try:
+        return _get_hotkey_service(request).disable()
+    except Exception as exc:
+        raise _hotkey_error(exc) from exc
+
+
+@hotkey_router.get("/binding")
+async def hotkey_binding(request: Request):
+    """Return the current voice trigger binding."""
+    return _get_hotkey_service(request).current_binding()
+
+
+@hotkey_router.post("/test-trigger")
+async def test_hotkey_trigger(req: HotkeyTestTriggerRequest, request: Request):
+    """Test the hotkey route without opening the microphone."""
+    try:
+        return _get_hotkey_service(request).test_trigger(
+            explicit_approval=req.approved
+        )
+    except Exception as exc:
+        raise _hotkey_error(exc) from exc
+
+
 # ---- Local voice output routes ----
 
 tts_router = APIRouter(prefix="/v1/tts", tags=["tts"])
@@ -1312,6 +1441,7 @@ def include_all_routes(app) -> None:
     app.include_router(learning_router)
     app.include_router(speech_router)
     app.include_router(voice_router)
+    app.include_router(hotkey_router)
     app.include_router(tts_router)
     app.include_router(feedback_router)
     app.include_router(optimize_router)
@@ -1374,6 +1504,7 @@ __all__ = [
     "learning_router",
     "speech_router",
     "voice_router",
+    "hotkey_router",
     "tts_router",
     "feedback_router",
     "optimize_router",
