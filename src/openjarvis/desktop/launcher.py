@@ -14,6 +14,7 @@ from urllib.request import urlopen
 from openjarvis.desktop.apps import Runner, _run_launch
 from openjarvis.desktop.models import (
     DesktopLauncherState,
+    LauncherDiagnostic,
     LauncherHealthCheck,
     LaunchResult,
 )
@@ -43,6 +44,7 @@ class DesktopLauncher:
         self._backend_command: list[str] = []
         self._frontend_command: list[str] = []
         self._health_checks: list[LauncherHealthCheck] = []
+        self._startup_diagnostics: list[LauncherDiagnostic] = []
         self._last_action = ""
         self._last_restart_at = ""
 
@@ -142,6 +144,7 @@ class DesktopLauncher:
             backend_command=list(self._backend_command),
             frontend_command=list(self._frontend_command),
             health_checks=list(self._health_checks),
+            startup_diagnostics=list(self._startup_diagnostics),
             last_action=self._last_action,
             last_restart_at=self._last_restart_at,
         )
@@ -167,6 +170,31 @@ class DesktopLauncher:
             )
         self._health_checks = checks
         self._last_action = "health_checks"
+        return self.state()
+
+    def startup_diagnostics(self) -> DesktopLauncherState:
+        """Inspect local wrapper prerequisites without starting helpers."""
+        frontend_dir = self._frontend_dir()
+        backend_command = self._backend_command or ["jarvis", "serve"]
+        frontend_command = self._frontend_command or [
+            "npm",
+            "run",
+            "dev",
+            "--",
+            "--host",
+            "127.0.0.1",
+        ]
+        self._startup_diagnostics = [
+            _command_diagnostic("backend_command", backend_command),
+            _command_diagnostic("frontend_command", frontend_command),
+            LauncherDiagnostic(
+                name="frontend_directory",
+                status="ok" if frontend_dir.exists() else "missing",
+                message=str(frontend_dir),
+                checked_at=utc_now(),
+            ),
+        ]
+        self._last_action = "startup_diagnostics"
         return self.state()
 
     def start_backend(
@@ -325,6 +353,17 @@ def _http_health_probe(url: str, timeout: float) -> tuple[bool, str]:
             return False, f"HTTP {status}"
     except (OSError, URLError) as exc:
         return False, str(exc)
+
+
+def _command_diagnostic(name: str, command: list[str]) -> LauncherDiagnostic:
+    executable = command[0] if command else ""
+    available = bool(executable and shutil.which(executable))
+    return LauncherDiagnostic(
+        name=name,
+        status="ok" if available else "missing",
+        message=" ".join(command) if command else "no command configured",
+        checked_at=utc_now(),
+    )
 
 
 __all__ = ["DesktopLauncher"]

@@ -556,12 +556,22 @@ export interface DesktopLauncherHealthCheck {
   telemetry_enabled: boolean;
 }
 
+export interface DesktopLauncherDiagnostic {
+  name: string;
+  status: string;
+  message: string;
+  checked_at: string;
+  local_only: boolean;
+  telemetry_enabled: boolean;
+}
+
 export interface DesktopLauncherState {
   backend_status: string;
   frontend_status: string;
   backend_command: string[];
   frontend_command: string[];
   health_checks: DesktopLauncherHealthCheck[];
+  startup_diagnostics: DesktopLauncherDiagnostic[];
   last_action: string;
   last_restart_at: string;
   local_only: boolean;

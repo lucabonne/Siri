@@ -10,6 +10,7 @@ from openjarvis.desktop import DesktopService
 from openjarvis.desktop.models import (
     AppInfo,
     DesktopLauncherState,
+    LauncherDiagnostic,
     LauncherHealthCheck,
     LaunchResult,
     WindowInfo,
@@ -92,6 +93,15 @@ class FakeLauncher:
             last_action="health_checks",
         )
 
+    def startup_diagnostics(self) -> DesktopLauncherState:
+        return DesktopLauncherState(
+            startup_diagnostics=[
+                LauncherDiagnostic(name="backend_command", status="ok"),
+                LauncherDiagnostic(name="frontend_directory", status="ok"),
+            ],
+            last_action="startup_diagnostics",
+        )
+
     def start_backend(self) -> DesktopLauncherState:
         return DesktopLauncherState(
             backend_status="running",
@@ -112,6 +122,20 @@ class FakeLauncher:
             backend_status="running",
             frontend_status="running",
             last_action="restart",
+        )
+
+    def restart_backend(self) -> DesktopLauncherState:
+        return DesktopLauncherState(
+            backend_status="running",
+            frontend_status="stopped",
+            last_action="start_backend",
+        )
+
+    def restart_frontend(self) -> DesktopLauncherState:
+        return DesktopLauncherState(
+            backend_status="stopped",
+            frontend_status="running",
+            last_action="start_frontend",
         )
 
     def open_mission_control(self, *, privacy_mode: bool = False) -> LaunchResult:
@@ -241,6 +265,7 @@ def test_desktop_status_reports_active_app_workspace_and_privacy_flags(tmp_path:
     assert status.launcher_state.telemetry_enabled is False
     assert status.notification_state.autonomous_notifications is False
     assert status.tray_state.local_only is True
+    assert status.integrations["mcp"]["telemetry_enabled"] is False
 
 
 def test_launch_workspace_records_local_session_and_memory(tmp_path: Path):
@@ -311,6 +336,12 @@ def test_notification_center_records_only_user_triggered_allowed_events(tmp_path
         "Review the result.",
         user_triggered=True,
     )
+    mcp_ready = service.notify(
+        "mcp_registration",
+        "MCP registration",
+        "A local MCP tool was registered.",
+        user_triggered=True,
+    )
     suppressed = service.notify(
         "approval_required",
         "Approval required",
@@ -320,9 +351,13 @@ def test_notification_center_records_only_user_triggered_allowed_events(tmp_path
     state = service.notification_center.state()
 
     assert ready.status == "ready"
+    assert mcp_ready.status == "ready"
     assert suppressed.status == "suppressed"
     assert blocked.status == "blocked"
-    assert [item.kind for item in state.recent] == ["workflow_finished"]
+    assert [item.kind for item in state.recent] == [
+        "mcp_registration",
+        "workflow_finished",
+    ]
     assert state.telemetry_enabled is False
     assert state.autonomous_notifications is False
 
@@ -349,13 +384,30 @@ def test_tray_actions_toggle_voice_and_trigger_briefing(tmp_path: Path):
     assert blocked["status"] == "blocked"
 
 
+def test_tray_restart_backend_action_is_user_triggered(tmp_path: Path):
+    service = _service(tmp_path)
+
+    tray = service.tray_state()
+    restart_item = next(item for item in tray.items if item.id == "restart_backend")
+    result = service.handle_tray_action("restart_backend")
+
+    assert restart_item.label == "Restart Backend"
+    assert result["launcher_state"]["backend_status"] == "running"
+    assert service.session_store.load().launcher_state.backend_status == "running"
+
+
 def test_launcher_state_exposes_health_and_restart(tmp_path: Path):
     service = _service(tmp_path)
 
     health = service.launcher_status(run_health_checks=True)
+    diagnostics = service.launcher_status(run_startup_diagnostics=True)
     restart = service.restart_launcher()
 
     assert [check.name for check in health.health_checks] == ["backend", "frontend"]
+    assert [item.name for item in diagnostics.startup_diagnostics] == [
+        "backend_command",
+        "frontend_directory",
+    ]
     assert restart.backend_status == "running"
     assert restart.frontend_status == "running"
     assert service.session_store.load().launcher_state.last_action == "restart"
@@ -402,3 +454,7 @@ def test_desktop_routes_expose_phase_one_wrapper_state(tmp_path: Path):
     launcher = client.get("/v1/desktop/launcher/status?health=true")
     assert launcher.status_code == 200
     assert launcher.json()["last_action"] == "health_checks"
+
+    diagnostics = client.get("/v1/desktop/launcher/status?diagnostics=true")
+    assert diagnostics.status_code == 200
+    assert diagnostics.json()["last_action"] == "startup_diagnostics"

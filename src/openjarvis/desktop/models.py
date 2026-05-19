@@ -111,6 +111,21 @@ class LauncherHealthCheck:
 
 
 @dataclass(slots=True)
+class LauncherDiagnostic:
+    """One local startup diagnostic for the desktop launcher."""
+
+    name: str
+    status: str = "unknown"
+    message: str = ""
+    checked_at: str = ""
+    local_only: bool = True
+    telemetry_enabled: bool = False
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass(slots=True)
 class DesktopLauncherState:
     """Local backend/frontend launcher state."""
 
@@ -119,6 +134,7 @@ class DesktopLauncherState:
     backend_command: list[str] = field(default_factory=list)
     frontend_command: list[str] = field(default_factory=list)
     health_checks: list[LauncherHealthCheck] = field(default_factory=list)
+    startup_diagnostics: list[LauncherDiagnostic] = field(default_factory=list)
     last_action: str = ""
     last_restart_at: str = ""
     local_only: bool = True
@@ -132,6 +148,9 @@ class DesktopLauncherState:
             "backend_command": list(self.backend_command),
             "frontend_command": list(self.frontend_command),
             "health_checks": [check.to_dict() for check in self.health_checks],
+            "startup_diagnostics": [
+                diagnostic.to_dict() for diagnostic in self.startup_diagnostics
+            ],
             "last_action": self.last_action,
             "last_restart_at": self.last_restart_at,
             "local_only": self.local_only,
@@ -318,6 +337,7 @@ __all__ = [
     "DesktopSessionState",
     "DesktopStatus",
     "LauncherHealthCheck",
+    "LauncherDiagnostic",
     "LaunchRequest",
     "LaunchResult",
     "TrayMenuItem",

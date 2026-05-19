@@ -9,8 +9,8 @@ TRAY_LABELS = {
     "toggle_voice_trigger": "Toggle Voice Trigger",
     "quick_morning_briefing": "Quick Morning Briefing",
     "open_current_workspace": "Open Current Workspace",
-    "restart": "Restart",
-    "quit": "Quit",
+    "restart_backend": "Restart Backend",
+    "quit": "Quit Siri",
 }
 
 
@@ -45,7 +45,7 @@ class MenuBarController:
                 label=TRAY_LABELS["open_current_workspace"],
                 enabled=current_workspace_available,
             ),
-            TrayMenuItem(id="restart", label=TRAY_LABELS["restart"]),
+            TrayMenuItem(id="restart_backend", label=TRAY_LABELS["restart_backend"]),
             TrayMenuItem(
                 id="quit",
                 label=TRAY_LABELS["quit"],

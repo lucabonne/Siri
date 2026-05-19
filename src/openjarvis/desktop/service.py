@@ -52,6 +52,9 @@ class DesktopService:
         voice_trigger_service: Any = None,
         tts_service: Any = None,
         permission_middleware: Any = None,
+        mcp_server: Any = None,
+        mcp_clients: list[Any] | None = None,
+        mcp_tools_cache: Any = None,
         mode_registry: ModeRegistry | None = None,
         coding_assistant: CodingAssistantService | None = None,
         notification_center: NotificationCenter | None = None,
@@ -69,6 +72,9 @@ class DesktopService:
         self.voice_trigger_service = voice_trigger_service
         self.tts_service = tts_service
         self.permission_middleware = permission_middleware
+        self.mcp_server = mcp_server
+        self.mcp_clients = list(mcp_clients or [])
+        self.mcp_tools_cache = mcp_tools_cache
         self.mode_registry = mode_registry or ModeRegistry(persist=False)
         self.coding_assistant = coding_assistant
         self.notification_center = notification_center or NotificationCenter(
@@ -184,10 +190,18 @@ class DesktopService:
                 privacy_mode=privacy,
             )
             return {"action": action_id, "launch": result.to_dict()}
+        if action_id == "restart_backend":
+            state = self.launcher.restart_backend()
+            self.session_store.set_launcher_state(state)
+            return {"action": action_id, "launcher_state": state.to_dict()}
         if action_id == "restart":
             state = self.launcher.restart_all()
             self.session_store.set_launcher_state(state)
-            return {"action": action_id, "launcher_state": state.to_dict()}
+            return {
+                "action": action_id,
+                "launcher_state": state.to_dict(),
+                "deprecated": True,
+            }
         if action_id == "quit":
             return {
                 "action": action_id,
@@ -226,12 +240,14 @@ class DesktopService:
         self,
         *,
         run_health_checks: bool = False,
+        run_startup_diagnostics: bool = False,
     ) -> DesktopLauncherState:
-        state = (
-            self.launcher.health_checks()
-            if run_health_checks
-            else self.launcher.state()
-        )
+        if run_startup_diagnostics:
+            state = self.launcher.startup_diagnostics()
+        elif run_health_checks:
+            state = self.launcher.health_checks()
+        else:
+            state = self.launcher.state()
         self.session_store.set_launcher_state(state)
         return state
 
@@ -247,6 +263,16 @@ class DesktopService:
 
     def restart_launcher(self) -> DesktopLauncherState:
         state = self.launcher.restart_all()
+        self.session_store.set_launcher_state(state)
+        return state
+
+    def restart_backend(self) -> DesktopLauncherState:
+        state = self.launcher.restart_backend()
+        self.session_store.set_launcher_state(state)
+        return state
+
+    def restart_frontend(self) -> DesktopLauncherState:
+        state = self.launcher.restart_frontend()
         self.session_store.set_launcher_state(state)
         return state
 
@@ -433,6 +459,7 @@ class DesktopService:
             "startup_scheduler": self._startup_snapshot(privacy_mode=privacy_mode),
             "voice": self._voice_snapshot(),
             "tts": self._tts_snapshot(),
+            "mcp": self._mcp_snapshot(),
             "permissions": self._permissions_snapshot(),
             "modes": self._mode_snapshot(),
             "coding_assistant": self._coding_snapshot(focus, privacy_mode=privacy_mode),
@@ -523,6 +550,26 @@ class DesktopService:
             "approval_required_notifications": "user_triggered_only",
             "local_only": True,
             "passive_only": True,
+        }
+
+    def _mcp_snapshot(self) -> dict[str, Any]:
+        cached_tools = []
+        if isinstance(self.mcp_tools_cache, tuple) and self.mcp_tools_cache:
+            cached_tools = list(self.mcp_tools_cache[0] or [])
+        tool_count = len(cached_tools)
+        if tool_count == 0 and self.mcp_server is not None:
+            try:
+                tool_count = len(self.mcp_server.get_tools())
+            except Exception:
+                tool_count = 0
+        return {
+            "available": bool(self.mcp_server or self.mcp_clients or cached_tools),
+            "registered_tools": tool_count,
+            "external_clients": len(self.mcp_clients),
+            "registration_events": "user_triggered_notifications",
+            "local_only": True,
+            "passive_only": True,
+            "telemetry_enabled": False,
         }
 
     def _mode_snapshot(self) -> dict[str, Any]:

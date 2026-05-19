@@ -11,6 +11,7 @@ from openjarvis.desktop.models import (
     DesktopLauncherState,
     DesktopNotification,
     DesktopSessionState,
+    LauncherDiagnostic,
     LauncherHealthCheck,
     LaunchResult,
     WorkspaceFocus,
@@ -193,6 +194,11 @@ def _launcher_state_from_dict(data: Any) -> DesktopLauncherState:
             for item in data.get("health_checks", [])
             if isinstance(item, dict)
         ],
+        startup_diagnostics=[
+            _diagnostic_from_dict(item)
+            for item in data.get("startup_diagnostics", [])
+            if isinstance(item, dict)
+        ],
         last_action=str(data.get("last_action", "")),
         last_restart_at=str(data.get("last_restart_at", "")),
         local_only=bool(data.get("local_only", True)),
@@ -206,6 +212,17 @@ def _health_check_from_dict(data: dict[str, Any]) -> LauncherHealthCheck:
         name=str(data.get("name", "")),
         status=str(data.get("status", "unknown")),
         url=str(data.get("url", "")),
+        message=str(data.get("message", "")),
+        checked_at=str(data.get("checked_at", "")),
+        local_only=bool(data.get("local_only", True)),
+        telemetry_enabled=bool(data.get("telemetry_enabled", False)),
+    )
+
+
+def _diagnostic_from_dict(data: dict[str, Any]) -> LauncherDiagnostic:
+    return LauncherDiagnostic(
+        name=str(data.get("name", "")),
+        status=str(data.get("status", "unknown")),
         message=str(data.get("message", "")),
         checked_at=str(data.get("checked_at", "")),
         local_only=bool(data.get("local_only", True)),

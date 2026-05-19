@@ -130,6 +130,9 @@ def get_desktop_service(request: Request) -> DesktopService:
         voice_trigger_service=getattr(request.app.state, "hotkey_service", None),
         tts_service=getattr(request.app.state, "tts_service", None),
         permission_middleware=permission,
+        mcp_server=getattr(request.app.state, "mcp_server", None),
+        mcp_clients=getattr(request.app.state, "_mcp_clients", []),
+        mcp_tools_cache=getattr(request.app.state, "_mcp_tools_cache", None),
         mode_registry=mode_registry,
         coding_assistant=coding,
     )
@@ -165,6 +168,9 @@ def _attach_runtime_integrations(service: DesktopService, request: Request) -> N
             "permission_middleware",
             getattr(request.app.state, "_permission_middleware", None),
         )
+    service.mcp_server = getattr(request.app.state, "mcp_server", None)
+    service.mcp_clients = list(getattr(request.app.state, "_mcp_clients", []))
+    service.mcp_tools_cache = getattr(request.app.state, "_mcp_tools_cache", None)
 
 
 @desktop_router.get("/status")
@@ -243,11 +249,13 @@ async def create_notification(body: DesktopNotificationRequest, request: Request
 async def launcher_status(
     request: Request,
     health: bool = Query(default=False),
+    diagnostics: bool = Query(default=False),
 ):
     """Return local backend/frontend launcher status."""
 
     return get_desktop_service(request).launcher_status(
-        run_health_checks=health
+        run_health_checks=health,
+        run_startup_diagnostics=diagnostics,
     ).to_dict()
 
 
@@ -270,6 +278,20 @@ async def restart_launcher(request: Request):
     """Restart local backend and frontend helper processes."""
 
     return get_desktop_service(request).restart_launcher().to_dict()
+
+
+@desktop_router.post("/launcher/restart-backend")
+async def restart_backend(request: Request):
+    """Restart the local backend helper process."""
+
+    return get_desktop_service(request).restart_backend().to_dict()
+
+
+@desktop_router.post("/launcher/restart-frontend")
+async def restart_frontend(request: Request):
+    """Restart the local frontend helper process."""
+
+    return get_desktop_service(request).restart_frontend().to_dict()
 
 
 @desktop_router.post("/launch-app")

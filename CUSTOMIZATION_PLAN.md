@@ -38,12 +38,15 @@ facade so Siri can feel like a desktop app without adding autonomous behavior.
   defaults.
 - `src/openjarvis/desktop/tray.py` defines menu bar state for Open Mission
   Control, Toggle Voice Trigger, Quick Morning Briefing, Open Current
-  Workspace, Restart, and Quit. Each action is explicit and user-triggered.
+  Workspace, Restart Backend, and Quit Siri. Each action is explicit and
+  user-triggered.
 - `src/openjarvis/desktop/notifications.py` records lightweight local
-  notifications for briefing ready, workflow finished, and approval required.
-  Non-user-triggered notifications are suppressed instead of delivered.
+  notifications for briefing ready, workflow finished, approval required, and
+  MCP registration events. Non-user-triggered notifications are suppressed
+  instead of delivered.
 - The desktop launcher now exposes local backend/frontend start helpers,
-  health checks, and restart helpers while keeping telemetry disabled.
+  health checks, startup diagnostics, and restart helpers while keeping
+  telemetry disabled.
 - `/v1/desktop/tray`, `/tray/{action_id}`, `/notifications`, and
   `/launcher/*` expose the wrapper state and user-triggered actions for a
   native menu bar shell.
@@ -51,7 +54,7 @@ facade so Siri can feel like a desktop app without adding autonomous behavior.
   state, notification state, and menu bar state.
 - Integration points are passive: Startup scheduler is used only for explicit
   quick briefing, Voice trigger toggle delegates to the existing voice hotkey
-  service when available, TTS/Workflows/Morning Briefing/Permissions are
+  service when available, TTS/Workflows/MCP/Morning Briefing/Permissions are
   summarized in desktop status, and no wake words or autonomous agents are
   added.
 - Privacy Mode remains local-only with no telemetry, no autonomous
