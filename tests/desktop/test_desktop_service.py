@@ -7,7 +7,13 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from openjarvis.desktop import DesktopService
-from openjarvis.desktop.models import AppInfo, LaunchResult, WindowInfo
+from openjarvis.desktop.models import (
+    AppInfo,
+    DesktopLauncherState,
+    LauncherHealthCheck,
+    LaunchResult,
+    WindowInfo,
+)
 from openjarvis.desktop.sessions import DesktopSessionStore
 from openjarvis.modes import ModeRegistry
 from openjarvis.server.desktop_routes import desktop_router
@@ -69,6 +75,53 @@ class FakeMemory:
 
 
 class FakeLauncher:
+    def __init__(self) -> None:
+        self.restarted = False
+        self.health_checked = False
+
+    def state(self) -> DesktopLauncherState:
+        return DesktopLauncherState()
+
+    def health_checks(self) -> DesktopLauncherState:
+        self.health_checked = True
+        return DesktopLauncherState(
+            health_checks=[
+                LauncherHealthCheck(name="backend", status="healthy"),
+                LauncherHealthCheck(name="frontend", status="unavailable"),
+            ],
+            last_action="health_checks",
+        )
+
+    def start_backend(self) -> DesktopLauncherState:
+        return DesktopLauncherState(
+            backend_status="running",
+            backend_command=["jarvis", "serve"],
+            last_action="start_backend",
+        )
+
+    def start_frontend(self) -> DesktopLauncherState:
+        return DesktopLauncherState(
+            frontend_status="running",
+            frontend_command=["npm", "run", "dev"],
+            last_action="start_frontend",
+        )
+
+    def restart_all(self) -> DesktopLauncherState:
+        self.restarted = True
+        return DesktopLauncherState(
+            backend_status="running",
+            frontend_status="running",
+            last_action="restart",
+        )
+
+    def open_mission_control(self, *, privacy_mode: bool = False) -> LaunchResult:
+        return LaunchResult(
+            action="open_mission_control",
+            target="http://127.0.0.1:5173/mission-control",
+            status="launched",
+            privacy_mode=privacy_mode,
+        )
+
     def open_workspace(
         self,
         path,
@@ -111,6 +164,47 @@ class FakeLauncher:
         )
 
 
+class FakeVoiceTrigger:
+    def __init__(self) -> None:
+        self.enabled = False
+
+    def status(self) -> dict:
+        return {"enabled": self.enabled, "local_only": True}
+
+    def enable(self, *, explicit_approval: bool = False) -> dict:
+        self.enabled = True
+        return {"enabled": True, "approved": explicit_approval}
+
+    def disable(self) -> dict:
+        self.enabled = False
+        return {"enabled": False}
+
+
+class FakeStartupService:
+    def __init__(self) -> None:
+        self.triggered = False
+
+    def status(self, *, privacy_mode: bool = False):
+        class _Scheduler:
+            def to_dict(self) -> dict:
+                return {"tasks": [], "passive_only": True}
+
+        class _Status:
+            launch_at_login = False
+            scheduler = _Scheduler()
+
+        return _Status()
+
+    def trigger_morning_briefing(self, **kwargs):
+        self.triggered = True
+
+        class _Result:
+            def to_dict(self) -> dict:
+                return {"triggered": True}
+
+        return _Result()
+
+
 def _service(tmp_path: Path, *, mode_id: str = "focus", memory=None) -> DesktopService:
     registry = ModeRegistry(
         active_mode_id=mode_id,
@@ -144,6 +238,9 @@ def test_desktop_status_reports_active_app_workspace_and_privacy_flags(tmp_path:
     assert status.autonomous_launching is False
     assert status.background_monitoring is False
     assert status.telemetry_enabled is False
+    assert status.launcher_state.telemetry_enabled is False
+    assert status.notification_state.autonomous_notifications is False
+    assert status.tray_state.local_only is True
 
 
 def test_launch_workspace_records_local_session_and_memory(tmp_path: Path):
@@ -205,6 +302,65 @@ def test_session_store_persists_recent_launches(tmp_path: Path):
     assert state.telemetry_enabled is False
 
 
+def test_notification_center_records_only_user_triggered_allowed_events(tmp_path: Path):
+    service = _service(tmp_path)
+
+    ready = service.notify(
+        "workflow_finished",
+        "Workflow finished",
+        "Review the result.",
+        user_triggered=True,
+    )
+    suppressed = service.notify(
+        "approval_required",
+        "Approval required",
+        user_triggered=False,
+    )
+    blocked = service.notify("random", "Nope", user_triggered=True)
+    state = service.notification_center.state()
+
+    assert ready.status == "ready"
+    assert suppressed.status == "suppressed"
+    assert blocked.status == "blocked"
+    assert [item.kind for item in state.recent] == ["workflow_finished"]
+    assert state.telemetry_enabled is False
+    assert state.autonomous_notifications is False
+
+
+def test_tray_actions_toggle_voice_and_trigger_briefing(tmp_path: Path):
+    voice = FakeVoiceTrigger()
+    startup = FakeStartupService()
+    service = _service(tmp_path)
+    service.voice_trigger_service = voice
+    service.startup_service = startup
+
+    voice_result = service.handle_tray_action("toggle_voice_trigger")
+    briefing_result = service.handle_tray_action("quick_morning_briefing")
+    blocked = service.handle_tray_action(
+        "open_mission_control",
+        requested_by="scheduler",
+    )
+
+    assert voice_result["status"] == "ok"
+    assert voice.enabled is True
+    assert briefing_result["status"] == "ok"
+    assert startup.triggered is True
+    assert service.notification_center.state().recent[0].kind == "briefing_ready"
+    assert blocked["status"] == "blocked"
+
+
+def test_launcher_state_exposes_health_and_restart(tmp_path: Path):
+    service = _service(tmp_path)
+
+    health = service.launcher_status(run_health_checks=True)
+    restart = service.restart_launcher()
+
+    assert [check.name for check in health.health_checks] == ["backend", "frontend"]
+    assert restart.backend_status == "running"
+    assert restart.frontend_status == "running"
+    assert service.session_store.load().launcher_state.last_action == "restart"
+
+
 def test_launcher_runner_receives_local_command(tmp_path: Path):
     from openjarvis.desktop.launcher import DesktopLauncher
 
@@ -220,3 +376,29 @@ def test_launcher_runner_receives_local_command(tmp_path: Path):
     assert result.status == "launched"
     assert result.local_only is True
     assert calls
+
+
+def test_desktop_routes_expose_phase_one_wrapper_state(tmp_path: Path):
+    app = FastAPI()
+    app.state.desktop_service = _service(tmp_path)
+    app.include_router(desktop_router)
+    client = TestClient(app)
+
+    tray = client.get("/v1/desktop/tray")
+    assert tray.status_code == 200
+    assert "open_mission_control" in [item["id"] for item in tray.json()["items"]]
+
+    notification = client.post(
+        "/v1/desktop/notifications",
+        json={
+            "kind": "approval_required",
+            "title": "Approval required",
+            "body": "Review a pending workflow.",
+        },
+    )
+    assert notification.status_code == 200
+    assert notification.json()["notification"]["status"] == "ready"
+
+    launcher = client.get("/v1/desktop/launcher/status?health=true")
+    assert launcher.status_code == 200
+    assert launcher.json()["last_action"] == "health_checks"

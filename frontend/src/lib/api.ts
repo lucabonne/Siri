@@ -546,9 +546,81 @@ export interface DesktopLaunchResult {
   telemetry_enabled: boolean;
 }
 
+export interface DesktopLauncherHealthCheck {
+  name: string;
+  status: string;
+  url: string;
+  message: string;
+  checked_at: string;
+  local_only: boolean;
+  telemetry_enabled: boolean;
+}
+
+export interface DesktopLauncherState {
+  backend_status: string;
+  frontend_status: string;
+  backend_command: string[];
+  frontend_command: string[];
+  health_checks: DesktopLauncherHealthCheck[];
+  last_action: string;
+  last_restart_at: string;
+  local_only: boolean;
+  passive_only: boolean;
+  telemetry_enabled: boolean;
+}
+
+export interface DesktopNotification {
+  kind: string;
+  title: string;
+  body: string;
+  status: string;
+  created_at: string;
+  user_triggered: boolean;
+  delivered: boolean;
+  local_only: boolean;
+  autonomous: boolean;
+  telemetry_enabled: boolean;
+}
+
+export interface DesktopNotificationState {
+  recent: DesktopNotification[];
+  allowed_kinds: string[];
+  last_notification_at: string;
+  enabled: boolean;
+  autonomous_notifications: boolean;
+  local_only: boolean;
+  passive_only: boolean;
+  telemetry_enabled: boolean;
+}
+
+export interface DesktopTrayMenuItem {
+  id: string;
+  label: string;
+  enabled: boolean;
+  checked: boolean;
+  destructive: boolean;
+  user_triggered_only: boolean;
+  local_only: boolean;
+  telemetry_enabled: boolean;
+}
+
+export interface DesktopTrayState {
+  items: DesktopTrayMenuItem[];
+  last_action: string;
+  voice_trigger_enabled: boolean;
+  current_workspace_available: boolean;
+  launcher_running: boolean;
+  pending_notifications: number;
+  local_only: boolean;
+  passive_only: boolean;
+  telemetry_enabled: boolean;
+}
+
 export interface DesktopSessionState {
   focused_workspace: DesktopWorkspaceFocus;
   recent_launches: DesktopLaunchResult[];
+  recent_notifications: DesktopNotification[];
+  launcher_state: DesktopLauncherState;
   updated_at: string;
   local_only: boolean;
   passive_only: boolean;
@@ -564,6 +636,9 @@ export interface DesktopStatus {
   clipboard_preview: string;
   clipboard_sensitive: boolean;
   recent_launches: DesktopLaunchResult[];
+  launcher_state: DesktopLauncherState;
+  notification_state: DesktopNotificationState;
+  tray_state: DesktopTrayState;
   integrations: Record<string, unknown>;
   privacy_mode: boolean;
   local_only: boolean;

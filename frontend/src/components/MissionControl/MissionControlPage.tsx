@@ -317,6 +317,9 @@ function DesktopSection() {
   const openApps = status?.open_apps ?? [];
   const recentLaunches = status?.recent_launches ?? [];
   const focus = status?.focused_workspace;
+  const launcher = status?.launcher_state;
+  const notifications = status?.notification_state;
+  const tray = status?.tray_state;
 
   return (
     <div className="grid gap-4 xl:grid-cols-[1fr_0.9fr]">
@@ -385,6 +388,29 @@ function DesktopSection() {
         </div>
         <div className="mt-3 rounded-md border p-3 text-sm" style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg-secondary)', color: 'var(--color-text-secondary)' }}>
           {focus?.path || 'No focused project has been resolved yet.'}
+        </div>
+      </ShellPanel>
+
+      <ShellPanel title="Wrapper Status" action={status?.local_only ? 'local only' : 'unavailable'}>
+        <div className="grid gap-3 md:grid-cols-3">
+          <ContextTile
+            icon={<Power size={14} />}
+            label="Launcher"
+            value={`${launcher?.backend_status || 'stopped'} / ${launcher?.frontend_status || 'stopped'}`}
+            detail={launcher?.last_action || 'Backend and frontend helpers'}
+          />
+          <ContextTile
+            icon={<ShieldAlert size={14} />}
+            label="Notifications"
+            value={`${notifications?.recent.length ?? 0} local`}
+            detail={notifications?.autonomous_notifications ? 'Autonomous enabled' : 'User-triggered only'}
+          />
+          <ContextTile
+            icon={<Mic2 size={14} />}
+            label="Menu Bar"
+            value={tray?.voice_trigger_enabled ? 'Voice trigger on' : 'Voice trigger off'}
+            detail={`${tray?.items.length ?? 0} actions · ${tray?.pending_notifications ?? 0} pending`}
+          />
         </div>
       </ShellPanel>
 

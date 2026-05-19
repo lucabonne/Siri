@@ -27,12 +27,44 @@ keeping all actions explicit, local, and user-triggered.
   applicable, no external sync is performed, and launch telemetry/memory writes
   are disabled.
 
+## Desktop Wrapper / Menu Bar Phase 1
+
+Phase 1 wraps the existing desktop awareness layer with a lightweight native
+facade so Siri can feel like a desktop app without adding autonomous behavior.
+
+- `desktop/tray/`, `desktop/launcher/`, `desktop/windows/`,
+  `desktop/notifications/`, and `desktop/config/` now document the native
+  wrapper boundary for tray, launcher, window, notification, and privacy
+  defaults.
+- `src/openjarvis/desktop/tray.py` defines menu bar state for Open Mission
+  Control, Toggle Voice Trigger, Quick Morning Briefing, Open Current
+  Workspace, Restart, and Quit. Each action is explicit and user-triggered.
+- `src/openjarvis/desktop/notifications.py` records lightweight local
+  notifications for briefing ready, workflow finished, and approval required.
+  Non-user-triggered notifications are suppressed instead of delivered.
+- The desktop launcher now exposes local backend/frontend start helpers,
+  health checks, and restart helpers while keeping telemetry disabled.
+- `/v1/desktop/tray`, `/tray/{action_id}`, `/notifications`, and
+  `/launcher/*` expose the wrapper state and user-triggered actions for a
+  native menu bar shell.
+- Mission Control's Desktop panel now includes wrapper status for launcher
+  state, notification state, and menu bar state.
+- Integration points are passive: Startup scheduler is used only for explicit
+  quick briefing, Voice trigger toggle delegates to the existing voice hotkey
+  service when available, TTS/Workflows/Morning Briefing/Permissions are
+  summarized in desktop status, and no wake words or autonomous agents are
+  added.
+- Privacy Mode remains local-only with no telemetry, no autonomous
+  notifications, and no cloud wrapper sync.
+
 Deferred work remains intentionally untouched in this phase:
 
 - no autonomous launching
 - no background desktop monitoring
 - no remote telemetry
 - no scheduler-driven launch actions
+- no wake words
+- no autonomous agents
 
 ## Frontend Build Stability
 

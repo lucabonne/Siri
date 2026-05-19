@@ -25,6 +25,19 @@ class LaunchWorkspaceRequest(BaseModel):
     requested_by: str = "user"
 
 
+class TrayActionRequest(BaseModel):
+    requested_by: str = "user"
+    cwd: str = ""
+
+
+class DesktopNotificationRequest(BaseModel):
+    kind: str
+    title: str
+    body: str = ""
+    user_triggered: bool = True
+    delivered: bool = False
+
+
 def _privacy_mode(request: Request) -> bool:
     registry = getattr(request.app.state, "mode_registry", None)
     if registry is None:
@@ -57,6 +70,7 @@ def get_desktop_service(request: Request) -> DesktopService:
     """Return the app-level desktop service, creating one lazily."""
     service = getattr(request.app.state, "desktop_service", None)
     if service is not None:
+        _attach_runtime_integrations(service, request)
         return service
 
     from openjarvis.coding_assistant import CodingAssistantService
@@ -112,11 +126,45 @@ def get_desktop_service(request: Request) -> DesktopService:
     service = DesktopService(
         memory_service=memory_service,
         workflow_service=workflow_service,
+        startup_service=_startup_service(request),
+        voice_trigger_service=getattr(request.app.state, "hotkey_service", None),
+        tts_service=getattr(request.app.state, "tts_service", None),
+        permission_middleware=permission,
         mode_registry=mode_registry,
         coding_assistant=coding,
     )
     request.app.state.desktop_service = service
     return service
+
+
+def _startup_service(request: Request) -> Any:
+    try:
+        from openjarvis.server.startup_routes import get_startup_service
+
+        return get_startup_service(request)
+    except Exception:
+        return getattr(request.app.state, "startup_service", None)
+
+
+def _attach_runtime_integrations(service: DesktopService, request: Request) -> None:
+    if getattr(service, "startup_service", None) is None:
+        service.startup_service = _startup_service(request)
+    if getattr(service, "workflow_service", None) is None:
+        service.workflow_service = getattr(request.app.state, "workflow_service", None)
+    if getattr(service, "voice_trigger_service", None) is None:
+        service.voice_trigger_service = getattr(
+            request.app.state,
+            "hotkey_service",
+            None,
+        )
+    if getattr(service, "tts_service", None) is None:
+        service.tts_service = getattr(request.app.state, "tts_service", None)
+    if getattr(service, "permission_middleware", None) is None:
+        service.permission_middleware = getattr(
+            request.app.state,
+            "permission_middleware",
+            getattr(request.app.state, "_permission_middleware", None),
+        )
 
 
 @desktop_router.get("/status")
@@ -145,6 +193,83 @@ async def active_app(request: Request):
 async def open_apps(request: Request):
     """Return currently open local applications."""
     return get_desktop_service(request).open_apps(privacy_mode=_privacy_mode(request))
+
+
+@desktop_router.get("/tray")
+async def tray_status(request: Request):
+    """Return passive menu bar state for a native shell."""
+
+    return get_desktop_service(request).tray_state().to_dict()
+
+
+@desktop_router.post("/tray/{action_id}")
+async def run_tray_action(
+    action_id: str,
+    body: TrayActionRequest,
+    request: Request,
+):
+    """Run one explicit user-triggered menu bar action."""
+
+    return get_desktop_service(request).handle_tray_action(
+        action_id,
+        cwd=Path(body.cwd).expanduser() if body.cwd else None,
+        requested_by=body.requested_by,
+        privacy_mode=_privacy_mode(request),
+    )
+
+
+@desktop_router.get("/notifications")
+async def notification_status(request: Request):
+    """Return lightweight local notification state."""
+
+    return get_desktop_service(request).notification_center.state().to_dict()
+
+
+@desktop_router.post("/notifications")
+async def create_notification(body: DesktopNotificationRequest, request: Request):
+    """Record a user-triggered local desktop notification."""
+
+    notification = get_desktop_service(request).notify(
+        body.kind,
+        body.title,
+        body.body,
+        user_triggered=body.user_triggered,
+        delivered=body.delivered,
+    )
+    return {"notification": notification.to_dict()}
+
+
+@desktop_router.get("/launcher/status")
+async def launcher_status(
+    request: Request,
+    health: bool = Query(default=False),
+):
+    """Return local backend/frontend launcher status."""
+
+    return get_desktop_service(request).launcher_status(
+        run_health_checks=health
+    ).to_dict()
+
+
+@desktop_router.post("/launcher/start-backend")
+async def start_backend(request: Request):
+    """Start the local backend from an explicit launcher request."""
+
+    return get_desktop_service(request).start_backend().to_dict()
+
+
+@desktop_router.post("/launcher/start-frontend")
+async def start_frontend(request: Request):
+    """Start the local frontend from an explicit launcher request."""
+
+    return get_desktop_service(request).start_frontend().to_dict()
+
+
+@desktop_router.post("/launcher/restart")
+async def restart_launcher(request: Request):
+    """Restart local backend and frontend helper processes."""
+
+    return get_desktop_service(request).restart_launcher().to_dict()
 
 
 @desktop_router.post("/launch-app")

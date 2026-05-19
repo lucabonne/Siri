@@ -12,13 +12,19 @@ from openjarvis.desktop.focus import FocusResolver
 from openjarvis.desktop.launcher import DesktopLauncher
 from openjarvis.desktop.models import (
     AppInfo,
+    DesktopLauncherState,
+    DesktopNotification,
+    DesktopNotificationState,
     DesktopStatus,
     LaunchRequest,
     LaunchResult,
+    TrayState,
     WindowInfo,
     WorkspaceFocus,
 )
+from openjarvis.desktop.notifications import NotificationCenter
 from openjarvis.desktop.sessions import DesktopSessionStore
+from openjarvis.desktop.tray import MenuBarController
 from openjarvis.desktop.windows import WindowProvider
 from openjarvis.modes import ModeRegistry
 
@@ -42,8 +48,14 @@ class DesktopService:
         focus_resolver: FocusResolver | None = None,
         memory_service: Any = None,
         workflow_service: Any = None,
+        startup_service: Any = None,
+        voice_trigger_service: Any = None,
+        tts_service: Any = None,
+        permission_middleware: Any = None,
         mode_registry: ModeRegistry | None = None,
         coding_assistant: CodingAssistantService | None = None,
+        notification_center: NotificationCenter | None = None,
+        menu_bar: MenuBarController | None = None,
     ) -> None:
         self.window_provider = window_provider or WindowProvider()
         self.app_controller = app_controller or AppController()
@@ -53,8 +65,17 @@ class DesktopService:
         self.focus_resolver = focus_resolver or FocusResolver()
         self.memory_service = memory_service
         self.workflow_service = workflow_service
+        self.startup_service = startup_service
+        self.voice_trigger_service = voice_trigger_service
+        self.tts_service = tts_service
+        self.permission_middleware = permission_middleware
         self.mode_registry = mode_registry or ModeRegistry(persist=False)
         self.coding_assistant = coding_assistant
+        self.notification_center = notification_center or NotificationCenter(
+            session_store=self.session_store
+        )
+        self.menu_bar = menu_bar or MenuBarController()
+        self._last_tray_action = ""
 
     def status(
         self,
@@ -76,6 +97,13 @@ class DesktopService:
         clipboard_preview, clipboard_sensitive = self.clipboard_provider.preview(
             privacy_mode=privacy
         )
+        launcher_state = self.launcher.state()
+        notification_state = self.notification_center.state()
+        tray_state = self.tray_state(
+            focus=focus,
+            launcher_state=launcher_state,
+            notification_state=notification_state,
+        )
         return DesktopStatus(
             active_window=active_window,
             active_application=active_app,
@@ -85,9 +113,142 @@ class DesktopService:
             clipboard_preview=clipboard_preview,
             clipboard_sensitive=clipboard_sensitive,
             recent_launches=session.recent_launches,
+            launcher_state=launcher_state,
+            notification_state=notification_state,
+            tray_state=tray_state,
             integrations=self._integration_snapshot(focus, privacy_mode=privacy),
             privacy_mode=privacy,
         )
+
+    def tray_state(
+        self,
+        *,
+        focus: WorkspaceFocus | None = None,
+        launcher_state: DesktopLauncherState | None = None,
+        notification_state: DesktopNotificationState | None = None,
+    ) -> TrayState:
+        focus = focus or self.session_store.load().focused_workspace
+        launcher_state = launcher_state or self.launcher.state()
+        notification_state = notification_state or self.notification_center.state()
+        return self.menu_bar.state(
+            voice_trigger_enabled=self._voice_trigger_enabled(),
+            current_workspace_available=bool(focus.path),
+            launcher_running=(
+                launcher_state.backend_status == "running"
+                or launcher_state.frontend_status == "running"
+            ),
+            pending_notifications=len(
+                [item for item in notification_state.recent if item.status == "ready"]
+            ),
+            last_action=self._last_tray_action,
+        )
+
+    def handle_tray_action(
+        self,
+        action_id: str,
+        *,
+        cwd: str | Path | None = None,
+        requested_by: str = "user",
+        privacy_mode: bool | None = None,
+    ) -> dict[str, Any]:
+        privacy = self._privacy_mode(privacy_mode)
+        self._last_tray_action = action_id
+        if requested_by != "user":
+            return {
+                "action": action_id,
+                "status": "blocked",
+                "reason": "desktop tray actions must be user-triggered",
+                "local_only": True,
+                "passive_only": True,
+            }
+        if action_id == "open_mission_control":
+            result = self.launcher.open_mission_control(privacy_mode=privacy)
+            return {"action": action_id, "launch": result.to_dict()}
+        if action_id == "toggle_voice_trigger":
+            return self._toggle_voice_trigger()
+        if action_id == "quick_morning_briefing":
+            return self._quick_morning_briefing(privacy_mode=privacy)
+        if action_id == "open_current_workspace":
+            focus = self.status(cwd=cwd, privacy_mode=privacy).focused_workspace
+            if not focus.path:
+                return {
+                    "action": action_id,
+                    "status": "unavailable",
+                    "reason": "no focused workspace",
+                    "local_only": True,
+                    "passive_only": True,
+                }
+            result = self.launch_workspace(
+                focus.path,
+                requested_by=requested_by,
+                privacy_mode=privacy,
+            )
+            return {"action": action_id, "launch": result.to_dict()}
+        if action_id == "restart":
+            state = self.launcher.restart_all()
+            self.session_store.set_launcher_state(state)
+            return {"action": action_id, "launcher_state": state.to_dict()}
+        if action_id == "quit":
+            return {
+                "action": action_id,
+                "status": "queued",
+                "message": "native shell should quit the desktop process",
+                "local_only": True,
+                "passive_only": True,
+                "telemetry_enabled": False,
+            }
+        return {
+            "action": action_id,
+            "status": "unknown",
+            "reason": "unknown tray action",
+            "local_only": True,
+            "passive_only": True,
+        }
+
+    def notify(
+        self,
+        kind: str,
+        title: str,
+        body: str = "",
+        *,
+        user_triggered: bool = True,
+        delivered: bool = False,
+    ) -> DesktopNotification:
+        return self.notification_center.notify(
+            kind,
+            title,
+            body,
+            user_triggered=user_triggered,
+            delivered=delivered,
+        )
+
+    def launcher_status(
+        self,
+        *,
+        run_health_checks: bool = False,
+    ) -> DesktopLauncherState:
+        state = (
+            self.launcher.health_checks()
+            if run_health_checks
+            else self.launcher.state()
+        )
+        self.session_store.set_launcher_state(state)
+        return state
+
+    def start_backend(self) -> DesktopLauncherState:
+        state = self.launcher.start_backend()
+        self.session_store.set_launcher_state(state)
+        return state
+
+    def start_frontend(self) -> DesktopLauncherState:
+        state = self.launcher.start_frontend()
+        self.session_store.set_launcher_state(state)
+        return state
+
+    def restart_launcher(self) -> DesktopLauncherState:
+        state = self.launcher.restart_all()
+        self.session_store.set_launcher_state(state)
+        return state
 
     def active_app(self, *, privacy_mode: bool | None = None) -> dict[str, Any]:
         status = self.status(privacy_mode=privacy_mode)
@@ -269,6 +430,10 @@ class DesktopService:
             },
             "memory": self._memory_snapshot(privacy_mode=privacy_mode),
             "workflows": self._workflow_snapshot(),
+            "startup_scheduler": self._startup_snapshot(privacy_mode=privacy_mode),
+            "voice": self._voice_snapshot(),
+            "tts": self._tts_snapshot(),
+            "permissions": self._permissions_snapshot(),
             "modes": self._mode_snapshot(),
             "coding_assistant": self._coding_snapshot(focus, privacy_mode=privacy_mode),
         }
@@ -303,6 +468,62 @@ class DesktopService:
             }
         except Exception:
             return {"available": False}
+
+    def _startup_snapshot(self, *, privacy_mode: bool) -> dict[str, Any]:
+        if self.startup_service is None:
+            return {"available": False}
+        try:
+            status = self.startup_service.status(privacy_mode=privacy_mode)
+            scheduler = status.scheduler.to_dict()
+            return {
+                "available": True,
+                "launch_at_login": status.launch_at_login,
+                "scheduler": scheduler,
+                "local_only": True,
+                "passive_only": True,
+                "external_telemetry": False,
+            }
+        except Exception:
+            return {"available": False}
+
+    def _voice_snapshot(self) -> dict[str, Any]:
+        if self.voice_trigger_service is None:
+            return {"available": False}
+        try:
+            status = self.voice_trigger_service.status()
+            return {
+                "available": True,
+                "status": status,
+                "voice_trigger_enabled": bool(status.get("enabled", False)),
+                "wake_words": False,
+                "local_only": True,
+                "passive_only": True,
+            }
+        except Exception:
+            return {"available": False}
+
+    def _tts_snapshot(self) -> dict[str, Any]:
+        if self.tts_service is None:
+            return {"available": False}
+        try:
+            status = self.tts_service.status()
+            return {
+                "available": True,
+                "status": status,
+                "cloud_tts_enabled": False,
+                "local_only": True,
+                "passive_only": True,
+            }
+        except Exception:
+            return {"available": False}
+
+    def _permissions_snapshot(self) -> dict[str, Any]:
+        return {
+            "available": self.permission_middleware is not None,
+            "approval_required_notifications": "user_triggered_only",
+            "local_only": True,
+            "passive_only": True,
+        }
 
     def _mode_snapshot(self) -> dict[str, Any]:
         try:
@@ -345,6 +566,84 @@ class DesktopService:
             return self.mode_registry.get_active_mode().mode.id == "privacy"
         except Exception:
             return False
+
+    def _voice_trigger_enabled(self) -> bool:
+        if self.voice_trigger_service is None:
+            return False
+        try:
+            return bool(self.voice_trigger_service.status().get("enabled", False))
+        except Exception:
+            return False
+
+    def _toggle_voice_trigger(self) -> dict[str, Any]:
+        if self.voice_trigger_service is None:
+            return {
+                "action": "toggle_voice_trigger",
+                "status": "unavailable",
+                "reason": "voice trigger service is not available",
+                "local_only": True,
+                "passive_only": True,
+            }
+        try:
+            if self._voice_trigger_enabled():
+                result = self.voice_trigger_service.disable()
+            else:
+                result = self.voice_trigger_service.enable(explicit_approval=True)
+            return {
+                "action": "toggle_voice_trigger",
+                "status": "ok",
+                "voice": result,
+                "wake_words": False,
+                "local_only": True,
+                "passive_only": True,
+            }
+        except Exception as exc:
+            return {
+                "action": "toggle_voice_trigger",
+                "status": "failed",
+                "reason": str(exc),
+                "local_only": True,
+                "passive_only": True,
+            }
+
+    def _quick_morning_briefing(self, *, privacy_mode: bool) -> dict[str, Any]:
+        if self.startup_service is None:
+            return {
+                "action": "quick_morning_briefing",
+                "status": "unavailable",
+                "reason": "startup scheduler service is not available",
+                "local_only": True,
+                "passive_only": True,
+            }
+        try:
+            result = self.startup_service.trigger_morning_briefing(
+                force=True,
+                privacy_mode=privacy_mode,
+                source="tray",
+                persist_memory=not privacy_mode,
+            )
+            notification = self.notify(
+                "briefing_ready",
+                "Briefing ready",
+                "Your morning briefing is ready for review.",
+                user_triggered=True,
+            )
+            return {
+                "action": "quick_morning_briefing",
+                "status": "ok",
+                "briefing": result.to_dict(),
+                "notification": notification.to_dict(),
+                "local_only": True,
+                "passive_only": True,
+            }
+        except Exception as exc:
+            return {
+                "action": "quick_morning_briefing",
+                "status": "failed",
+                "reason": str(exc),
+                "local_only": True,
+                "passive_only": True,
+            }
 
     @staticmethod
     def _active_app(
