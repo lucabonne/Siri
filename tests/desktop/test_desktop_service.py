@@ -396,6 +396,17 @@ def test_tray_restart_backend_action_is_user_triggered(tmp_path: Path):
     assert service.session_store.load().launcher_state.backend_status == "running"
 
 
+def test_tray_package_status_action_reports_local_package(tmp_path: Path):
+    service = _service(tmp_path)
+
+    tray = service.tray_state()
+    package_item = next(item for item in tray.items if item.id == "package_status")
+    package = service.handle_tray_action("package_status")
+
+    assert package_item.label == "Package Status"
+    assert package["package"]["local_only"] is True
+
+
 def test_launcher_state_exposes_health_and_restart(tmp_path: Path):
     service = _service(tmp_path)
 
