@@ -19,8 +19,8 @@ from openjarvis.server.mode_routes import mode_router
 from openjarvis.server.morning_briefing_routes import morning_briefing_router
 from openjarvis.server.notification_routes import notification_router
 from openjarvis.server.packaging_routes import packaging_router
-from openjarvis.server.repo_index_routes import repo_index_router
 from openjarvis.server.release_routes import release_router
+from openjarvis.server.repo_index_routes import repo_index_router
 from openjarvis.server.research_routes import research_router
 from openjarvis.server.startup_routes import startup_router
 from openjarvis.server.workflow_routes import workflow_router
