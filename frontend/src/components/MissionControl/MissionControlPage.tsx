@@ -326,6 +326,14 @@ function DesktopSection() {
   const launcher = status?.launcher_state;
   const notifications = status?.notification_state;
   const tray = status?.tray_state;
+  const packaging = status?.integrations?.packaging as
+    | {
+        status?: string;
+        app_bundle_exists?: boolean;
+        install_readiness?: { ready?: boolean; blockers?: string[] };
+        app_bundle_path?: string;
+      }
+    | undefined;
 
   return (
     <div className="grid gap-4 xl:grid-cols-[1fr_0.9fr]">
@@ -398,7 +406,7 @@ function DesktopSection() {
       </ShellPanel>
 
       <ShellPanel title="Wrapper Status" action={status?.local_only ? 'local only' : 'unavailable'}>
-        <div className="grid gap-3 md:grid-cols-3">
+        <div className="grid gap-3 md:grid-cols-4">
           <ContextTile
             icon={<Power size={14} />}
             label="Launcher"
@@ -420,6 +428,16 @@ function DesktopSection() {
             label="Menu Bar"
             value={tray?.voice_trigger_enabled ? 'Voice trigger on' : 'Voice trigger off'}
             detail={`${tray?.items.length ?? 0} actions · ${tray?.pending_notifications ?? 0} pending`}
+          />
+          <ContextTile
+            icon={<Package size={14} />}
+            label="Package"
+            value={packaging?.install_readiness?.ready ? 'Install ready' : packaging?.status || 'Unchecked'}
+            detail={
+              packaging?.app_bundle_exists
+                ? compactPath(packaging.app_bundle_path || '')
+                : `${packaging?.install_readiness?.blockers?.length ?? 0} blockers`
+            }
           />
         </div>
       </ShellPanel>

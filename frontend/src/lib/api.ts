@@ -658,6 +658,50 @@ export interface DesktopStatus {
   telemetry_enabled: boolean;
 }
 
+export interface PackagingCheck {
+  name: string;
+  status: string;
+  message: string;
+  required: boolean;
+  local_only: boolean;
+  telemetry_enabled: boolean;
+}
+
+export interface PackagingStatus {
+  status: string;
+  metadata: Record<string, unknown>;
+  paths: Record<string, string>;
+  app_bundle_path: string;
+  app_bundle_exists: boolean;
+  install_readiness: {
+    ready: boolean;
+    blockers: string[];
+    warnings: string[];
+    local_only: boolean;
+    remote_installer: boolean;
+    notarization_required: boolean;
+    updater_required: boolean;
+  };
+  checks: PackagingCheck[];
+  integrations: Record<string, unknown>;
+  local_only: boolean;
+  telemetry_enabled: boolean;
+  remote_installer: boolean;
+  notarization_enabled: boolean;
+  updater_enabled: boolean;
+}
+
+export interface PackagingDiagnostics {
+  package_status: PackagingStatus;
+  launcher_state: Record<string, unknown>;
+  environment_checks: PackagingCheck[];
+  local_only: boolean;
+  telemetry_enabled: boolean;
+  remote_installer: boolean;
+  notarization_enabled: boolean;
+  updater_enabled: boolean;
+}
+
 export interface EngineeringCadFile {
   path: string;
   name: string;
@@ -1016,6 +1060,24 @@ export async function fetchDesktopStatus(cwd?: string): Promise<DesktopStatus> {
   const params = cwd ? `?cwd=${encodeURIComponent(cwd)}` : '';
   const res = await fetch(`${getBase()}/v1/desktop/status${params}`);
   if (!res.ok) throw new Error(`Failed to fetch desktop status: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchPackagingStatus(): Promise<PackagingStatus> {
+  const res = await fetch(`${getBase()}/v1/packaging/status`);
+  if (!res.ok) throw new Error(`Failed to fetch packaging status: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchPackagingDiagnostics(): Promise<PackagingDiagnostics> {
+  const res = await fetch(`${getBase()}/v1/packaging/diagnostics`);
+  if (!res.ok) throw new Error(`Failed to fetch packaging diagnostics: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchPackagingLauncherState(): Promise<Record<string, unknown>> {
+  const res = await fetch(`${getBase()}/v1/packaging/launcher/state`);
+  if (!res.ok) throw new Error(`Failed to fetch packaging launcher state: ${res.status}`);
   return res.json();
 }
 

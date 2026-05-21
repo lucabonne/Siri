@@ -192,6 +192,15 @@ class DesktopService:
                 privacy_mode=privacy,
             )
             return {"action": action_id, "launch": result.to_dict()}
+        if action_id == "package_status":
+            return {
+                "action": action_id,
+                "status": "ok",
+                "package": self._packaging_snapshot(),
+                "local_only": True,
+                "passive_only": True,
+                "telemetry_enabled": False,
+            }
         if action_id == "restart_backend":
             state = self.launcher.restart_backend()
             self.session_store.set_launcher_state(state)
@@ -466,6 +475,7 @@ class DesktopService:
             "modes": self._mode_snapshot(),
             "coding_assistant": self._coding_snapshot(focus, privacy_mode=privacy_mode),
             "engineering": self._engineering_snapshot(privacy_mode=privacy_mode),
+            "packaging": self._packaging_snapshot(),
         }
 
     def _memory_snapshot(self, *, privacy_mode: bool) -> dict[str, Any]:
@@ -507,6 +517,25 @@ class DesktopService:
                 privacy_mode=privacy_mode,
             )
             return {"available": True, **snapshot}
+        except Exception:
+            return {"available": False}
+
+    def _packaging_snapshot(self) -> dict[str, Any]:
+        try:
+            from openjarvis.packaging import PackagingService
+
+            status = PackagingService().status()
+            data = status.to_dict()
+            return {
+                "available": True,
+                "status": data["status"],
+                "app_bundle_exists": data["app_bundle_exists"],
+                "install_readiness": data["install_readiness"],
+                "app_bundle_path": data["app_bundle_path"],
+                "local_only": True,
+                "telemetry_enabled": False,
+                "remote_installer": False,
+            }
         except Exception:
             return {"available": False}
 

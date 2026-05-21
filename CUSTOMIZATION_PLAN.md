@@ -69,6 +69,30 @@ Deferred work remains intentionally untouched in this phase:
 - no wake words
 - no autonomous agents
 
+## Packaging / App Bundle Phase 1
+
+Phase 1 makes Siri installable and runnable like a lightweight local macOS app
+without introducing notarization, updating, telemetry, or remote installer
+behavior.
+
+- `packaging/` now contains the app bundle template area, launcher scripts,
+  backend/frontend bootstrap scripts, icon slot, and app metadata config for
+  the Siri desktop bundle.
+- `src/openjarvis/packaging/` owns local app metadata, environment checks,
+  install readiness, launcher state, diagnostics, and `.app` bundle generation.
+- `jarvis package status`, `diagnostics`, `launcher-state`, `build`, `launch`,
+  and `restart` provide a single-command local packaging surface for users and
+  scripts.
+- `/v1/packaging/status`, `/diagnostics`, `/launcher/state`, and `/build`
+  expose package status, app diagnostics, launcher state, and bundle generation
+  for Mission Control and local clients.
+- The desktop wrapper now summarizes packaging readiness in its integration
+  snapshot, and the tray exposes a Package Status action alongside restart and
+  Mission Control actions.
+- Startup scheduler and notification integration remain passive: status and
+  diagnostics can include their local state, but packaging does not create
+  background polling, push delivery, telemetry, notarization, or updater flows.
+
 ## Frontend Build Stability
 
 Production frontend builds now avoid the Vite/Rollup transform hang without
