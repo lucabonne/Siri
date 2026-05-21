@@ -658,6 +658,78 @@ export interface DesktopStatus {
   telemetry_enabled: boolean;
 }
 
+export interface EngineeringCadFile {
+  path: string;
+  name: string;
+  format: string;
+  role: string;
+  size_bytes: number;
+  modified_at: string;
+  local_only: boolean;
+  passive_only: boolean;
+  uploaded: boolean;
+}
+
+export interface EngineeringProject {
+  id: string;
+  name: string;
+  path: string;
+  project_kind: string;
+  formats: string[];
+  cad_files: EngineeringCadFile[];
+  markers: string[];
+  summary: string;
+  opened_at: string;
+  local_only: boolean;
+  passive_only: boolean;
+  autonomous_editing: boolean;
+  cad_modifications_enabled: boolean;
+  cloud_uploads_enabled: boolean;
+}
+
+export interface EngineeringWorkspaceState {
+  active_project: EngineeringProject | null;
+  recent_projects: EngineeringProject[];
+  recent_files: EngineeringCadFile[];
+  updated_at: string;
+  local_only: boolean;
+  passive_only: boolean;
+  cloud_uploads_enabled: boolean;
+  autonomous_editing: boolean;
+  cad_modifications_enabled: boolean;
+}
+
+export interface EngineeringStatus {
+  active_project: EngineeringProject | null;
+  projects: EngineeringProject[];
+  recent_files: EngineeringCadFile[];
+  workspace_state: EngineeringWorkspaceState;
+  supported_formats: string[];
+  integrations: Record<string, unknown>;
+  privacy_mode: boolean;
+  local_only: boolean;
+  passive_only: boolean;
+  cloud_uploads_enabled: boolean;
+  autonomous_editing: boolean;
+  cad_modifications_enabled: boolean;
+}
+
+export interface EngineeringProjectSummary {
+  project: EngineeringProject;
+  file_count: number;
+  formats: Record<string, number>;
+  largest_files: EngineeringCadFile[];
+  recent_files: EngineeringCadFile[];
+  viewer_hints: Array<Record<string, unknown>>;
+  analysis_notes: string[];
+  privacy_mode: boolean;
+  local_only: boolean;
+  passive_only: boolean;
+  cloud_uploaded: boolean;
+  autonomous_editing: boolean;
+  cad_modifications_enabled: boolean;
+}
+
 export interface ProjectContext {
   cwd: string;
   git_repository: string;
@@ -945,6 +1017,40 @@ export async function fetchDesktopStatus(cwd?: string): Promise<DesktopStatus> {
   const res = await fetch(`${getBase()}/v1/desktop/status${params}`);
   if (!res.ok) throw new Error(`Failed to fetch desktop status: ${res.status}`);
   return res.json();
+}
+
+export async function fetchEngineeringStatus(cwd?: string): Promise<EngineeringStatus> {
+  const params = cwd ? `?cwd=${encodeURIComponent(cwd)}` : '';
+  const res = await fetch(`${getBase()}/v1/engineering/status${params}`);
+  if (!res.ok) throw new Error(`Failed to fetch engineering status: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchEngineeringProjectSummary(path: string): Promise<EngineeringProjectSummary> {
+  const res = await fetch(`${getBase()}/v1/engineering/project-summary?path=${encodeURIComponent(path)}`);
+  if (!res.ok) throw new Error(`Failed to fetch engineering project summary: ${res.status}`);
+  const data = await res.json();
+  return data.summary;
+}
+
+export async function openEngineeringProject(path: string): Promise<EngineeringProject> {
+  const res = await fetch(`${getBase()}/v1/engineering/open-project`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path }),
+  });
+  if (!res.ok) throw new Error(`Failed to open engineering project: ${res.status}`);
+  const data = await res.json();
+  return data.project;
+}
+
+export async function fetchRecentEngineeringFiles(limit = 12, root?: string): Promise<EngineeringCadFile[]> {
+  const params = new URLSearchParams({ limit: String(limit) });
+  if (root) params.set('root', root);
+  const res = await fetch(`${getBase()}/v1/engineering/recent-files?${params.toString()}`);
+  if (!res.ok) throw new Error(`Failed to fetch engineering files: ${res.status}`);
+  const data = await res.json();
+  return data.files || [];
 }
 
 export async function launchDesktopApp(appName: string): Promise<DesktopLaunchResult> {
@@ -2519,6 +2625,7 @@ export async function listResearch(limit: number = 20): Promise<ResearchSession[
 export async function startResearch(data: {
   question: string;
   sources?: Array<Record<string, unknown>>;
+  engineering_project_path?: string;
   allow_external_search?: boolean;
   max_sources?: number;
 }): Promise<ResearchSession> {

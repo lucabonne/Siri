@@ -9,6 +9,7 @@ from pydantic import BaseModel
 
 from openjarvis.research import ResearchService
 from openjarvis.server.morning_briefing_routes import _service as morning_service
+from openjarvis.server.notification_routes import get_notification_service
 from openjarvis.server.worldmonitor_routes import get_worldmonitor_service
 
 research_router = APIRouter(prefix="/v1/research", tags=["research"])
@@ -17,6 +18,7 @@ research_router = APIRouter(prefix="/v1/research", tags=["research"])
 class StartResearchRequest(BaseModel):
     question: str
     sources: list[dict[str, Any]] = []
+    engineering_project_path: str = ""
     allow_external_search: bool = False
     max_sources: int = 8
 
@@ -94,10 +96,36 @@ async def start_research(req: StartResearchRequest, request: Request):
     """Run a synchronous local-first research workflow."""
 
     privacy = _privacy_mode(request)
+    sources = list(req.sources)
+    if req.engineering_project_path:
+        try:
+            from openjarvis.server.engineering_routes import get_engineering_service
+
+            summary = get_engineering_service(request).project_summary(
+                req.engineering_project_path,
+                privacy_mode=privacy,
+            )
+            sources.append(
+                {
+                    "id": f"engineering:{summary.project.id}",
+                    "title": f"Engineering project: {summary.project.name}",
+                    "url": "",
+                    "snippet": " ".join(summary.analysis_notes),
+                    "source_type": "engineering_project_summary",
+                    "metadata": {
+                        "engineering_project": summary.project.to_dict(),
+                        "formats": summary.formats,
+                        "local_only": True,
+                        "passive_only": True,
+                    },
+                }
+            )
+        except Exception:
+            pass
     try:
         session = get_research_service(request).start_research(
             req.question,
-            seed_sources=req.sources,
+            seed_sources=sources,
             allow_external_search=bool(req.allow_external_search and not privacy),
             privacy_mode=privacy,
             active_mode_id=_active_mode_id(request),
@@ -106,6 +134,10 @@ async def start_research(req: StartResearchRequest, request: Request):
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    try:
+        get_notification_service(request).notify_research_completed(session)
+    except Exception:
+        pass
     return {"research": session.to_dict()}
 
 

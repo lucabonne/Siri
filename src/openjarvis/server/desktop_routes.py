@@ -135,6 +135,7 @@ def get_desktop_service(request: Request) -> DesktopService:
         mcp_tools_cache=getattr(request.app.state, "_mcp_tools_cache", None),
         mode_registry=mode_registry,
         coding_assistant=coding,
+        engineering_service=getattr(request.app.state, "engineering_service", None),
     )
     request.app.state.desktop_service = service
     return service
@@ -171,6 +172,12 @@ def _attach_runtime_integrations(service: DesktopService, request: Request) -> N
     service.mcp_server = getattr(request.app.state, "mcp_server", None)
     service.mcp_clients = list(getattr(request.app.state, "_mcp_clients", []))
     service.mcp_tools_cache = getattr(request.app.state, "_mcp_tools_cache", None)
+    if getattr(service, "engineering_service", None) is None:
+        service.engineering_service = getattr(
+            request.app.state,
+            "engineering_service",
+            None,
+        )
 
 
 @desktop_router.get("/status")

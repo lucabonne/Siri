@@ -11,6 +11,7 @@ from pydantic import BaseModel
 from openjarvis.context import ContextLayer
 from openjarvis.context.terminal import TerminalContextStore
 from openjarvis.context.vision import VisionContextStore
+from openjarvis.desktop import DesktopService
 from openjarvis.security.approval_queue import ApprovalQueue
 from openjarvis.security.permissions import (
     PermissionDecision,
@@ -88,6 +89,22 @@ def _structured_memory_service(request: Request) -> Any:
 @context_router.get("/desktop")
 async def get_desktop_context(request: Request, cwd: str | None = Query(default=None)):
     """Return passive desktop context collected locally."""
+    service = getattr(request.app.state, "desktop_service", None)
+    if isinstance(service, DesktopService):
+        status = service.status(cwd=cwd, privacy_mode=_privacy_mode(request))
+        return {
+            "active_application": (
+                status.active_application.name if status.active_application else ""
+            ),
+            "active_window_title": status.active_window.title,
+            "clipboard_preview": status.clipboard_preview,
+            "clipboard_sensitive": status.clipboard_sensitive,
+            "current_working_directory": str(cwd or ""),
+            "recent_files": [],
+            "privacy_mode": status.privacy_mode,
+            "passive_only": True,
+            "desktop_status": status.to_dict(),
+        }
     context = _layer(cwd).current_desktop_context(privacy_mode=_privacy_mode(request))
     return context.to_dict()
 
@@ -102,6 +119,21 @@ async def get_project_context(cwd: str | None = Query(default=None)):
 async def get_repo_context(cwd: str | None = Query(default=None)):
     """Return lightweight repository inventory and summary metadata."""
     return _layer(cwd).repo_index().to_dict()
+
+
+@context_router.get("/engineering")
+async def get_engineering_context(
+    request: Request,
+    cwd: str | None = Query(default=None),
+):
+    """Return passive local engineering/CAD workspace context."""
+
+    from openjarvis.server.engineering_routes import get_engineering_service
+
+    return get_engineering_service(request).mission_control_snapshot(
+        cwd=Path(cwd).expanduser() if cwd else None,
+        privacy_mode=_privacy_mode(request),
+    )
 
 
 @context_router.get("/worldmonitor")

@@ -431,6 +431,40 @@ Deferred work remains intentionally untouched in this phase:
 - no background watchers
 - no cloud embeddings or outbound repository uploads
 
+## Engineering / CAD Workspace Phase 1
+
+Phase 1 adds passive engineering workspace awareness for Siri without enabling
+autonomous CAD editing, file conversion, geometry modification, or uploads.
+
+- `src/openjarvis/engineering/` owns CAD file detection, typed models, project
+  discovery, viewer hints, session state, passive summaries, and the
+  coordinating engineering service.
+- Detection covers CAD projects, STEP (`.step`, `.stp`), STL, OBJ, Fusion
+  exports (`.f3d`, `.f3z`), and FreeCAD projects/backups (`.FCStd`,
+  `.FCStd1`) using local filename and metadata scans only.
+- Project awareness tracks an active engineering workspace, recent engineering
+  projects, recent files, supported formats, and project summaries.
+- `/v1/engineering/status`, `/projects`, `/project-summary`, `/open-project`,
+  and `/recent-files` expose the local Engineering Workspace APIs.
+- Integration points are conservative and local: Desktop status can include an
+  engineering snapshot, Context exposes `/v1/context/engineering`, Agent
+  Workspace declares engineering tools and CAD memory scopes, Research can seed
+  a run from a passive engineering project summary, and Workflows includes an
+  open engineering workspace workflow.
+- Mission Control includes an Engineering tab showing active project, detected
+  projects, recent files, workspace state, privacy posture, and passive
+  summaries.
+- Privacy Mode suppresses engineering memory writes. CAD files remain local,
+  no model data is uploaded, and Phase 1 never modifies CAD geometry.
+
+Deferred work remains intentionally untouched in this phase:
+
+- no autonomous CAD editing
+- no CAD file conversion or repair
+- no geometry parsing beyond passive file metadata
+- no background CAD watchers
+- no engineering cloud uploads
+
 ## Coding Assistant Specialization Phase 1
 
 Phase 1 adds passive developer intelligence on top of the repo index, terminal

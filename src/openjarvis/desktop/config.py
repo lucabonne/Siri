@@ -9,7 +9,7 @@ DEFAULT_TRAY_ACTIONS = [
     "toggle_voice_trigger",
     "quick_morning_briefing",
     "open_current_workspace",
-    "restart",
+    "restart_backend",
     "quit",
 ]
 
@@ -17,6 +17,12 @@ ALLOWED_NOTIFICATION_KINDS = [
     "briefing_ready",
     "workflow_finished",
     "approval_required",
+    "mcp_registration",
+    "morning_briefing_ready",
+    "workflow_completed",
+    "research_completed",
+    "build_completed",
+    "startup_complete",
 ]
 
 

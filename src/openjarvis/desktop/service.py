@@ -57,6 +57,7 @@ class DesktopService:
         mcp_tools_cache: Any = None,
         mode_registry: ModeRegistry | None = None,
         coding_assistant: CodingAssistantService | None = None,
+        engineering_service: Any = None,
         notification_center: NotificationCenter | None = None,
         menu_bar: MenuBarController | None = None,
     ) -> None:
@@ -77,6 +78,7 @@ class DesktopService:
         self.mcp_tools_cache = mcp_tools_cache
         self.mode_registry = mode_registry or ModeRegistry(persist=False)
         self.coding_assistant = coding_assistant
+        self.engineering_service = engineering_service
         self.notification_center = notification_center or NotificationCenter(
             session_store=self.session_store
         )
@@ -463,6 +465,7 @@ class DesktopService:
             "permissions": self._permissions_snapshot(),
             "modes": self._mode_snapshot(),
             "coding_assistant": self._coding_snapshot(focus, privacy_mode=privacy_mode),
+            "engineering": self._engineering_snapshot(privacy_mode=privacy_mode),
         }
 
     def _memory_snapshot(self, *, privacy_mode: bool) -> dict[str, Any]:
@@ -493,6 +496,17 @@ class DesktopService:
                 "history_count": len(snapshot.get("history", [])),
                 "local_only": True,
             }
+        except Exception:
+            return {"available": False}
+
+    def _engineering_snapshot(self, *, privacy_mode: bool) -> dict[str, Any]:
+        if self.engineering_service is None:
+            return {"available": False}
+        try:
+            snapshot = self.engineering_service.mission_control_snapshot(
+                privacy_mode=privacy_mode,
+            )
+            return {"available": True, **snapshot}
         except Exception:
             return {"available": False}
 

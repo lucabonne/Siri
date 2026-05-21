@@ -8,6 +8,7 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
+from openjarvis.server.notification_routes import get_notification_service
 from openjarvis.workflows import WorkflowService
 from openjarvis.workflows.validation import WorkflowValidationError
 
@@ -94,6 +95,11 @@ async def run_workflow(
             requested_by=body.requested_by,
             dry_run=body.dry_run,
         )
+        if not body.dry_run:
+            try:
+                get_notification_service(request).notify_workflow_completed(run)
+            except Exception:
+                pass
         return {"run": run.to_dict()}
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc

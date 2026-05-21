@@ -34,6 +34,39 @@ _WORKFLOW_DATA = [
         ],
     },
     {
+        "id": "open_engineering_workspace",
+        "name": "Open engineering workspace",
+        "description": (
+            "Stage local CAD project awareness, recent engineering files, and "
+            "passive summary context."
+        ),
+        "required_permissions": ["READ_ONLY"],
+        "approval_requirements": [],
+        "rollback_hints": ["No CAD files are modified."],
+        "allowed_agents": ["engineering", "CAD", "privacy"],
+        "mode_restrictions": ["focus", "engineering", "privacy"],
+        "steps": [
+            {
+                "id": "engineering_status",
+                "name": "Read engineering status",
+                "tool_name": "engineering_status",
+                "description": "Capture active engineering workspace state.",
+                "required_permission": "READ_ONLY",
+                "local_only": True,
+                "passive_only": True,
+            },
+            {
+                "id": "engineering_recent_files",
+                "name": "Read recent engineering files",
+                "tool_name": "engineering_recent_files",
+                "description": "List local STEP, STL, OBJ, Fusion, and FreeCAD files.",
+                "required_permission": "READ_ONLY",
+                "local_only": True,
+                "passive_only": True,
+            },
+        ],
+    },
+    {
         "id": "run_tests",
         "name": "Run tests",
         "description": (

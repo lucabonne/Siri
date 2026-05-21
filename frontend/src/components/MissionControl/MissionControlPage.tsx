@@ -38,6 +38,7 @@ import {
   Volume2,
   VolumeX,
   Workflow,
+  Wrench,
   XCircle,
 } from 'lucide-react';
 import {
@@ -50,6 +51,8 @@ import {
   fetchCodingPanel,
   fetchBriefingStatus,
   fetchDesktopStatus,
+  fetchEngineeringProjectSummary,
+  fetchEngineeringStatus,
   fetchHotkeyStatus,
   fetchLatestVisualContext,
   fetchLocalContextSnapshot,
@@ -76,6 +79,7 @@ import {
   listSiriModes,
   listMemories,
   listResearch,
+  openEngineeringProject,
   installStartup,
   regenerateMorningBriefing,
   removeStartup,
@@ -114,6 +118,8 @@ import type {
   BriefingStatus,
   DailyBriefing,
   DesktopStatus,
+  EngineeringProjectSummary,
+  EngineeringStatus,
   HotkeyStatus,
   MorningEvent,
   ResearchReport,
@@ -397,7 +403,11 @@ function DesktopSection() {
             icon={<Power size={14} />}
             label="Launcher"
             value={`${launcher?.backend_status || 'stopped'} / ${launcher?.frontend_status || 'stopped'}`}
-            detail={launcher?.last_action || 'Backend and frontend helpers'}
+            detail={
+              launcher?.startup_diagnostics?.length
+                ? `${launcher.startup_diagnostics.length} startup checks`
+                : launcher?.last_action || 'Backend and frontend helpers'
+            }
           />
           <ContextTile
             icon={<ShieldAlert size={14} />}
@@ -1536,6 +1546,167 @@ function RepoSection() {
             </div>
           ))}
           {dependencies.length === 0 && <div className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>No manifest dependencies detected.</div>}
+        </div>
+      </ShellPanel>
+    </div>
+  );
+}
+
+function EngineeringSection() {
+  const [status, setStatus] = useState<EngineeringStatus | null>(null);
+  const [summary, setSummary] = useState<EngineeringProjectSummary | null>(null);
+  const [state, setState] = useState<'loading' | 'ready' | 'offline'>('loading');
+  const [error, setError] = useState('');
+
+  const loadEngineering = async () => {
+    setState('loading');
+    setError('');
+    try {
+      const data = await fetchEngineeringStatus();
+      setStatus(data);
+      const activePath = data.active_project?.path || '';
+      if (activePath) {
+        const nextSummary = await fetchEngineeringProjectSummary(activePath).catch(() => null);
+        setSummary(nextSummary);
+      } else {
+        setSummary(null);
+      }
+      setState('ready');
+    } catch {
+      setStatus(null);
+      setSummary(null);
+      setState('offline');
+    }
+  };
+
+  useEffect(() => {
+    loadEngineering();
+  }, []);
+
+  const active = status?.active_project ?? null;
+  const projects = status?.projects ?? [];
+  const recentFiles = status?.recent_files ?? [];
+  const formatCounts = summary?.formats ?? {};
+
+  const openProject = async (path: string) => {
+    setError('');
+    try {
+      await openEngineeringProject(path);
+      await loadEngineering();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to open engineering project');
+    }
+  };
+
+  return (
+    <div className="grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">
+      <ShellPanel title="Engineering Workspace" action={state === 'ready' ? 'local only' : state}>
+        <div className="grid gap-3 md:grid-cols-3">
+          <ContextTile
+            icon={<Wrench size={15} />}
+            label="Active Project"
+            value={active?.name || 'No CAD project'}
+            detail={active?.path ? compactPath(active.path) : 'STEP, STL, OBJ, Fusion, FreeCAD'}
+          />
+          <ContextTile
+            icon={<Package size={15} />}
+            label="Formats"
+            value={joinStack(active?.formats ?? status?.supported_formats ?? [])}
+            detail={`${summary?.file_count ?? active?.cad_files.length ?? 0} detected files`}
+          />
+          <ContextTile
+            icon={<LockKeyhole size={15} />}
+            label="Privacy"
+            value={status?.privacy_mode ? 'Privacy' : 'Local'}
+            detail={status?.cloud_uploads_enabled ? 'Uploads enabled' : 'No uploads'}
+          />
+        </div>
+        <div className="mt-4 flex flex-wrap gap-2">
+          {(active?.markers.length ? active.markers : ['passive only', 'no CAD edits']).slice(0, 10).map((item) => (
+            <StatusPill key={item} tone="quiet">{item}</StatusPill>
+          ))}
+        </div>
+        {error && (
+          <p className="mt-3 text-sm" style={{ color: 'var(--color-danger)' }}>
+            {error}
+          </p>
+        )}
+        <div className="mt-4 flex gap-2">
+          <button
+            type="button"
+            onClick={loadEngineering}
+            className="inline-flex h-10 items-center gap-2 rounded-md border px-3 text-sm"
+            style={{ borderColor: 'var(--color-border)', color: 'var(--color-text)' }}
+          >
+            <RefreshCw size={16} />
+            <span>Refresh</span>
+          </button>
+        </div>
+      </ShellPanel>
+
+      <ShellPanel title="Project Summary" action={active?.project_kind || 'waiting'}>
+        <div className="grid gap-3 md:grid-cols-2">
+          {Object.entries(formatCounts).slice(0, 6).map(([format, count]) => (
+            <ContextTile
+              key={format}
+              icon={<Package size={15} />}
+              label={format}
+              value={String(count)}
+              detail="local file count"
+            />
+          ))}
+          {!Object.keys(formatCounts).length && (
+            <div className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
+              Engineering summaries appear when supported CAD files are detected.
+            </div>
+          )}
+        </div>
+        <div className="mt-4 grid gap-2">
+          {(summary?.analysis_notes ?? []).slice(0, 6).map((note) => (
+            <div key={note} className="rounded-md border px-3 py-2 text-sm" style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg-secondary)', color: 'var(--color-text-secondary)' }}>
+              {note}
+            </div>
+          ))}
+        </div>
+      </ShellPanel>
+
+      <ShellPanel title="Detected Projects" action={`${projects.length} found`}>
+        <div className="space-y-2">
+          {projects.slice(0, 10).map((project) => (
+            <div key={project.id} className="grid gap-3 rounded-md border p-3 md:grid-cols-[1fr_auto]" style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg-secondary)' }}>
+              <div className="min-w-0">
+                <div className="truncate text-sm font-semibold" style={{ color: 'var(--color-text)' }}>{project.name}</div>
+                <div className="mt-1 truncate text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+                  {compactPath(project.path)} / {project.project_kind}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => openProject(project.path)}
+                className="inline-flex h-9 w-9 items-center justify-center rounded-md border"
+                style={{ borderColor: 'var(--color-border)', color: 'var(--color-text)' }}
+                title="Open engineering project"
+              >
+                <ArrowUpRight size={15} />
+              </button>
+            </div>
+          ))}
+          {!projects.length && <div className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>No engineering projects detected in the current workspace.</div>}
+        </div>
+      </ShellPanel>
+
+      <ShellPanel title="Recent Engineering Files" action={`${recentFiles.length} local`}>
+        <div className="grid gap-2 md:grid-cols-2">
+          {recentFiles.slice(0, 12).map((file) => (
+            <div key={file.path} className="rounded-md border px-3 py-2" style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg-secondary)' }}>
+              <div className="truncate font-mono text-sm" style={{ color: 'var(--color-text)' }}>{file.name}</div>
+              <div className="mt-1 flex flex-wrap gap-2 text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+                <span>{file.format}</span>
+                <span>{formatBytes(file.size_bytes)}</span>
+              </div>
+            </div>
+          ))}
+          {!recentFiles.length && <div className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>Recent STEP, STL, OBJ, Fusion, and FreeCAD files will appear here.</div>}
         </div>
       </ShellPanel>
     </div>
@@ -3376,6 +3547,7 @@ function ActiveSection({ section }: { section: MissionSectionId }) {
   if (section === 'memory') return <MemorySection />;
   if (section === 'projects') return <ProjectsSection />;
   if (section === 'desktop') return <DesktopSection />;
+  if (section === 'engineering') return <EngineeringSection />;
   if (section === 'coding') return <CodingSection />;
   if (section === 'repo') return <RepoSection />;
   if (section === 'voice') return <VoiceSection />;
