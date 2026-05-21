@@ -60,6 +60,7 @@ import {
   fetchMorningEvents,
   fetchPermissionAudit,
   fetchRepoSummary,
+  fetchReleaseMissionControl,
   fetchRecentVisionScreenshots,
   fetchResearchCitations,
   fetchResearchMemoryEntries,
@@ -84,6 +85,7 @@ import {
   regenerateMorningBriefing,
   removeStartup,
   requestTerminalCommandApproval,
+  runReleaseRecoveryAction,
   searchRepoIndex,
   searchMemory,
   setMemoryPinned,
@@ -125,6 +127,8 @@ import type {
   ResearchReport,
   ResearchSession,
   ResearchSource,
+  ReleaseMissionControlSnapshot,
+  ReleaseRecoveryResult,
   StartupStatus,
   WorldMonitorStatus,
   WorldMonitorSyncStatus,
@@ -3203,6 +3207,217 @@ function ResearchSection() {
   );
 }
 
+function releaseTone(status: string): StatusTone {
+  if (['ok', 'ready', 'completed'].includes(status)) return 'good';
+  if (['warning', 'needs_attention', 'completed_with_warnings'].includes(status)) return 'watch';
+  if (['loading', 'running'].includes(status)) return 'busy';
+  return 'quiet';
+}
+
+function ReleaseSection() {
+  const [snapshot, setSnapshot] = useState<ReleaseMissionControlSnapshot | null>(null);
+  const [status, setStatus] = useState<'loading' | 'ready' | 'offline'>('loading');
+  const [acting, setActing] = useState<string>('');
+  const [lastResult, setLastResult] = useState<ReleaseRecoveryResult | null>(null);
+
+  const refreshRelease = async () => {
+    setStatus('loading');
+    try {
+      setSnapshot(await fetchReleaseMissionControl());
+      setStatus('ready');
+    } catch {
+      setSnapshot(null);
+      setStatus('offline');
+    }
+  };
+
+  useEffect(() => {
+    refreshRelease();
+  }, []);
+
+  const runRepair = async (action: string) => {
+    setActing(action);
+    try {
+      const result = await runReleaseRecoveryAction(action);
+      setLastResult(result);
+      await refreshRelease();
+    } catch {
+      setStatus('offline');
+    } finally {
+      setActing('');
+    }
+  };
+
+  const healthChecks = snapshot?.health_checks ?? [];
+  const diagnostics = snapshot?.diagnostics ?? [];
+  const recoveryActions = snapshot?.recovery_actions ?? [];
+  const report = snapshot?.report;
+  const score = report?.readiness_score ?? 0;
+  const warnings = report?.warnings ?? [];
+
+  return (
+    <div className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
+      <ShellPanel
+        title="Release Health"
+        action={status === 'loading' ? 'loading' : status === 'offline' ? 'offline' : report?.readiness_status}
+      >
+        <div className="grid gap-4">
+          <div className="grid gap-3 md:grid-cols-3">
+            <div
+              className="rounded-md border p-4"
+              style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg-secondary)' }}
+            >
+              <div className="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+                Readiness
+              </div>
+              <div className="mt-2 flex items-end gap-2">
+                <span className="text-3xl font-semibold" style={{ color: 'var(--color-text)' }}>
+                  {score}
+                </span>
+                <span className="pb-1 text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+                  / 100
+                </span>
+              </div>
+            </div>
+            <div
+              className="rounded-md border p-4"
+              style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg-secondary)' }}
+            >
+              <div className="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+                Privacy
+              </div>
+              <div className="mt-2 flex flex-wrap gap-2">
+                <StatusPill tone={snapshot?.local_only ? 'good' : 'watch'}>Local only</StatusPill>
+                <StatusPill tone={snapshot?.telemetry_enabled ? 'watch' : 'good'}>No telemetry</StatusPill>
+              </div>
+            </div>
+            <div
+              className="rounded-md border p-4"
+              style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg-secondary)' }}
+            >
+              <div className="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+                Scope
+              </div>
+              <div className="mt-2 flex flex-wrap gap-2">
+                <StatusPill tone={snapshot?.wake_words ? 'watch' : 'good'}>No wake words</StatusPill>
+                <StatusPill tone={snapshot?.autonomous_agents ? 'watch' : 'good'}>No agents</StatusPill>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid gap-3 md:grid-cols-2">
+            {healthChecks.map((check) => (
+              <div
+                key={check.id}
+                className="rounded-md border p-4"
+                style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg-secondary)' }}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="text-sm font-semibold" style={{ color: 'var(--color-text)' }}>
+                      {check.label}
+                    </div>
+                    <p className="mt-1 text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+                      {check.summary}
+                    </p>
+                    {check.detail && (
+                      <p className="mt-2 truncate text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+                        {check.detail}
+                      </p>
+                    )}
+                  </div>
+                  <StatusPill tone={releaseTone(check.status)}>{check.status}</StatusPill>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </ShellPanel>
+
+      <div className="grid gap-4">
+        <ShellPanel title="Diagnostics Summary" action={`${diagnostics.length} checks`}>
+          <div className="space-y-2">
+            {diagnostics.map((item) => (
+              <div
+                key={item.id}
+                className="rounded-md border p-3"
+                style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg-secondary)' }}
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>
+                    {item.label}
+                  </span>
+                  <StatusPill tone={releaseTone(item.status)}>{item.status}</StatusPill>
+                </div>
+                <p className="mt-1 text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+                  {item.summary}
+                </p>
+              </div>
+            ))}
+          </div>
+        </ShellPanel>
+
+        <ShellPanel title="Repair Actions" action="explicit">
+          <div className="grid gap-2">
+            {recoveryActions.map((action) => (
+              <button
+                key={action.id}
+                type="button"
+                disabled={!!acting}
+                onClick={() => runRepair(action.id)}
+                className="flex items-center justify-between gap-3 rounded-md border px-3 py-3 text-left text-sm transition-colors disabled:opacity-50"
+                style={{
+                  borderColor: 'var(--color-border)',
+                  color: 'var(--color-text)',
+                  background: 'var(--color-bg-secondary)',
+                }}
+                title={action.description}
+              >
+                <span className="flex min-w-0 items-center gap-2">
+                  {acting === action.id ? <RefreshCw size={15} /> : <Wrench size={15} />}
+                  <span className="truncate">{acting === action.id ? 'Running' : action.label}</span>
+                </span>
+                <ArrowUpRight size={14} />
+              </button>
+            ))}
+          </div>
+          {lastResult && (
+            <div className="mt-3 rounded-md border p-3" style={{ borderColor: 'var(--color-border)' }}>
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-xs font-semibold" style={{ color: 'var(--color-text)' }}>
+                  {lastResult.action}
+                </span>
+                <StatusPill tone={releaseTone(lastResult.status)}>{lastResult.status}</StatusPill>
+              </div>
+              <p className="mt-1 text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+                {lastResult.summary}
+              </p>
+            </div>
+          )}
+        </ShellPanel>
+
+        <ShellPanel title="Warnings" action={`${warnings.length} active`}>
+          <div className="space-y-2">
+            {warnings.length === 0 ? (
+              <div className="flex items-center gap-2 text-sm" style={{ color: 'var(--color-text-secondary)' }}>
+                <CheckCircle2 size={16} style={{ color: 'var(--color-success)' }} />
+                Release checks are quiet
+              </div>
+            ) : (
+              warnings.slice(0, 5).map((warning) => (
+                <div key={warning} className="flex items-start gap-2 text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+                  <AlertTriangle size={14} style={{ color: 'var(--color-warning)' }} />
+                  <span>{warning}</span>
+                </div>
+              ))
+            )}
+          </div>
+        </ShellPanel>
+      </div>
+    </div>
+  );
+}
+
 function SettingsSection() {
   const [startup, setStartup] = useState<StartupStatus | null>(null);
   const [status, setStatus] = useState<'loading' | 'ready' | 'offline'>('loading');
@@ -3573,6 +3788,7 @@ function ActiveSection({ section }: { section: MissionSectionId }) {
   if (section === 'terminal') return <TerminalSection />;
   if (section === 'workflows') return <WorkflowsSection />;
   if (section === 'research') return <ResearchSection />;
+  if (section === 'release') return <ReleaseSection />;
   if (section === 'settings') return <SettingsSection />;
   if (section === 'permissions') return <PermissionsSection />;
   return <HomeSection />;

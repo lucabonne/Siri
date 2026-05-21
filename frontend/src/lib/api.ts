@@ -702,6 +702,73 @@ export interface PackagingDiagnostics {
   updater_enabled: boolean;
 }
 
+export interface ReleaseCheck {
+  id: string;
+  label: string;
+  category: string;
+  status: string;
+  summary: string;
+  detail: string;
+  required: boolean;
+  repair_action: string;
+  local_only: boolean;
+  telemetry_enabled: boolean;
+}
+
+export interface ReleaseDiagnostic {
+  id: string;
+  label: string;
+  status: string;
+  summary: string;
+  detail: string;
+  required: boolean;
+  local_only: boolean;
+  telemetry_enabled: boolean;
+}
+
+export interface ReleaseRecoveryAction {
+  id: string;
+  label: string;
+  description: string;
+  status: string;
+  requires_confirmation: boolean;
+  local_only: boolean;
+  telemetry_enabled: boolean;
+}
+
+export interface ReleaseRecoveryResult {
+  action: string;
+  status: string;
+  summary: string;
+  changed_paths: string[];
+  warnings: string[];
+  local_only: boolean;
+  telemetry_enabled: boolean;
+}
+
+export interface ReleaseReport {
+  installed_components: Array<Record<string, unknown>>;
+  enabled_modules: string[];
+  warnings: string[];
+  readiness_score: number;
+  readiness_status: string;
+  local_only: boolean;
+  telemetry_enabled: boolean;
+}
+
+export interface ReleaseMissionControlSnapshot {
+  health_checks: ReleaseCheck[];
+  diagnostics: ReleaseDiagnostic[];
+  recovery_actions: ReleaseRecoveryAction[];
+  report: ReleaseReport;
+  privacy_mode: Record<string, unknown>;
+  local_only: boolean;
+  telemetry_enabled: boolean;
+  autonomous_agents: boolean;
+  wake_words: boolean;
+  intelligence_features: boolean;
+}
+
 export interface EngineeringCadFile {
   path: string;
   name: string;
@@ -1078,6 +1145,22 @@ export async function fetchPackagingDiagnostics(): Promise<PackagingDiagnostics>
 export async function fetchPackagingLauncherState(): Promise<Record<string, unknown>> {
   const res = await fetch(`${getBase()}/v1/packaging/launcher/state`);
   if (!res.ok) throw new Error(`Failed to fetch packaging launcher state: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchReleaseMissionControl(): Promise<ReleaseMissionControlSnapshot> {
+  const res = await fetch(`${getBase()}/v1/release/mission-control`);
+  if (!res.ok) throw new Error(`Failed to fetch release status: ${res.status}`);
+  return res.json();
+}
+
+export async function runReleaseRecoveryAction(action: string): Promise<ReleaseRecoveryResult> {
+  const res = await fetch(`${getBase()}/v1/release/recovery/run`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action }),
+  });
+  if (!res.ok) throw new Error(`Failed to run release recovery action: ${res.status}`);
   return res.json();
 }
 

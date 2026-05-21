@@ -93,6 +93,32 @@ behavior.
   diagnostics can include their local state, but packaging does not create
   background polling, push delivery, telemetry, notarization, or updater flows.
 
+## Release Hardening Phase 1
+
+Phase 1 prepares Siri for a first local release candidate by adding reliability
+checks, startup diagnostics, repair helpers, and Mission Control readiness
+status without changing intelligence behavior.
+
+- `release/` now documents the local release hardening areas:
+  `health`, `diagnostics`, `reports`, `recovery`, and `checks`.
+- `src/openjarvis/release/` owns typed release health checks, startup
+  diagnostics, recovery action descriptors, recovery results, release reports,
+  readiness scoring, and the coordinating local-only service.
+- Health coverage includes backend, frontend, packaging, MCP, memory, voice,
+  and engineering workspace readiness.
+- Startup diagnostics cover missing dependencies, broken paths, model
+  availability, launcher status, and packaging readiness.
+- Recovery helpers cover rebuilding the frontend, clearing local caches,
+  resetting generated indexes, validating the memory database, and repairing
+  packaging state. Actions are explicit and user-triggered.
+- `/v1/release/health`, `/diagnostics`, `/recovery`, `/recovery/run`,
+  `/report`, and `/mission-control` expose the local release hardening surface.
+- Mission Control now includes a Release panel with readiness score, privacy
+  posture, diagnostics summary, warnings, and explicit repair actions.
+- Privacy Mode remains local-only with telemetry disabled. Release hardening
+  does not add wake words, autonomous agents, scheduler-driven actions, cloud
+  upload, or new intelligence features.
+
 ## Frontend Build Stability
 
 Production frontend builds now avoid the Vite/Rollup transform hang without

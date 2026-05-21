@@ -20,6 +20,7 @@ from openjarvis.server.morning_briefing_routes import morning_briefing_router
 from openjarvis.server.notification_routes import notification_router
 from openjarvis.server.packaging_routes import packaging_router
 from openjarvis.server.repo_index_routes import repo_index_router
+from openjarvis.server.release_routes import release_router
 from openjarvis.server.research_routes import research_router
 from openjarvis.server.startup_routes import startup_router
 from openjarvis.server.workflow_routes import workflow_router
@@ -1455,6 +1456,7 @@ def include_all_routes(app) -> None:
     app.include_router(worldmonitor_router)
     app.include_router(notification_router)
     app.include_router(packaging_router)
+    app.include_router(release_router)
     app.include_router(research_router)
     app.include_router(context_router)
     app.include_router(desktop_router)
@@ -1519,6 +1521,7 @@ __all__ = [
     "mode_router",
     "packaging_router",
     "repo_index_router",
+    "release_router",
     "research_router",
     "workflow_router",
 ]
