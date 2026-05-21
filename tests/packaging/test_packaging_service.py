@@ -1,15 +1,27 @@
 from __future__ import annotations
 
+import faulthandler
 import json
 import platform
 import plistlib
+import sys
 from pathlib import Path
 
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from openjarvis.packaging import PackagingService
 from openjarvis.server.packaging_routes import packaging_router
+
+
+@pytest.fixture(autouse=True)
+def _dump_traceback_on_packaging_test_hang():
+    faulthandler.dump_traceback_later(30, file=sys.stderr)
+    try:
+        yield
+    finally:
+        faulthandler.cancel_dump_traceback_later()
 
 
 def _project(tmp_path: Path) -> Path:

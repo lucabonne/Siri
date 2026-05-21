@@ -1,13 +1,4 @@
 import { useState, useEffect, useCallback } from 'react';
-import {
-  LineChart,
-  Line,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-} from 'recharts';
 import { Zap, Activity, Thermometer, Hash, Gauge } from 'lucide-react';
 import { fetchEnergy, fetchTelemetry } from '../../lib/api';
 import { useAppStore } from '../../lib/store';
@@ -61,6 +52,56 @@ function StatCard({
         )}
       </div>
     </div>
+  );
+}
+
+function PowerLineChart({ data }: { data: ChartPoint[] }) {
+  const width = 480;
+  const height = 180;
+  const padding = { top: 12, right: 16, bottom: 26, left: 40 };
+  const values = data.map((point) => point.power);
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const range = max - min || 1;
+  const innerWidth = width - padding.left - padding.right;
+  const innerHeight = height - padding.top - padding.bottom;
+  const points = data.map((point, index) => {
+    const x = padding.left + (index / Math.max(data.length - 1, 1)) * innerWidth;
+    const y = padding.top + (1 - (point.power - min) / range) * innerHeight;
+    return { ...point, x, y };
+  });
+  const path = points
+    .map((point, index) => `${index === 0 ? 'M' : 'L'} ${point.x.toFixed(1)} ${point.y.toFixed(1)}`)
+    .join(' ');
+
+  return (
+    <svg className="h-full w-full overflow-visible" viewBox={`0 0 ${width} ${height}`} role="img">
+      <title>Power draw over time</title>
+      {[0, 1, 2, 3].map((step) => {
+        const y = padding.top + (step / 3) * innerHeight;
+        const value = max - (step / 3) * range;
+        return (
+          <g key={step}>
+            <line x1={padding.left} y1={y} x2={width - padding.right} y2={y} stroke="var(--color-border)" strokeDasharray="3 3" />
+            <text x={padding.left - 8} y={y + 4} textAnchor="end" fontSize="10" fill="var(--color-text-tertiary)">
+              {value.toFixed(0)}W
+            </text>
+          </g>
+        );
+      })}
+      <path d={path} fill="none" stroke="var(--color-accent)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+      {points.map((point, index) => (
+        <circle key={`${point.time}-${index}`} cx={point.x} cy={point.y} r="2.5" fill="var(--color-accent)">
+          <title>{`${point.time}: ${point.power.toFixed(1)}W`}</title>
+        </circle>
+      ))}
+      <text x={padding.left} y={height - 6} fontSize="10" fill="var(--color-text-tertiary)">
+        {data[0]?.time}
+      </text>
+      <text x={width - padding.right} y={height - 6} textAnchor="end" fontSize="10" fill="var(--color-text-tertiary)">
+        {data[data.length - 1]?.time}
+      </text>
+    </svg>
   );
 }
 
@@ -171,23 +212,7 @@ export function EnergyDashboard() {
       {/* Chart */}
       {chartData.length > 1 && (
         <div className="h-48">
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={chartData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
-              <XAxis dataKey="time" tick={{ fontSize: 10, fill: 'var(--color-text-tertiary)' }} />
-              <YAxis tick={{ fontSize: 10, fill: 'var(--color-text-tertiary)' }} unit="W" />
-              <Tooltip
-                contentStyle={{
-                  background: 'var(--color-surface)',
-                  border: '1px solid var(--color-border)',
-                  borderRadius: 'var(--radius-md)',
-                  fontSize: 12,
-                  color: 'var(--color-text)',
-                }}
-              />
-              <Line type="monotone" dataKey="power" stroke="var(--color-accent)" strokeWidth={2} dot={false} />
-            </LineChart>
-          </ResponsiveContainer>
+          <PowerLineChart data={chartData} />
         </div>
       )}
     </div>
