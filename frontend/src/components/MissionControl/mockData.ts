@@ -17,6 +17,7 @@ import {
   Newspaper,
   Settings,
   TerminalSquare,
+  BookOpen,
 } from 'lucide-react';
 import type {
   ApprovalRecord,
@@ -46,6 +47,7 @@ export const missionSections: MissionSection[] = [
   { id: 'vision', label: 'Vision', icon: Camera },
   { id: 'terminal', label: 'Terminal', icon: TerminalSquare },
   { id: 'research', label: 'Research', icon: FileSearch },
+  { id: 'learning', label: 'Learning', icon: BookOpen },
   { id: 'settings', label: 'Settings', icon: Settings },
   { id: 'permissions', label: 'Permissions', icon: KeyRound },
 ];

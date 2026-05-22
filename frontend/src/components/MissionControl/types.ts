@@ -16,6 +16,7 @@ export type MissionSectionId =
   | 'vision'
   | 'terminal'
   | 'research'
+  | 'learning'
   | 'settings'
   | 'permissions';
 

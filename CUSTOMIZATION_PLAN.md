@@ -549,3 +549,23 @@ the conservative execution default from earlier phases.
 
 Approving a queued item records the user's decision for review and follow-up;
 it does not silently resume or replay the blocked tool call.
+
+## Learning Layer Phase 1
+
+Phase 1 adds explicit, local-only feedback tracking to personalize ranking and
+suggestions across Siri without introducing autonomous adaptation or cloud sync.
+
+- `src/openjarvis/learning_layer/` owns the core feedback, preference, ranking,
+  memory, models, and service logic. Learning state is persisted locally to
+  `~/.openjarvis/state/learning/learning_state.json`.
+- Users explicitly provide thumbs up/down feedback which adjust preference weights
+  and component scores. No self-modifying prompts, no hidden adaptation.
+- Feedback affects:
+  - Memory multipliers (important topics get a relevance boost in searches)
+  - Workflow ranking (preferred workflows move up the list)
+  - Personalization defaults (learning layer aggregates preference weights)
+- `LearningPanel.tsx` in Mission Control offers a dedicated section to view
+  learning metrics, current preference weights, and manually reset, export, or
+  import learning state.
+- Data remains local and is explicitly triggered by user-driven ratings, ensuring
+  maximum predictability and control over adaptation.
