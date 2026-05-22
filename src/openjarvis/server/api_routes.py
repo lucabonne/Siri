@@ -95,6 +95,12 @@ class VoiceTranscribeLatestRequest(BaseModel):
 class VoiceDispatchRequest(BaseModel):
     transcript: str
     agent_id: str = ""
+    approved: bool = False
+
+
+class VoiceSubmitTranscriptRequest(BaseModel):
+    transcript: str
+    session_id: str = ""
 
 
 # ---- Agent routes ----
@@ -1089,19 +1095,52 @@ async def transcribe_latest_voice(
         raise _voice_error(exc) from exc
 
 
+@voice_router.post("/submit-transcript")
+async def submit_voice_transcript(req: VoiceSubmitTranscriptRequest, request: Request):
+    """Accept a manually-supplied transcript and return an intent preview.
+
+    Stub for Phase 2: supports the awaiting_approval state without requiring a
+    live local transcription backend.  Deferred: wiring to the session FSM and
+    a real recorder/transcriber.
+    """
+    if not req.transcript.strip():
+        raise HTTPException(status_code=422, detail="transcript must not be empty")
+    service = _get_voice_ptt_service(request)
+    preview = service.preview_intent(req.transcript)
+    return {
+        "status": "awaiting_approval",
+        "transcript": req.transcript,
+        "session_id": req.session_id or "",
+        "intent_preview": preview.to_dict(),
+        "approved": False,
+        "dispatched": False,
+    }
+
+
 @voice_router.post("/dispatch")
 async def dispatch_voice_transcript(req: VoiceDispatchRequest, request: Request):
-    """Route an approved transcript to the active agent as a text message.
+    """Route an explicitly approved transcript to the active agent.
 
-    This is the bridge between the voice PTT pipeline and the existing
-    orchestrator. The caller is responsible for obtaining user approval before
-    calling this endpoint (see /transcribe-latest intent_preview).
+    Requires approved=True in the request body.  Returns 403 when approval is
+    missing so callers must surface the intent preview and obtain confirmation
+    before dispatching (see /submit-transcript and /transcribe-latest).
 
-    Dispatches to POST /v1/agents/{agent_id}/message via AgentSendTool.
+    Dispatches via AgentSendTool → POST /v1/agents/{agent_id}/message.
     Returns dispatched=False with a reason when no agent is addressable.
     """
     if not req.transcript.strip():
         raise HTTPException(status_code=422, detail="transcript must not be empty")
+    if not req.approved:
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "status": "approval_required",
+                "message": (
+                    "explicit approval is required before voice dispatch; "
+                    "review the intent_preview and re-submit with approved=true"
+                ),
+            },
+        )
     try:
         from openjarvis.tools.agent_tools import AgentSendTool
 

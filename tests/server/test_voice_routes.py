@@ -124,10 +124,27 @@ def test_voice_start_stop_transcribe_latest(client: TestClient) -> None:
     assert data["dispatched_to_agent"] is False
 
 
-def test_voice_dispatch_no_agent_returns_not_dispatched(client: TestClient) -> None:
+def test_voice_dispatch_requires_approval(client: TestClient) -> None:
+    resp = client.post(
+        "/v1/voice/ptt/dispatch",
+        json={"transcript": "open the notes app", "approved": False},
+    )
+    assert resp.status_code == 403
+    assert resp.json()["detail"]["status"] == "approval_required"
+
+
+def test_voice_dispatch_no_approval_field_also_blocked(client: TestClient) -> None:
     resp = client.post(
         "/v1/voice/ptt/dispatch",
         json={"transcript": "open the notes app"},
+    )
+    assert resp.status_code == 403
+
+
+def test_voice_dispatch_no_agent_returns_not_dispatched(client: TestClient) -> None:
+    resp = client.post(
+        "/v1/voice/ptt/dispatch",
+        json={"transcript": "open the notes app", "approved": True},
     )
     assert resp.status_code == 200
     data = resp.json()
@@ -136,7 +153,76 @@ def test_voice_dispatch_no_agent_returns_not_dispatched(client: TestClient) -> N
 
 
 def test_voice_dispatch_empty_transcript_is_422(client: TestClient) -> None:
-    resp = client.post("/v1/voice/ptt/dispatch", json={"transcript": "  "})
+    resp = client.post(
+        "/v1/voice/ptt/dispatch",
+        json={"transcript": "  ", "approved": True},
+    )
+    assert resp.status_code == 422
+
+
+def test_voice_dispatch_with_mocked_agent(tmp_path: Path) -> None:
+    import sys
+    import types
+
+    fake_result = types.SimpleNamespace(success=True, content="queued")
+    fake_tool = types.SimpleNamespace(execute=lambda **kw: fake_result)
+    fake_module = types.ModuleType("openjarvis.tools.agent_tools")
+    fake_module.AgentSendTool = lambda: fake_tool  # type: ignore[attr-defined]
+
+    app = FastAPI()
+    service = VoicePushToTalkService(
+        config=JarvisConfig(),
+        recorder=FakeRecorder(tmp_path),
+        speech_backend=FakeBackend(),
+        permission_middleware=FakePermissionMiddleware(),
+    )
+    app.state.voice_ptt_service = service
+    app.state.active_agent_id = "agent-test-123"
+    app.include_router(voice_router)
+
+    saved = sys.modules.get("openjarvis.tools.agent_tools")
+    sys.modules["openjarvis.tools.agent_tools"] = fake_module
+    try:
+        c = TestClient(app)
+        resp = c.post(
+            "/v1/voice/ptt/dispatch",
+            json={
+                "transcript": "summarise my notes",
+                "agent_id": "agent-test-123",
+                "approved": True,
+            },
+        )
+    finally:
+        if saved is None:
+            sys.modules.pop("openjarvis.tools.agent_tools", None)
+        else:
+            sys.modules["openjarvis.tools.agent_tools"] = saved
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["dispatched"] is True
+    assert data["agent_id"] == "agent-test-123"
+    assert data["transcript"] == "summarise my notes"
+
+
+def test_submit_transcript_returns_awaiting_approval(client: TestClient) -> None:
+    resp = client.post(
+        "/v1/voice/ptt/submit-transcript",
+        json={"transcript": "what is the weather"},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["status"] == "awaiting_approval"
+    assert data["approved"] is False
+    assert data["dispatched"] is False
+    assert "intent_preview" in data
+
+
+def test_submit_transcript_empty_is_422(client: TestClient) -> None:
+    resp = client.post(
+        "/v1/voice/ptt/submit-transcript",
+        json={"transcript": ""},
+    )
     assert resp.status_code == 422
 
 

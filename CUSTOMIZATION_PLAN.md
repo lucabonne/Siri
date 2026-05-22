@@ -854,3 +854,59 @@ The following is explicitly out of scope for Phase 1:
 - macOS microphone permission prompting on first use
 - Frontend voice-only mode or UI controls
 - Cross-platform hotkey support
+
+## Voice Control Phase 2
+
+Phase 2 adds the explicit session state machine and approval gate, tightening
+the API contract without wiring real audio capture yet.
+
+### Explicit session states
+
+```
+idle → listening → transcribing → awaiting_approval → dispatching → completed
+                ↘ failed                            ↘ idle (cancel)
+```
+
+All states are defined in `VoiceSessionState` (str enum).  `VoiceSessionFSM`
+validates transitions and raises `VoiceSessionFSMError` on illegal moves.
+
+### New API surface
+
+| Endpoint | Purpose |
+|---|---|
+| `POST /v1/voice/ptt/submit-transcript` | Accept a manually-supplied transcript; return intent preview at `awaiting_approval` state without requiring a local transcription backend |
+| `POST /v1/voice/ptt/dispatch` | Unchanged path, now requires `approved: true`; returns 403 with `approval_required` status if omitted |
+
+### Approval gate
+
+`/dispatch` now returns HTTP 403 when `approved` is absent or false, ensuring
+no transcript reaches the orchestrator without an explicit caller confirmation.
+The error body includes `status: "approval_required"` and a human-readable
+message pointing to the intent preview.
+
+### What Phase 2 adds
+
+- `src/openjarvis/voice/session_fsm.py` — `VoiceSessionState`, `VoiceSessionFSM`,
+  `VoiceSessionFSMError`
+- `src/openjarvis/voice/__init__.py` — exports for the three new types
+- `src/openjarvis/server/api_routes.py` — `submit-transcript` stub,
+  `VoiceSubmitTranscriptRequest`, approval gate on `/dispatch`
+- `tests/voice/test_session_fsm.py` — 12 FSM transition tests
+- `tests/server/test_voice_routes.py` — approval gate, mocked-agent dispatch,
+  submit-transcript, empty-transcript cases
+
+### Invariants preserved
+
+- No always-on or background listening.
+- No cloud speech APIs.
+- No removal of keyboard or text inputs.
+- No microphone access without explicit PTT action.
+
+### Deferred work (unchanged from Phase 1)
+
+- Fn key / CGEventTap listener
+- Actual microphone recording wired to hotkey
+- whisper.cpp / faster-whisper transcription backend UX
+- Local TTS output
+- macOS Accessibility and Microphone permission prompting
+- Frontend voice-only mode
