@@ -1,5 +1,73 @@
 # Customization Plan
 
+## Mission Control Phase 1
+
+Phase 1 establishes Siri Mission Control as a frontend-only dashboard shell
+while keeping the OpenJarvis internals stable.
+
+Changed in this phase:
+
+- Created the `siri-mission-control-phase-1` branch from
+  `siri-pre-release-1`.
+- Reworked `frontend/src/components/MissionControl/` into a mock-data-only
+  Mission Control surface.
+- Added the required Mission Control tabs: Home, Today, World Map, Tasks,
+  Agents, Memory, Projects, Terminal, Research, Settings, and Permissions.
+- Added first-pass dashboard sections for current mode, active project,
+  running agents, recent memories, pinned tasks, morning briefing, terminal
+  signals, system status, and permission levels.
+- Kept visible product branding on the dashboard as Siri / Mission Control.
+
+Must remain untouched for now:
+
+- Do not rename `openjarvis` backend packages, folders, imports, Python
+  identifiers, Rust crates, storage keys, service names, or internal module
+  boundaries.
+- Do not rename the `jarvis` CLI command or existing command examples unless
+  a later migration explicitly asks for it.
+- Do not wire Mission Control to backend APIs in this shell phase; all data is
+  static mock data until the permission model and local data contracts are
+  ready.
+
+Future architecture direction:
+
+- Mission Control becomes the primary Interface Layer for Siri Core modes,
+  Context Layer awareness, Agent Workspace status, Memory Layer / Knowledge
+  Vault navigation, MCP Tool Layer visibility, Automation Layer activity, and
+  Developer Layer diagnostics.
+- The next major implementation should be the local permission system with
+  Level 0 read-only, Level 1 safe actions, Level 2 confirmed execution, and
+  Level 3 dangerous-action hard blocks.
+- The Memory Layer should grow into an Obsidian-like Knowledge Vault backed by
+  AI-native structured and semantic memory, with Markdown/YAML/wikilink
+  import-export compatibility.
+
+Long-term UI roadmap, deferred until core systems are ready:
+
+- After memory, agents, permissions, voice control, and core automation are
+  complete, evolve or replace Mission Control with a brain-first interface.
+- The main page should show only Siri's brain / neural memory graph, with no
+  dashboard clutter and no visible panels unless summoned.
+- The visual direction should feel like an active AI core, similar in spirit
+  to Jarvis from Iron Man. Active thoughts, agents, memories, and reasoning
+  paths should highlight while Siri is being used.
+- The default main experience should not be text-first. No visible text input
+  field should appear on the main page; primary interaction should be voice
+  control. Text input may remain hidden as a fallback, debug, or dev mode.
+- The mouse should be able to move around the brain graph. Hovering over a
+  node should reveal what that thought, memory, project, source, or agent
+  represents; clicking a node should open deeper details only when needed.
+  Related memories should show visible paths and connections.
+- The brain graph should represent the Memory Layer / Second Brain by
+  connecting SQLite structured memory, vector semantic memory, projects,
+  notes, research, sources, tasks, agent activity, and long-term memories as
+  connected nodes.
+- Do not build this before the backend systems are ready. The sequence is:
+  complete memory, agents, permissions, voice control, and core automation;
+  then evolve the main interface into the brain-first experience.
+- Ask Luca before changing the rest of the UI. Do not assume final layouts for
+  secondary screens; Luca wants to define those details later.
+
 ## Desktop Integration Phase 1
 
 Phase 1 makes Siri aware of the local desktop as an operating layer while

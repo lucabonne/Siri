@@ -4,35 +4,22 @@ export type MissionSectionId =
   | 'home'
   | 'today'
   | 'world-map'
-  | 'daily-briefing'
-  | 'important-events'
   | 'tasks'
   | 'agents'
   | 'memory'
   | 'projects'
-  | 'sessions'
-  | 'desktop'
-  | 'notifications'
-  | 'engineering'
-  | 'coding'
-  | 'repo'
-  | 'voice'
-  | 'vision'
   | 'terminal'
-  | 'workflows'
   | 'research'
-  | 'mcp'
-  | 'release'
   | 'settings'
   | 'permissions';
+
+export type StatusTone = 'good' | 'watch' | 'busy' | 'quiet';
 
 export type MissionSection = {
   id: MissionSectionId;
   label: string;
   icon: LucideIcon;
 };
-
-export type StatusTone = 'good' | 'watch' | 'busy' | 'quiet';
 
 export type MissionMetric = {
   label: string;
@@ -51,8 +38,9 @@ export type MissionFeedItem = {
 export type MissionTask = {
   title: string;
   owner: string;
-  state: 'Queued' | 'Running' | 'Review' | 'Done';
+  state: 'Pinned' | 'Running' | 'Review' | 'Queued' | 'Done';
   due: string;
+  tone: StatusTone;
 };
 
 export type MissionAgent = {
@@ -60,6 +48,15 @@ export type MissionAgent = {
   role: string;
   status: string;
   load: number;
+  tone: StatusTone;
+};
+
+export type MissionMemory = {
+  title: string;
+  type: string;
+  tags: string[];
+  pinned: boolean;
+  age: string;
 };
 
 export type MissionProject = {
@@ -69,40 +66,31 @@ export type MissionProject = {
   next: string;
 };
 
-export type MissionMemory = {
-  id: string;
-  content: string;
-  memory_type: string;
-  tags: string[];
-  pinned: boolean;
-  created_at: string;
-  source?: {
-    title: string;
-    url: string;
-  } | null;
+export type WorldSignal = {
+  city: string;
+  label: string;
+  x: string;
+  y: string;
+  tone: StatusTone;
+};
+
+export type TerminalSignal = {
+  command: string;
+  status: string;
+  detail: string;
+  tone: StatusTone;
+};
+
+export type ResearchItem = {
+  title: string;
+  status: string;
+  sources: number;
+  tone: StatusTone;
 };
 
 export type PermissionEvent = {
-  tool: string;
-  action: 'Allowed' | 'Blocked' | 'Needs approval';
-  source: string;
-  time: string;
-  reason?: string;
-};
-
-export type ApprovalRecord = {
-  id: string;
-  status: 'pending' | 'approved' | 'denied';
-  requested_at: string;
-  decided_at: string | null;
-  tool: string;
-  agent_id: string;
-  source: string;
-  level: string;
-  reason: string;
-  matched_pattern: string | null;
-  argument_keys: string[];
-  command_preview: string;
-  decision?: string | null;
-  decision_note?: string;
+  level: 'Level 0' | 'Level 1' | 'Level 2' | 'Level 3';
+  label: string;
+  detail: string;
+  tone: StatusTone;
 };
