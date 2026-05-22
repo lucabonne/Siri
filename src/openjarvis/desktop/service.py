@@ -50,6 +50,7 @@ class DesktopService:
         workflow_service: Any = None,
         startup_service: Any = None,
         voice_trigger_service: Any = None,
+        wake_word_service: Any = None,
         tts_service: Any = None,
         permission_middleware: Any = None,
         mcp_server: Any = None,
@@ -71,6 +72,7 @@ class DesktopService:
         self.workflow_service = workflow_service
         self.startup_service = startup_service
         self.voice_trigger_service = voice_trigger_service
+        self.wake_word_service = wake_word_service
         self.tts_service = tts_service
         self.permission_middleware = permission_middleware
         self.mcp_server = mcp_server
@@ -561,11 +563,14 @@ class DesktopService:
             return {"available": False}
         try:
             status = self.voice_trigger_service.status()
+            wake_words = False
+            if self.wake_word_service is not None:
+                wake_words = bool(self.wake_word_service.status().get("enabled", False))
             return {
                 "available": True,
                 "status": status,
                 "voice_trigger_enabled": bool(status.get("enabled", False)),
-                "wake_words": False,
+                "wake_words": wake_words,
                 "local_only": True,
                 "passive_only": True,
             }
