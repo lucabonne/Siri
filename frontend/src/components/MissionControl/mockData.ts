@@ -3,6 +3,7 @@ import {
   Bell,
   Bot,
   Brain,
+  BookMarked,
   CalendarDays,
   Camera,
   CheckSquare,

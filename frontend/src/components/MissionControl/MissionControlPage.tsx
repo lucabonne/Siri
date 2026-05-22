@@ -6,6 +6,7 @@ import {
   AppWindow,
   ArrowUpRight,
   Ban,
+  BookMarked,
   Brain,
   Camera,
   CheckCircle2,
@@ -15,6 +16,7 @@ import {
   Code2,
   Cpu,
   Eye,
+  FileDown,
   FolderGit2,
   Gauge,
   GitBranch,
@@ -155,6 +157,11 @@ import type {
   AutonomyPlan,
   AutonomyPlanStep,
   AutonomyExecutionState,
+} from '../../lib/api';
+import type {
+  KnowledgeNote,
+  KnowledgeNoteListItem,
+  VaultTag,
 } from '../../lib/api';
 import {
   approvalQueue,
