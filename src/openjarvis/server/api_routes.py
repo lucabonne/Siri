@@ -10,6 +10,7 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, HTTPException, Request, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
 
+from openjarvis.personalization.service import router as personalization_router
 from openjarvis.server.agent_workspace_routes import agent_workspace_router
 from openjarvis.server.coding_assistant_routes import coding_assistant_router
 from openjarvis.server.context_routes import context_router
@@ -1541,6 +1542,7 @@ def include_all_routes(app) -> None:
     app.include_router(repo_index_router)
     app.include_router(coding_assistant_router)
     app.include_router(workflow_router)
+    app.include_router(personalization_router)
 
     # Agent Manager routes (if available)
     try:

@@ -101,6 +101,10 @@ import {
   syncWorldMonitor,
   testHotkeyTrigger,
   transcribeLatestVoiceRecording,
+  fetchPersonalizationStatus,
+  listProfiles,
+  switchActiveProfile,
+  createProfile,
 } from '../../lib/api';
 import type {
   MemorySearchResult,
@@ -135,6 +139,9 @@ import type {
   WorkflowDefinition,
   WorkflowPanelSnapshot,
   WorkflowRun,
+  Profile,
+  ProfileStatus,
+  Preferences,
 } from '../../lib/api';
 import {
   approvalQueue,
@@ -3832,6 +3839,99 @@ function PermissionsSection() {
   );
 }
 
+function PersonalizationSection() {
+  const [status, setStatus] = useState<ProfileStatus | null>(null);
+  const [profiles, setProfiles] = useState<Profile[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const refresh = async () => {
+    setLoading(true);
+    try {
+      const [s, p] = await Promise.all([
+        fetchPersonalizationStatus(),
+        listProfiles()
+      ]);
+      setStatus(s);
+      setProfiles(p);
+    } catch {
+      // fallback
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    refresh();
+  }, []);
+
+  const switchProfile = async (id: string) => {
+    try {
+      await switchActiveProfile(id);
+      refresh();
+    } catch {
+      // ignore
+    }
+  };
+
+  if (loading) {
+    return <div className="p-8 text-center text-sm" style={{ color: 'var(--color-text-secondary)' }}>Loading personalization...</div>;
+  }
+
+  return (
+    <div className="grid gap-4 xl:grid-cols-[1fr_1fr]">
+      <ShellPanel title="Active Profile" action={status?.active_profile?.name || 'Unknown'}>
+        <div className="grid gap-3">
+          <div className="text-sm font-semibold" style={{ color: 'var(--color-text)' }}>
+            Switch Profile
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {profiles.map(p => (
+              <button
+                key={p.id}
+                type="button"
+                onClick={() => switchProfile(p.id)}
+                className={`rounded-md border px-3 py-2 text-sm transition-colors ${p.id === status?.active_profile_id ? 'font-bold' : ''}`}
+                style={{
+                  borderColor: p.id === status?.active_profile_id ? 'var(--color-accent)' : 'var(--color-border)',
+                  background: p.id === status?.active_profile_id ? 'var(--color-accent-subtle)' : 'var(--color-bg-secondary)',
+                  color: 'var(--color-text)'
+                }}
+              >
+                {p.name}
+              </button>
+            ))}
+          </div>
+        </div>
+      </ShellPanel>
+
+      <ShellPanel title="Preferences">
+        <div className="grid gap-3 md:grid-cols-2">
+          {[
+            ['Preferred Workspace', status?.preferences?.preferred_workspace || 'Default'],
+            ['Agent Preference', status?.preferences?.coding_vs_engineering_preference || 'Balanced'],
+            ['Voice Interaction', status?.preferences?.voice_interaction ? 'Enabled' : 'Disabled'],
+            ['Wake Word', status?.preferences?.wake_word_preference ? 'Enabled' : 'Disabled'],
+            ['Quiet Mode', status?.preferences?.quiet_mode ? 'Enabled' : 'Disabled']
+          ].map(([label, value]) => (
+            <div
+              key={label}
+              className="rounded-md border p-4"
+              style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg-secondary)' }}
+            >
+              <div className="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+                {label}
+              </div>
+              <div className="mt-2 text-sm font-semibold" style={{ color: 'var(--color-text)' }}>
+                {value}
+              </div>
+            </div>
+          ))}
+        </div>
+      </ShellPanel>
+    </div>
+  );
+}
+
 function ActiveSection({ section }: { section: MissionSectionId }) {
   if (section === 'today') return <TodaySection />;
   if (section === 'world-map') return <WorldMapSection />;
@@ -3852,6 +3952,7 @@ function ActiveSection({ section }: { section: MissionSectionId }) {
   if (section === 'research') return <ResearchSection />;
   if (section === 'release') return <ReleaseSection />;
   if (section === 'settings') return <SettingsSection />;
+  if (section === 'personalization') return <PersonalizationSection />;
   if (section === 'permissions') return <PermissionsSection />;
   return <HomeSection />;
 }

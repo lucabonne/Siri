@@ -2815,3 +2815,59 @@ export async function fetchResearchMemoryEntries(researchId: string): Promise<St
   const data = await res.json();
   return data.memories;
 }
+// ---------------------------------------------------------------------------
+// Personalization
+// ---------------------------------------------------------------------------
+
+export interface Profile {
+  id: string;
+  name: string;
+  is_default?: boolean;
+}
+
+export interface Preferences {
+  preferred_workspace: string;
+  coding_vs_engineering_preference: string;
+  voice_interaction: boolean;
+  wake_word_preference: boolean;
+  quiet_mode: boolean;
+  mission_control_defaults: Record<string, unknown>;
+}
+
+export interface ProfileStatus {
+  active_profile_id: string;
+  active_profile: Profile | null;
+  preferences: Preferences;
+}
+
+export async function fetchPersonalizationStatus(): Promise<ProfileStatus> {
+  const res = await fetch(`${getBase()}/v1/personalization/status`);
+  if (!res.ok) throw new Error(`Failed to fetch personalization status: ${res.status}`);
+  return res.json();
+}
+
+export async function listProfiles(): Promise<Profile[]> {
+  const res = await fetch(`${getBase()}/v1/personalization/profiles`);
+  if (!res.ok) throw new Error(`Failed to list profiles: ${res.status}`);
+  return res.json();
+}
+
+export async function createProfile(profile: Profile): Promise<Profile> {
+  const res = await fetch(`${getBase()}/v1/personalization/profiles`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(profile),
+  });
+  if (!res.ok) throw new Error(`Failed to create profile: ${res.status}`);
+  return res.json();
+}
+
+export async function switchActiveProfile(profileId: string): Promise<ProfileStatus> {
+  const res = await fetch(`${getBase()}/v1/personalization/active`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ profile_id: profileId }),
+  });
+  if (!res.ok) throw new Error(`Failed to switch active profile: ${res.status}`);
+  return res.json();
+}

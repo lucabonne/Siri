@@ -27,6 +27,15 @@ class WakeWordService:
         self._mode_registry = mode_registry
         self._permission_middleware = permission_middleware
         self._enabled = False
+        self._check_preference_default()
+
+    def _check_preference_default(self) -> None:
+        try:
+            from openjarvis.personalization.preferences import get_wake_word_preference
+            if get_wake_word_preference():
+                self._enabled = True
+        except ImportError:
+            pass
 
     def _active_mode(self) -> Any:
         if self._mode_registry is None:
