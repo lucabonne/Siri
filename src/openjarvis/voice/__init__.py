@@ -12,6 +12,7 @@ from openjarvis.voice.models import (
 from openjarvis.voice.recorder import LocalMacOSRecorder
 from openjarvis.voice.service import VoicePushToTalkService
 from openjarvis.voice.transcription import LocalVoiceTranscriber
+from openjarvis.voice.wake_word import WakeWordService
 
 __all__ = [
     "LocalMacOSRecorder",
@@ -24,4 +25,5 @@ __all__ = [
     "VoicePushToTalkService",
     "VoiceRecordingError",
     "VoiceSession",
+    "WakeWordService",
 ]

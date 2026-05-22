@@ -656,6 +656,25 @@ Deferred work remains intentionally untouched in this phase:
 - no OCR or cloud vision analysis
 - no screen control or click automation
 
+## Wake Word Phase 1
+
+Phase 1 adds optional local wake-word support without replacing push-to-talk, enabling a seamless voice experience.
+
+- `src/openjarvis/voice/wake_word.py` owns the local wake word detection service, managing enabled state, Privacy Mode integration, and test triggering.
+- Wake word is disabled by default and requires explicit user approval to enable.
+- Local-only detection ensures no cloud audio streaming.
+- Privacy Mode overrides user settings to disable wake words.
+- No transcription occurs until the wake word is successfully detected.
+- `/v1/voice/wake-word/status`, `/enable`, `/disable`, and `/test-trigger` expose local Wake Word controls for Mission Control and local clients.
+- `PermissionMiddleware` is integrated to enforce Privacy Mode constraints on wake word execution.
+- Mission Control's Voice tab includes a dynamic indicator when listening for a wake word.
+
+Deferred work remains intentionally untouched in this phase:
+
+- no autonomous speech
+- no continuous cloud storage of audio
+- no default enablement
+
 ## Voice Push-to-Talk Phase 1
 
 Phase 1 adds explicit voice input for Siri without wake-word detection,

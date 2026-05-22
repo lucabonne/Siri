@@ -3314,7 +3314,7 @@ function ReleaseSection() {
                 Scope
               </div>
               <div className="mt-2 flex flex-wrap gap-2">
-                <StatusPill tone={snapshot?.wake_words ? 'watch' : 'good'}>No wake words</StatusPill>
+                <StatusPill tone={snapshot?.wake_words ? 'watch' : 'good'}>{snapshot?.wake_words ? 'Listening for Wake Word' : 'No wake words'}</StatusPill>
                 <StatusPill tone={snapshot?.autonomous_agents ? 'watch' : 'good'}>No agents</StatusPill>
               </div>
             </div>
