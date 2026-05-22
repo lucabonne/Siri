@@ -38,6 +38,7 @@ import {
 } from 'lucide-react';
 import {
   createMemory,
+  cancelVoiceSession,
   captureVisionScreenshot,
   decideSecurityApproval,
   deleteMemory,
@@ -67,13 +68,12 @@ import {
   searchRepoIndex,
   searchMemory,
   setMemoryPinned,
-  startVoicePttRecording,
+  submitVoiceTranscript,
   switchActiveWorkspaceAgent,
   switchActiveSiriMode,
   triggerStartupMorningBriefing,
-  stopVoicePttRecording,
   syncWorldMonitor,
-  transcribeLatestVoiceRecording,
+  dispatchVoiceTranscript,
   fetchKnowledgeNotes,
   createKnowledgeNote,
   deleteKnowledgeNote,
@@ -99,6 +99,8 @@ import type {
   TerminalContextSnapshot,
   VisualContext,
   VoicePttStatus,
+  VoiceSubmitTranscriptResponse,
+  VoiceDispatchResponse,
   WorkspaceAgentConfig,
   CodingPanelSnapshot,
   BriefingStatus,
@@ -1772,13 +1774,17 @@ function TerminalSection() {
 function VoiceSection() {
   const [status, setStatus] = useState<VoicePttStatus | null>(null);
   const [transcript, setTranscript] = useState('');
+  const [preview, setPreview] = useState<VoiceSubmitTranscriptResponse | null>(null);
+  const [dispatchResult, setDispatchResult] = useState<VoiceDispatchResponse | null>(null);
   const [error, setError] = useState('');
-  const [busy, setBusy] = useState<'idle' | 'starting' | 'stopping' | 'transcribing'>('idle');
+  const [busy, setBusy] = useState<'idle' | 'submitting' | 'dispatching' | 'cancelling'>('idle');
+  const [fallbackFsmState, setFallbackFsmState] = useState('idle');
 
   const loadVoiceStatus = async () => {
     try {
       const data = await fetchVoicePttStatus();
       setStatus(data);
+      setFallbackFsmState(data.fsm_state || 'idle');
       setError('');
     } catch {
       setStatus(null);
@@ -1789,34 +1795,61 @@ function VoiceSection() {
     loadVoiceStatus();
   }, []);
 
-  const startHold = async () => {
-    if (busy !== 'idle' || status?.recording) return;
-    setBusy('starting');
-    setTranscript('');
+  const fsmState = status?.fsm_state || fallbackFsmState;
+
+  const updateFsmState = (fsmState: string) => {
+    setFallbackFsmState(fsmState);
+    setStatus((current) => (current ? { ...current, fsm_state: fsmState } : current));
+  };
+
+  const submitMockTranscript = async () => {
+    if (busy !== 'idle' || fsmState !== 'idle' || !transcript.trim()) return;
+    setBusy('submitting');
+    setPreview(null);
+    setDispatchResult(null);
     setError('');
     try {
-      const response = await startVoicePttRecording(status?.active_agent_id || '');
-      setStatus(response.status);
+      const response = await submitVoiceTranscript(transcript.trim());
+      setPreview(response);
+      updateFsmState(response.fsm_state);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Voice start failed');
+      setError(err instanceof Error ? err.message : 'Transcript preview failed');
     } finally {
       setBusy('idle');
     }
   };
 
-  const stopHold = async () => {
-    if (busy !== 'idle' || !status?.recording) return;
-    setBusy('stopping');
+  const approveAndDispatch = async () => {
+    if (busy !== 'idle' || fsmState !== 'awaiting_approval' || !preview?.transcript.trim()) return;
+    setBusy('dispatching');
     setError('');
     try {
-      const response = await stopVoicePttRecording();
-      setStatus(response.status);
-      setBusy('transcribing');
-      const result = await transcribeLatestVoiceRecording();
-      setTranscript(result.text);
+      updateFsmState('dispatching');
+      const response = await dispatchVoiceTranscript(preview.transcript, status?.active_agent_id || '');
+      setDispatchResult(response);
+      updateFsmState(response.fsm_state);
+      if (!response.dispatched) {
+        setError(response.error?.message || response.reason || 'Voice dispatch was not completed');
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Voice dispatch failed');
+    } finally {
+      setBusy('idle');
+    }
+  };
+
+  const cancelMockTranscript = async () => {
+    if (busy !== 'idle') return;
+    setBusy('cancelling');
+    setError('');
+    try {
+      const response = await cancelVoiceSession();
+      setPreview(null);
+      setDispatchResult(null);
+      updateFsmState(response.fsm_state);
       await loadVoiceStatus();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Voice stop failed');
+      setError(err instanceof Error ? err.message : 'Voice cancel failed');
     } finally {
       setBusy('idle');
     }
@@ -1824,20 +1857,33 @@ function VoiceSection() {
 
   const recording = status?.recording ?? false;
   const latest = status?.latest;
-  const intent = latest?.intent_preview;
-  const buttonBusy = busy !== 'idle';
-  const buttonLabel = recording ? 'Release to stop' : buttonBusy ? 'Working' : 'Hold to talk';
-  const stateLabel = recording ? 'Recording' : busy === 'transcribing' ? 'Transcribing' : 'Idle';
+  const intent = preview?.intent_preview || latest?.intent_preview;
+  const canSubmit = busy === 'idle' && fsmState === 'idle' && transcript.trim().length > 0;
+  const canApprove = busy === 'idle' && fsmState === 'awaiting_approval' && Boolean(preview?.transcript.trim());
+  const canCancel = busy === 'idle' && fsmState !== 'idle';
+  const textDisabled = fsmState !== 'idle' || busy !== 'idle';
+  const buttonLabel = 'PTT deferred';
+  const stateLabel = busy === 'submitting'
+    ? 'Previewing'
+    : busy === 'dispatching'
+      ? 'Dispatching'
+      : busy === 'cancelling'
+        ? 'Cancelling'
+        : fsmState.replace(/_/g, ' ');
+  const displayedTranscript = preview?.transcript || transcript || latest?.transcript || '';
+  const completionDetail = dispatchResult?.dispatched
+    ? `Dispatched${dispatchResult.agent_id ? ` to ${dispatchResult.agent_id}` : ''}`
+    : dispatchResult?.reason || dispatchResult?.error?.message || 'No dispatch yet';
 
   return (
     <div className="grid gap-4 xl:grid-cols-[0.9fr_1.1fr]">
-      <ShellPanel title="Voice Push-to-Talk" action="manual">
+      <ShellPanel title="Voice Push-to-Talk" action="mock transcript">
         <div className="grid gap-3 md:grid-cols-3">
           <ContextTile
             icon={<Mic2 size={15} />}
-            label="State"
+            label="FSM"
             value={stateLabel}
-            detail={status?.requires_explicit_approval ? 'Approval required' : 'Approved in settings'}
+            detail="Typed mock transcript only"
           />
           <ContextTile
             icon={<ShieldCheck size={15} />}
@@ -1856,25 +1902,14 @@ function VoiceSection() {
         <div className="mt-5 flex flex-wrap items-center gap-3">
           <button
             type="button"
-            onPointerDown={(event) => {
-              event.preventDefault();
-              startHold();
-            }}
-            onPointerUp={(event) => {
-              event.preventDefault();
-              stopHold();
-            }}
-            onPointerLeave={() => {
-              if (recording) stopHold();
-            }}
-            disabled={buttonBusy}
+            disabled
             className="inline-flex h-12 min-w-40 items-center justify-center gap-2 rounded-md border px-4 text-sm font-semibold transition-colors disabled:opacity-60"
             style={{
-              borderColor: recording ? 'var(--color-error)' : 'var(--color-border)',
-              color: recording ? 'white' : 'var(--color-text)',
-              background: recording ? 'var(--color-error)' : 'var(--color-bg-secondary)',
+              borderColor: 'var(--color-border)',
+              color: 'var(--color-text-secondary)',
+              background: 'var(--color-bg-secondary)',
             }}
-            title="Hold to talk"
+            title="Live microphone recording is deferred"
           >
             {recording ? <Square size={16} /> : <Mic2 size={17} />}
             {buttonLabel}
@@ -1893,11 +1928,76 @@ function VoiceSection() {
             <RefreshCw size={16} />
           </button>
           <StatusPill tone={recording ? 'busy' : status?.privacy_mode ? 'watch' : 'quiet'}>
-          {recording ? 'Live capture' : status?.privacy_mode ? 'Privacy gate' : 'Ready'}
+            {recording ? 'Live capture' : status?.privacy_mode ? 'Privacy gate' : 'Mock flow'}
           </StatusPill>
-          <StatusPill tone={status?.transcription_available ? 'good' : 'watch'}>
-            {status?.transcription_available ? 'Local STT' : 'STT unavailable'}
+          <StatusPill tone={fsmState === 'awaiting_approval' ? 'watch' : dispatchResult?.dispatched ? 'good' : 'quiet'}>
+            {fsmState === 'awaiting_approval' ? 'Awaiting approval' : dispatchResult?.dispatched ? 'Completed' : 'Typed only'}
           </StatusPill>
+        </div>
+
+        <div className="mt-5 grid gap-3">
+          <label className="grid gap-2 text-sm font-medium" style={{ color: 'var(--color-text)' }}>
+            Mock transcript
+            <textarea
+              value={transcript}
+              onChange={(event) => setTranscript(event.target.value)}
+              disabled={textDisabled}
+              rows={5}
+              className="min-h-28 resize-none rounded-md border px-3 py-3 text-sm font-normal leading-6 outline-none transition-colors disabled:opacity-60"
+              style={{
+                borderColor: 'var(--color-border)',
+                background: 'var(--color-bg-secondary)',
+                color: 'var(--color-text)',
+              }}
+              placeholder="Type the transcript to preview. No microphone, local recorder, or transcription runs in Phase 3."
+            />
+          </label>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={submitMockTranscript}
+              disabled={!canSubmit}
+              className="inline-flex h-10 items-center justify-center gap-2 rounded-md border px-3 text-sm font-semibold transition-colors disabled:opacity-50"
+              style={{
+                borderColor: 'var(--color-border)',
+                background: 'var(--color-bg-secondary)',
+                color: 'var(--color-text)',
+              }}
+            >
+              <Search size={15} />
+              Preview
+            </button>
+            {fsmState === 'awaiting_approval' && (
+              <button
+                type="button"
+                onClick={approveAndDispatch}
+                disabled={!canApprove}
+                className="inline-flex h-10 items-center justify-center gap-2 rounded-md border px-3 text-sm font-semibold transition-colors disabled:opacity-50"
+                style={{
+                  borderColor: 'var(--color-border)',
+                  background: 'var(--color-accent)',
+                  color: 'white',
+                }}
+              >
+                <CheckCircle2 size={15} />
+                Approve & Dispatch
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={cancelMockTranscript}
+              disabled={!canCancel}
+              className="inline-flex h-10 items-center justify-center gap-2 rounded-md border px-3 text-sm font-semibold transition-colors disabled:opacity-50"
+              style={{
+                borderColor: 'var(--color-border)',
+                background: 'var(--color-bg-secondary)',
+                color: 'var(--color-text-secondary)',
+              }}
+            >
+              <XCircle size={15} />
+              Cancel
+            </button>
+          </div>
         </div>
 
         {error && (
@@ -1907,35 +2007,35 @@ function VoiceSection() {
         )}
       </ShellPanel>
 
-      <ShellPanel title="Transcript Preview" action="not sent">
+      <ShellPanel title="Transcript Preview" action={fsmState === 'awaiting_approval' ? 'approval required' : 'not sent'}>
         <div
           className="min-h-40 rounded-md border p-4 text-sm leading-6"
           style={{
             borderColor: 'var(--color-border)',
             background: 'var(--color-bg-secondary)',
-            color: transcript || latest?.transcript ? 'var(--color-text)' : 'var(--color-text-tertiary)',
+            color: displayedTranscript ? 'var(--color-text)' : 'var(--color-text-tertiary)',
           }}
         >
-          {transcript || latest?.transcript || 'No transcript yet'}
+          {displayedTranscript || 'No mock transcript preview yet'}
         </div>
         <div className="mt-4 grid gap-3 md:grid-cols-3">
           <ContextTile
             icon={<Clock3 size={15} />}
-            label="Duration"
-            value={latest?.duration_seconds ? `${latest.duration_seconds.toFixed(1)}s` : '0.0s'}
-            detail={latest?.stopped_at ? new Date(latest.stopped_at * 1000).toLocaleString() : 'No stop event'}
+            label="Phase"
+            value="Phase 3"
+            detail="Typed/mock only"
           />
           <ContextTile
             icon={<Package size={15} />}
-            label="Bytes"
-            value={formatBytes(latest?.byte_size)}
-            detail={latest?.raw_audio_available ? 'Temporary audio' : 'No raw audio'}
+            label="Recording"
+            value="Deferred"
+            detail="No raw audio"
           />
           <ContextTile
             icon={<Activity size={15} />}
-            label="Backend"
-            value={latest?.backend || 'Local pending'}
-            detail="No agent dispatch"
+            label="Dispatch"
+            value={dispatchResult?.status || 'Pending'}
+            detail={completionDetail}
           />
         </div>
         <div className="mt-4 grid gap-3 md:grid-cols-3">

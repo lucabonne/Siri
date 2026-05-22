@@ -1,5 +1,36 @@
 # Customization Plan
 
+## Voice Control Phase 3
+
+Phase 3 wires the explicit voice-session state machine through the backend and
+Mission Control while keeping the user flow typed/mock-transcript only.
+
+- `VoiceSessionFSM` is created privately per FastAPI app instance and stored on
+  `app.state`; there is no module-level/global FSM.
+- `/v1/voice/ptt/status` reports the current `fsm_state` alongside the existing
+  push-to-talk status payload.
+- `/v1/voice/ptt/submit-transcript` accepts a typed transcript, requires
+  non-empty text, produces an intent preview, and advances the FSM through
+  `idle -> listening -> transcribing -> awaiting_approval` without touching a
+  real microphone or transcription backend.
+- `/v1/voice/ptt/dispatch` remains gated by `approved=true`, dispatches only
+  from the explicit approval path in the UI, returns completion/failure details,
+  and keeps no-agent behavior compatible with the existing API contract.
+- `/v1/voice/ptt/cancel` is safe and idempotent; cancelling from `idle` returns
+  `{fsm_state: "idle"}`.
+- Mission Control adds a mock transcript textarea, preview action, approval
+  dispatch action, cancel action, and clear typed/mock-only labeling while
+  keeping the existing PTT placeholder button visible.
+
+Deferred work remains intentionally untouched in this phase:
+
+- no Fn key listener
+- no local microphone recorder wiring in the UI
+- no Whisper/faster-whisper transcription flow
+- no TTS response playback
+- no macOS microphone permission workflow
+- no voice-only mode
+
 ## Morning Briefing + World Map Phase 1
 
 Phase 1 adds a proactive-but-quiet daily briefing layer for Siri without

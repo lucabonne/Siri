@@ -880,6 +880,7 @@ export interface VoiceSession {
 
 export interface VoicePttStatus {
   state: 'idle' | 'recording' | string;
+  fsm_state: 'idle' | 'listening' | 'transcribing' | 'awaiting_approval' | 'dispatching' | 'completed' | 'failed' | string;
   recording: boolean;
   push_to_talk_only: boolean;
   wake_word_enabled: boolean;
@@ -907,6 +908,31 @@ export interface VoiceTranscriptResult extends TranscriptionResult {
   metadata: VoiceSession;
   passive_only: boolean;
   dispatched_to_agent: boolean;
+}
+
+export interface VoiceSubmitTranscriptResponse {
+  status: string;
+  fsm_state: string;
+  transcript: string;
+  session_id: string;
+  intent_preview: VoiceIntentPreview;
+  approved: boolean;
+  dispatched: boolean;
+}
+
+export interface VoiceDispatchResponse {
+  dispatched: boolean;
+  status?: string;
+  fsm_state: string;
+  completion_fsm_state?: string;
+  agent_id?: string;
+  transcript: string;
+  content?: string;
+  reason?: string;
+  error?: {
+    status: string;
+    message: string;
+  };
 }
 
 export async function transcribeAudio(audioBlob: Blob, filename = 'recording.webm'): Promise<TranscriptionResult> {
@@ -973,6 +999,41 @@ export async function transcribeLatestVoiceRecording(): Promise<VoiceTranscriptR
     body: JSON.stringify({}),
   });
   if (!res.ok) throw new Error(`Failed to transcribe voice recording: ${res.status}`);
+  return res.json();
+}
+
+export async function submitVoiceTranscript(transcript: string): Promise<VoiceSubmitTranscriptResponse> {
+  const res = await fetch(`${getBase()}/v1/voice/ptt/submit-transcript`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ transcript }),
+  });
+  if (!res.ok) throw new Error(`Failed to preview voice transcript: ${res.status}`);
+  return res.json();
+}
+
+export async function dispatchVoiceTranscript(transcript: string, agentId = ''): Promise<VoiceDispatchResponse> {
+  const res = await fetch(`${getBase()}/v1/voice/ptt/dispatch`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ transcript, agent_id: agentId, approved: true }),
+  });
+  if (!res.ok) {
+    let detail = `Failed to dispatch voice transcript: ${res.status}`;
+    try {
+      const body = await res.json();
+      detail = body?.detail?.message || body?.detail?.status || detail;
+    } catch {
+      // Keep status fallback.
+    }
+    throw new Error(detail);
+  }
+  return res.json();
+}
+
+export async function cancelVoiceSession(): Promise<{ fsm_state: string }> {
+  const res = await fetch(`${getBase()}/v1/voice/ptt/cancel`, { method: 'POST' });
+  if (!res.ok) throw new Error(`Failed to cancel voice session: ${res.status}`);
   return res.json();
 }
 

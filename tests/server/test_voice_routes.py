@@ -95,6 +95,7 @@ def test_voice_status_is_push_to_talk_only(client: TestClient) -> None:
     assert data["push_to_talk_only"] is True
     assert data["wake_word_enabled"] is False
     assert data["passive_listening"] is False
+    assert data["fsm_state"] == "idle"
 
 
 def test_voice_start_requires_approval(client: TestClient) -> None:
@@ -201,8 +202,112 @@ def test_voice_dispatch_with_mocked_agent(tmp_path: Path) -> None:
     assert resp.status_code == 200
     data = resp.json()
     assert data["dispatched"] is True
+    assert data["status"] == "completed"
+    assert data["fsm_state"] == "idle"
+    assert data["completion_fsm_state"] == "idle"
     assert data["agent_id"] == "agent-test-123"
     assert data["transcript"] == "summarise my notes"
+
+
+def test_voice_dispatch_after_preview_completes_then_resets(tmp_path: Path) -> None:
+    import sys
+    import types
+
+    fake_result = types.SimpleNamespace(success=True, content="queued")
+    fake_tool = types.SimpleNamespace(execute=lambda **kw: fake_result)
+    fake_module = types.ModuleType("openjarvis.tools.agent_tools")
+    fake_module.AgentSendTool = lambda: fake_tool  # type: ignore[attr-defined]
+
+    app = FastAPI()
+    service = VoicePushToTalkService(
+        config=JarvisConfig(),
+        recorder=FakeRecorder(tmp_path),
+        speech_backend=FakeBackend(),
+        permission_middleware=FakePermissionMiddleware(),
+    )
+    app.state.voice_ptt_service = service
+    app.state.active_agent_id = "agent-test-123"
+    app.include_router(voice_router)
+
+    saved = sys.modules.get("openjarvis.tools.agent_tools")
+    sys.modules["openjarvis.tools.agent_tools"] = fake_module
+    try:
+        c = TestClient(app)
+        c.post(
+            "/v1/voice/ptt/submit-transcript",
+            json={"transcript": "summarise my notes"},
+        )
+        resp = c.post(
+            "/v1/voice/ptt/dispatch",
+            json={
+                "transcript": "summarise my notes",
+                "agent_id": "agent-test-123",
+                "approved": True,
+            },
+        )
+    finally:
+        if saved is None:
+            sys.modules.pop("openjarvis.tools.agent_tools", None)
+        else:
+            sys.modules["openjarvis.tools.agent_tools"] = saved
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["dispatched"] is True
+    assert data["status"] == "completed"
+    assert data["completion_fsm_state"] == "completed"
+    assert data["fsm_state"] == "idle"
+
+
+def test_voice_dispatch_failure_moves_fsm_to_failed(tmp_path: Path) -> None:
+    import sys
+    import types
+
+    fake_result = types.SimpleNamespace(success=False, content="agent rejected")
+    fake_tool = types.SimpleNamespace(execute=lambda **kw: fake_result)
+    fake_module = types.ModuleType("openjarvis.tools.agent_tools")
+    fake_module.AgentSendTool = lambda: fake_tool  # type: ignore[attr-defined]
+
+    app = FastAPI()
+    service = VoicePushToTalkService(
+        config=JarvisConfig(),
+        recorder=FakeRecorder(tmp_path),
+        speech_backend=FakeBackend(),
+        permission_middleware=FakePermissionMiddleware(),
+    )
+    app.state.voice_ptt_service = service
+    app.state.active_agent_id = "agent-test-123"
+    app.include_router(voice_router)
+
+    saved = sys.modules.get("openjarvis.tools.agent_tools")
+    sys.modules["openjarvis.tools.agent_tools"] = fake_module
+    try:
+        c = TestClient(app)
+        c.post(
+            "/v1/voice/ptt/submit-transcript",
+            json={"transcript": "summarise my notes"},
+        )
+        resp = c.post(
+            "/v1/voice/ptt/dispatch",
+            json={
+                "transcript": "summarise my notes",
+                "agent_id": "agent-test-123",
+                "approved": True,
+            },
+        )
+    finally:
+        if saved is None:
+            sys.modules.pop("openjarvis.tools.agent_tools", None)
+        else:
+            sys.modules["openjarvis.tools.agent_tools"] = saved
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["dispatched"] is False
+    assert data["status"] == "dispatch_failed"
+    assert data["fsm_state"] == "failed"
+    assert data["error"]["status"] == "dispatch_failed"
+    assert "agent rejected" in data["error"]["message"]
 
 
 def test_submit_transcript_returns_awaiting_approval(client: TestClient) -> None:
@@ -246,3 +351,53 @@ def test_voice_transcription_unavailable_response(tmp_path: Path) -> None:
     data = response.json()
     assert data["status"] == "transcription_backend_unavailable"
     assert "faster-whisper" in data["reason"]
+
+
+def test_submit_transcript_transitions_fsm_state(client: TestClient) -> None:
+    resp = client.post(
+        "/v1/voice/ptt/submit-transcript",
+        json={"transcript": "what is the weather"},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["fsm_state"] == "awaiting_approval"
+
+
+def test_cancel_resets_to_idle(client: TestClient) -> None:
+    client.post(
+        "/v1/voice/ptt/submit-transcript",
+        json={"transcript": "run the tests"},
+    )
+    resp = client.post("/v1/voice/ptt/cancel")
+    assert resp.status_code == 200
+    assert resp.json()["fsm_state"] == "idle"
+
+
+def test_cancel_from_idle_is_safe(client: TestClient) -> None:
+    resp = client.post("/v1/voice/ptt/cancel")
+    assert resp.status_code == 200
+    assert resp.json()["fsm_state"] == "idle"
+
+
+def test_dispatch_includes_fsm_state(client: TestClient) -> None:
+    client.post(
+        "/v1/voice/ptt/submit-transcript",
+        json={"transcript": "run the tests"},
+    )
+    resp = client.post(
+        "/v1/voice/ptt/dispatch",
+        json={"transcript": "run the tests", "approved": True},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "fsm_state" in data
+    assert data["fsm_state"] == "idle"
+
+
+def test_dispatch_without_approval_still_403(client: TestClient) -> None:
+    resp = client.post(
+        "/v1/voice/ptt/dispatch",
+        json={"transcript": "run the tests", "approved": False},
+    )
+    assert resp.status_code == 403
+    assert resp.json()["detail"]["status"] == "approval_required"

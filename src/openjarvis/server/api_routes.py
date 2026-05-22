@@ -1029,6 +1029,16 @@ def _get_voice_ptt_service(request: Request):
     return service
 
 
+def _get_voice_session_fsm(request: Request):
+    from openjarvis.voice.session_fsm import VoiceSessionFSM
+
+    fsm = getattr(request.app.state, "voice_session_fsm", None)
+    if fsm is None:
+        fsm = VoiceSessionFSM()
+        request.app.state.voice_session_fsm = fsm
+    return fsm
+
+
 def _voice_error(exc: Exception) -> HTTPException:
     from openjarvis.voice import VoicePermissionError, VoiceRecordingError
 
@@ -1079,7 +1089,10 @@ async def stop_voice_recording(request: Request):
 @voice_router.get("/status")
 async def voice_recording_status(request: Request):
     """Return push-to-talk recording status."""
-    return _get_voice_ptt_service(request).status()
+    data = _get_voice_ptt_service(request).status()
+    fsm = _get_voice_session_fsm(request)
+    data["fsm_state"] = fsm.state.value
+    return data
 
 
 @voice_router.post("/transcribe-latest")
@@ -1099,16 +1112,27 @@ async def transcribe_latest_voice(
 async def submit_voice_transcript(req: VoiceSubmitTranscriptRequest, request: Request):
     """Accept a manually-supplied transcript and return an intent preview.
 
-    Stub for Phase 2: supports the awaiting_approval state without requiring a
-    live local transcription backend.  Deferred: wiring to the session FSM and
-    a real recorder/transcriber.
+    Transitions the session FSM: idle -> listening -> transcribing -> awaiting_approval.
+    If the FSM is not idle (e.g. a prior session was not cancelled), it is reset first.
     """
     if not req.transcript.strip():
         raise HTTPException(status_code=422, detail="transcript must not be empty")
+
+    from openjarvis.voice.session_fsm import VoiceSessionState
+
     service = _get_voice_ptt_service(request)
+    fsm = _get_voice_session_fsm(request)
+
+    if fsm.state != VoiceSessionState.IDLE:
+        fsm.reset()
+    fsm.transition(VoiceSessionState.LISTENING)
+    fsm.transition(VoiceSessionState.TRANSCRIBING)
+    fsm.transition(VoiceSessionState.AWAITING_APPROVAL)
+
     preview = service.preview_intent(req.transcript)
     return {
         "status": "awaiting_approval",
+        "fsm_state": fsm.state.value,
         "transcript": req.transcript,
         "session_id": req.session_id or "",
         "intent_preview": preview.to_dict(),
@@ -1125,7 +1149,12 @@ async def dispatch_voice_transcript(req: VoiceDispatchRequest, request: Request)
     missing so callers must surface the intent preview and obtain confirmation
     before dispatching (see /submit-transcript and /transcribe-latest).
 
-    Dispatches via AgentSendTool → POST /v1/agents/{agent_id}/message.
+    FSM transitions (only when entering from awaiting_approval):
+      awaiting_approval -> dispatching -> completed -> idle  (on tool success)
+      awaiting_approval -> dispatching -> completed -> idle  (graceful non-dispatch)
+      awaiting_approval -> dispatching -> failed  (on tool error or result.success=False)
+
+    Dispatches via AgentSendTool -> POST /v1/agents/{agent_id}/message.
     Returns dispatched=False with a reason when no agent is addressable.
     """
     if not req.transcript.strip():
@@ -1141,34 +1170,103 @@ async def dispatch_voice_transcript(req: VoiceDispatchRequest, request: Request)
                 ),
             },
         )
+
+    from openjarvis.voice.session_fsm import VoiceSessionState
+
+    fsm = _get_voice_session_fsm(request)
+    in_approval = fsm.state == VoiceSessionState.AWAITING_APPROVAL
+    if in_approval:
+        fsm.transition(VoiceSessionState.DISPATCHING)
+
     try:
         from openjarvis.tools.agent_tools import AgentSendTool
 
-        agent_id = req.agent_id or getattr(
-            request.app.state, "active_agent_id", ""
-        )
+        agent_id = req.agent_id or getattr(request.app.state, "active_agent_id", "")
         if not agent_id:
+            if in_approval:
+                fsm.transition(VoiceSessionState.COMPLETED)
+                fsm.transition(VoiceSessionState.IDLE)
             return {
                 "dispatched": False,
+                "fsm_state": fsm.state.value,
                 "reason": "no active agent; provide agent_id",
                 "transcript": req.transcript,
             }
         tool = AgentSendTool()
         result = tool.execute(agent_id=agent_id, message=req.transcript)
-        return {
-            "dispatched": result.success,
-            "agent_id": agent_id,
-            "transcript": req.transcript,
-            "content": result.content,
-        }
+        if result.success:
+            completion_fsm_state = fsm.state.value
+            if in_approval:
+                fsm.transition(VoiceSessionState.COMPLETED)
+                completion_fsm_state = fsm.state.value
+                fsm.transition(VoiceSessionState.IDLE)
+            return {
+                "dispatched": True,
+                "status": "completed",
+                "fsm_state": fsm.state.value,
+                "completion_fsm_state": completion_fsm_state,
+                "agent_id": agent_id,
+                "transcript": req.transcript,
+                "content": result.content,
+            }
+        else:
+            if in_approval:
+                fsm.transition(VoiceSessionState.FAILED)
+            return {
+                "dispatched": False,
+                "status": "dispatch_failed",
+                "fsm_state": fsm.state.value,
+                "agent_id": agent_id,
+                "transcript": req.transcript,
+                "content": result.content,
+                "error": {
+                    "status": "dispatch_failed",
+                    "message": str(result.content or "agent dispatch failed"),
+                },
+            }
     except ImportError:
+        if in_approval:
+            fsm.transition(VoiceSessionState.COMPLETED)
+            fsm.transition(VoiceSessionState.IDLE)
         return {
             "dispatched": False,
+            "fsm_state": fsm.state.value,
             "reason": "agent tools not available",
             "transcript": req.transcript,
         }
     except Exception as exc:
-        raise _voice_error(exc) from exc
+        if in_approval:
+            try:
+                fsm.transition(VoiceSessionState.FAILED)
+            except Exception:
+                fsm.reset()
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "status": "dispatch_failed",
+                "fsm_state": fsm.state.value,
+                "message": str(exc),
+            },
+        ) from exc
+
+
+@voice_router.post("/cancel")
+async def cancel_voice_session(request: Request):
+    """Reset the voice session FSM to idle.
+
+    Safe to call from any state including idle (idempotent).
+    Call this after a failed or completed dispatch to allow a new session.
+    """
+    from openjarvis.voice.session_fsm import VoiceSessionState
+
+    fsm = _get_voice_session_fsm(request)
+    if fsm.state == VoiceSessionState.IDLE:
+        return {"fsm_state": "idle"}
+    try:
+        fsm.transition(VoiceSessionState.IDLE)
+    except Exception:
+        fsm.reset()
+    return {"fsm_state": fsm.state.value}
 
 
 # ---- Feedback routes ----
