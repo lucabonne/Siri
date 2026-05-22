@@ -157,6 +157,39 @@ Deferred work remains intentionally untouched in this phase:
 - no wake word
 - no remote installer
 
+## Release Smoke Phase 1
+
+Phase 1 validation was run against the local macOS packaging flow on
+2026-05-22 and updated after Release Smoke Fix Phase 1 in
+`release/reports/smoke_phase_1.md`.
+
+- Building, local user install, uninstall, and clean reinstall all completed
+  through the packaging scripts.
+- The final install state contains `~/Applications/Siri.app`,
+  `Contents/MacOS/Siri`, `Contents/Info.plist`, `Contents/Resources/Siri.icns`,
+  bundled runtime launch scripts, and a valid
+  `~/Library/LaunchAgents/com.openjarvis.siri.plist`.
+- Release diagnostics, packaging status, Mission Control, memory, voice,
+  hotkey, tray, and startup scheduler status now load from the installed local
+  release backend.
+- The launcher no longer assumes a `python` executable. It prefers the project
+  venv Python, then `uv run`, then `python3`.
+- LaunchAgent execution now uses `/bin/bash` plus the installed app executable,
+  while the app executable runs bundled scripts from inside the app bundle
+  instead of source-checkout shell files.
+- Backend health waits now emit actionable stdout/stderr log tails on failure.
+- `ffmpeg` is detected at `/opt/homebrew/bin/ffmpeg`; missing-machine
+  diagnostics include `brew install ffmpeg`.
+- The installed frontend is served from built static assets with SPA fallback,
+  avoiding Vite dev-server dependency scanning during release launch.
+
+Deferred work remains intentionally untouched in this phase:
+
+- no new features
+- no wake word
+- no autonomy
+- no background agent behavior
+
 ## Frontend Build Stability
 
 Production frontend builds now avoid the Vite/Rollup transform hang without

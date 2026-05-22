@@ -75,6 +75,7 @@ class LaunchAgentManager:
             with os.fdopen(fd, "wb") as handle:
                 handle.write(data)
             os.replace(tmp_name, self.plist_path)
+            self.plist_path.chmod(0o644)
         finally:
             if os.path.exists(tmp_name):
                 os.unlink(tmp_name)
@@ -115,11 +116,28 @@ class LaunchAgentManager:
             )
 
         installed_args = payload.get("ProgramArguments", [])
+        executable_valid, executable_error = _program_arguments_executable(
+            installed_args
+        )
+        permissions_valid, permissions_error = _plist_permissions_valid(
+            self.plist_path
+        )
         valid = (
             payload.get("Label") == self.config.label
             and installed_args == self.config.program_arguments
             and bool(payload.get("RunAtLoad")) == self.config.run_at_load
+            and executable_valid
+            and permissions_valid
         )
+        errors = [
+            error
+            for error in (
+                "" if supported else "LaunchAgent is only supported on macOS.",
+                executable_error,
+                permissions_error,
+            )
+            if error
+        ]
         return LaunchAgentStatus(
             supported=supported,
             installed=True,
@@ -130,7 +148,7 @@ class LaunchAgentManager:
             installed_program_arguments=(
                 list(installed_args) if isinstance(installed_args, list) else []
             ),
-            error="" if supported else "LaunchAgent is only supported on macOS.",
+            error="; ".join(errors),
         )
 
 
@@ -140,3 +158,34 @@ __all__ = [
     "default_launch_agents_dir",
     "default_program_arguments",
 ]
+
+
+def _program_arguments_executable(args: Any) -> tuple[bool, str]:
+    if not isinstance(args, list) or not args:
+        return False, "ProgramArguments must be a non-empty list."
+    executable = Path(str(args[0]))
+    if not executable.exists():
+        return False, f"Program executable does not exist: {executable}"
+    if not os.access(executable, os.X_OK):
+        return False, f"Program executable is not executable: {executable}"
+    for script_arg in args[1:]:
+        script = Path(str(script_arg))
+        if script.suffix in {".sh", ""} and "/" in str(script_arg):
+            if not script.exists():
+                return False, f"Program script does not exist: {script}"
+            if not os.access(script, os.R_OK):
+                return False, f"Program script is not readable: {script}"
+            break
+    return True, ""
+
+
+def _plist_permissions_valid(path: Path) -> tuple[bool, str]:
+    try:
+        stat_result = path.stat()
+    except OSError as exc:
+        return False, f"LaunchAgent plist is not readable: {exc}"
+    if stat_result.st_uid != os.getuid():
+        return False, "LaunchAgent plist is not owned by the current user."
+    if stat_result.st_mode & 0o022:
+        return False, "LaunchAgent plist must not be group/world writable."
+    return True, ""

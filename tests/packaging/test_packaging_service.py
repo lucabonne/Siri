@@ -3,7 +3,9 @@ from __future__ import annotations
 import faulthandler
 import json
 import plistlib
+import subprocess
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -121,6 +123,7 @@ def test_install_and_uninstall_app_bundle_updates_launch_agent(
     assert app_path.exists()
     assert installed["launch_agent"]["valid"] is True
     assert installed["launch_agent"]["installed_program_arguments"] == [
+        "/bin/bash",
         str(app_path / "Contents/MacOS/Siri")
     ]
 
@@ -129,6 +132,116 @@ def test_install_and_uninstall_app_bundle_updates_launch_agent(
     assert uninstalled["status"] == "uninstalled"
     assert app_path.exists() is False
     assert uninstalled["launch_agent"]["installed"] is False
+
+
+def test_release_diagnostics_reports_missing_ffmpeg_with_brew_hint(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    from openjarvis.packaging import service as packaging_service
+
+    real_which = packaging_service._which_command
+
+    def fake_which(name: str):
+        if name == "ffmpeg":
+            return None
+        return real_which(name)
+
+    monkeypatch.setattr(packaging_service, "_which_command", fake_which)
+    service = PackagingService(project_root=_project(tmp_path))
+
+    diagnostics = service.release_diagnostics()
+
+    ffmpeg = diagnostics["dependency_summary"]["ffmpeg"]
+    assert ffmpeg["status"] == "missing"
+    assert "brew install ffmpeg" in ffmpeg["message"]
+
+
+def test_backend_bootstrap_prefers_project_venv_python(tmp_path: Path):
+    root = tmp_path / "project"
+    launcher_dir = tmp_path / "launcher"
+    capture = tmp_path / "python-args.txt"
+    (root / ".venv/bin").mkdir(parents=True)
+    fake_python = root / ".venv/bin/python"
+    fake_python.write_text(
+        "#!/bin/sh\n"
+        f"printf '%s\\n' \"$0 $*\" > {capture}\n"
+        "sleep 30\n"
+    )
+    fake_python.chmod(0o755)
+
+    result = subprocess.run(
+        ["sh", "packaging/scripts/bootstrap_backend.sh"],
+        cwd=Path(__file__).resolve().parents[2],
+        env={
+            "HOME": str(tmp_path / "home"),
+            "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+            "SIRI_PROJECT_ROOT": str(root),
+            "OPENJARVIS_LAUNCHER_DIR": str(launcher_dir),
+        },
+        text=True,
+        capture_output=True,
+        timeout=10,
+    )
+    try:
+        deadline = time.time() + 5
+        while not capture.exists() and time.time() < deadline:
+            time.sleep(0.05)
+        pid = int((launcher_dir / "backend.pid").read_text().strip())
+        subprocess.run(["kill", str(pid)], check=False)
+    except Exception:
+        pass
+
+    assert result.returncode == 0
+    assert str(fake_python) in capture.read_text()
+    assert "-m openjarvis.packaging.local_backend --host 127.0.0.1" in capture.read_text()
+
+
+def test_launcher_backend_health_timeout_prints_diagnostics(tmp_path: Path):
+    root = tmp_path / "project"
+    launcher_dir = tmp_path / "launcher"
+    (root / "packaging/scripts").mkdir(parents=True)
+    (root / "packaging/config").mkdir(parents=True)
+    (root / "frontend").mkdir(parents=True)
+    (root / "packaging/config/app_metadata.json").write_text("{}")
+    bootstrap = root / "packaging/scripts/bootstrap_backend.sh"
+    bootstrap.write_text(
+        "#!/bin/sh\n"
+        "mkdir -p \"$OPENJARVIS_LAUNCHER_DIR\"\n"
+        "sleep 30 >/dev/null 2>&1 < /dev/null &\n"
+        "echo $! > \"$OPENJARVIS_LAUNCHER_DIR/backend.pid\"\n"
+        "echo backend fake failure > \"$OPENJARVIS_LAUNCHER_DIR/backend.log\"\n"
+        "echo backend fake stderr > \"$OPENJARVIS_LAUNCHER_DIR/backend.err.log\"\n"
+        "echo backend started pid=$(cat \"$OPENJARVIS_LAUNCHER_DIR/backend.pid\")\n"
+    )
+    bootstrap.chmod(0o755)
+
+    result = subprocess.run(
+        ["sh", "packaging/launchers/siri-launcher.sh", "launch"],
+        cwd=Path(__file__).resolve().parents[2],
+        env={
+            "HOME": str(tmp_path / "home"),
+            "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+            "SIRI_PROJECT_ROOT": str(root),
+            "OPENJARVIS_LAUNCHER_DIR": str(launcher_dir),
+            "OPENJARVIS_BACKEND_HEALTH_TIMEOUT": "1",
+            "OPENJARVIS_BACKEND_HEALTH_URL": "http://127.0.0.1:9/health",
+            "OPENJARVIS_SKIP_FRONTEND": "1",
+        },
+        text=True,
+        capture_output=True,
+        timeout=10,
+    )
+    try:
+        pid = int((launcher_dir / "backend.pid").read_text().strip())
+        subprocess.run(["kill", str(pid)], check=False)
+    except Exception:
+        pass
+
+    assert result.returncode == 1
+    assert "backend=unhealthy" in result.stdout
+    assert "backend fake failure" in result.stdout
+    assert "backend fake stderr" in result.stdout
 
 
 def test_packaging_routes_expose_status_diagnostics_launcher_and_build(

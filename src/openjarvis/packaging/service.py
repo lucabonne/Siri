@@ -138,6 +138,7 @@ class PackagingService:
         *,
         output_dir: str | Path | None = None,
     ) -> dict[str, Any]:
+        self._ensure_packaging_script_permissions()
         metadata = self.metadata()
         output_root = (
             Path(output_dir).expanduser().resolve()
@@ -176,12 +177,15 @@ class PackagingService:
         if icon_source.exists():
             shutil.copy2(icon_source, resources / f"{metadata.name}.icns")
             icon_copied = True
+        bundled_packaging = resources / "packaging"
+        self._copy_runtime_scripts(bundled_packaging)
 
         return {
             "status": "built",
             "app_bundle_path": str(app_path),
             "executable": str(executable),
             "info_plist": str(contents / "Info.plist"),
+            "bundled_packaging": str(bundled_packaging),
             "icon_copied": icon_copied,
             "icon_source": str(icon_source),
             "local_only": True,
@@ -439,7 +443,10 @@ class PackagingService:
             _command_check(
                 "ffmpeg",
                 required=True,
-                fallback="Install ffmpeg before validating audio features.",
+                fallback=(
+                    "Install ffmpeg before validating audio features "
+                    "(macOS: brew install ffmpeg)."
+                ),
             ),
             PackagingCheck(
                 name="jarvis_cli",
@@ -490,9 +497,9 @@ class PackagingService:
     ) -> LaunchAgentManager:
         metadata = self.metadata()
         if app_path is not None:
-            program_arguments = [str(self.app_executable(app_path))]
+            program_arguments = ["/bin/bash", str(self.app_executable(app_path))]
         else:
-            program_arguments = [str(self.launcher_script), "launch"]
+            program_arguments = ["/bin/bash", str(self.launcher_script), "launch"]
         return LaunchAgentManager(
             config=LaunchAgentConfig(
                 label=metadata.bundle_identifier,
@@ -559,13 +566,51 @@ class PackagingService:
             if backup.exists():
                 shutil.rmtree(backup)
 
+    def _ensure_packaging_script_permissions(self) -> None:
+        for path in (
+            self.launcher_script,
+            self.packaging_dir / "scripts/bootstrap_backend.sh",
+            self.packaging_dir / "scripts/bootstrap_frontend.sh",
+            self.packaging_dir / "scripts/install_macos.sh",
+            self.packaging_dir / "scripts/uninstall_macos.sh",
+            self.packaging_dir / "scripts/release_diagnostics.sh",
+            self.packaging_dir / "scripts/package_app.py",
+        ):
+            if path.exists():
+                _make_executable(path)
+
+    def _copy_runtime_scripts(self, destination: Path) -> None:
+        if destination.exists():
+            shutil.rmtree(destination)
+        (destination / "launchers").mkdir(parents=True, exist_ok=True)
+        (destination / "scripts").mkdir(parents=True, exist_ok=True)
+        for source, target in (
+            (
+                self.packaging_dir / "launchers/siri-launcher.sh",
+                destination / "launchers/siri-launcher.sh",
+            ),
+            (
+                self.packaging_dir / "scripts/bootstrap_backend.sh",
+                destination / "scripts/bootstrap_backend.sh",
+            ),
+            (
+                self.packaging_dir / "scripts/bootstrap_frontend.sh",
+                destination / "scripts/bootstrap_frontend.sh",
+            ),
+        ):
+            shutil.copy2(source, target)
+            _make_executable(target)
+
     def _app_executable_script(self) -> str:
-        launcher = self.launcher_script
+        bundled_packaging = (
+            "$(CDPATH= cd -- \"$(dirname -- \"$0\")/../Resources/packaging\" && pwd)"
+        )
         return (
-            "#!/bin/sh\n"
+            "#!/bin/bash\n"
             "set -eu\n"
             f'export SIRI_PROJECT_ROOT="{self.project_root}"\n'
-            f'exec "{launcher}" launch\n'
+            f'export SIRI_PACKAGING_ROOT="{bundled_packaging}"\n'
+            'exec /bin/bash "$SIRI_PACKAGING_ROOT/launchers/siri-launcher.sh" launch\n'
         )
 
 
@@ -588,13 +633,24 @@ def _path_check(
 
 
 def _command_check(name: str, *, required: bool, fallback: str) -> PackagingCheck:
-    path = shutil.which(name)
+    path = _which_command(name)
     return PackagingCheck(
         name=name,
         status="ok" if path else "missing",
         message=path or fallback,
         required=required,
     )
+
+
+def _which_command(name: str) -> str | None:
+    path = shutil.which(name)
+    if path:
+        return path
+    for directory in ("/opt/homebrew/bin", "/usr/local/bin"):
+        candidate = Path(directory) / name
+        if candidate.exists() and os.access(candidate, os.X_OK):
+            return str(candidate)
+    return None
 
 
 def _default_project_root() -> Path:
