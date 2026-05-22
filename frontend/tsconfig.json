@@ -18,7 +18,9 @@
     "forceConsistentCasingInFileNames": true,
     "baseUrl": ".",
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "@base-ui/react/*": ["./src/types/base-ui-react/*"],
+      "motion/react": ["./src/types/vendor/motion-react.d.ts"]
     }
   },
   "include": ["src"],

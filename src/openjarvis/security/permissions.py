@@ -140,6 +140,7 @@ class PermissionMiddleware:
             "storage_delete",
             "storage_put",
             "terminal_suggested_command_approval",
+            "voice_global_hotkey_listener",
             "voice_microphone_capture",
         }
     )
@@ -344,6 +345,12 @@ class PermissionMiddleware:
             return (
                 "privacy mode requires explicit approval before voice capture",
                 "privacy-voice-capture",
+            )
+
+        if normalized == "voice_global_hotkey_listener":
+            return (
+                "privacy mode disables the global voice hotkey listener",
+                "privacy-global-voice-hotkey",
             )
 
         return None

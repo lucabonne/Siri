@@ -123,6 +123,19 @@ class VoicePushToTalkService:
         active_mode = self._active_mode()
         privacy_mode = getattr(active_mode, "id", "") == "privacy"
         latest = self._state.latest_session
+        capture_enabled = self._config.speech.voice_capture_enabled
+        ptt_priority = False
+        try:
+            from openjarvis.personalization.preferences import (
+                get_ptt_priority,
+                get_voice_interaction_enabled,
+            )
+            if get_voice_interaction_enabled():
+                capture_enabled = True
+            ptt_priority = get_ptt_priority()
+        except ImportError:
+            pass
+
         return {
             "state": "recording" if self._state.active_handle is not None else "idle",
             "recording": self._state.active_handle is not None,
@@ -130,7 +143,7 @@ class VoicePushToTalkService:
             "wake_word_enabled": False,
             "passive_listening": False,
             "background_recording": False,
-            "capture_enabled": self._config.speech.voice_capture_enabled,
+            "capture_enabled": capture_enabled,
             "requires_explicit_approval": (
                 privacy_mode or self._config.speech.require_explicit_voice_approval
             ),
@@ -138,6 +151,7 @@ class VoicePushToTalkService:
             "active_mode_id": getattr(active_mode, "id", ""),
             "active_agent_id": self._active_agent_id(),
             "transcription_available": self._transcriber.available(),
+            "ptt_priority": ptt_priority,
             "latest": latest.to_dict() if latest else None,
         }
 

@@ -10,15 +10,24 @@ export type MissionSectionId =
   | 'agents'
   | 'memory'
   | 'projects'
+  | 'sessions'
+  | 'desktop'
+  | 'notifications'
+  | 'engineering'
   | 'coding'
   | 'repo'
   | 'voice'
   | 'vision'
   | 'terminal'
+  | 'workflows'
   | 'research'
   | 'learning'
+  | 'mcp'
+  | 'release'
   | 'settings'
-  | 'permissions';
+  | 'personalization'
+  | 'permissions'
+  | 'autonomy';
 
 export type MissionSection = {
   id: MissionSectionId;

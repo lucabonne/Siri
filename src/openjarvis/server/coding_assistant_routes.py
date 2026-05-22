@@ -11,6 +11,7 @@ from openjarvis.coding_assistant import CodingAssistantService
 from openjarvis.context.terminal import TerminalContextStore
 from openjarvis.repo_index import RepoIndexService
 from openjarvis.security.permissions import PermissionMiddleware
+from openjarvis.server.notification_routes import get_notification_service
 
 coding_assistant_router = APIRouter(prefix="/v1/coding", tags=["coding-assistant"])
 
@@ -94,7 +95,7 @@ def _service(request: Request) -> CodingAssistantService:
 async def analyze_build(body: BuildAnalysisRequest, request: Request):
     """Analyze build output locally and return passive fix guidance."""
     privacy = _privacy_mode(request)
-    return (
+    analysis = (
         _service(request)
         .analyze_build(
             body.cwd,
@@ -103,8 +104,17 @@ async def analyze_build(body: BuildAnalysisRequest, request: Request):
             exit_code=body.exit_code,
             privacy_mode=privacy,
         )
-        .to_dict()
     )
+    if body.exit_code is not None:
+        try:
+            get_notification_service(request).notify_build_completed(
+                status="failed" if body.exit_code else "succeeded",
+                cwd=body.cwd or "",
+                privacy_mode=privacy,
+            )
+        except Exception:
+            pass
+    return analysis.to_dict()
 
 
 @coding_assistant_router.get("/architecture")
