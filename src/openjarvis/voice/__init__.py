@@ -16,10 +16,15 @@ from openjarvis.voice.session_fsm import (
     VoiceSessionFSMError,
     VoiceSessionState,
 )
-from openjarvis.voice.transcription import LocalVoiceTranscriber
+from openjarvis.voice.transcription import (
+    LocalTranscriptionAdapter,
+    LocalVoiceTranscriber,
+    SpeechBackendLocalTranscriptionAdapter,
+)
 
 __all__ = [
     "LocalMacOSRecorder",
+    "LocalTranscriptionAdapter",
     "LocalVoiceTranscriber",
     "RecordingHandle",
     "TranscriptionUnavailableError",
@@ -32,4 +37,5 @@ __all__ = [
     "VoiceSessionFSM",
     "VoiceSessionFSMError",
     "VoiceSessionState",
+    "SpeechBackendLocalTranscriptionAdapter",
 ]

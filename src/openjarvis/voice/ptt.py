@@ -11,10 +11,15 @@ from openjarvis.voice.models import (
 )
 from openjarvis.voice.recorder import LocalMacOSRecorder, Recorder
 from openjarvis.voice.service import VoicePushToTalkService
-from openjarvis.voice.transcription import LocalVoiceTranscriber
+from openjarvis.voice.transcription import (
+    LocalTranscriptionAdapter,
+    LocalVoiceTranscriber,
+    SpeechBackendLocalTranscriptionAdapter,
+)
 
 __all__ = [
     "LocalMacOSRecorder",
+    "LocalTranscriptionAdapter",
     "LocalVoiceTranscriber",
     "Recorder",
     "RecordingHandle",
@@ -25,4 +30,5 @@ __all__ = [
     "VoicePushToTalkService",
     "VoiceRecordingError",
     "VoiceSession",
+    "SpeechBackendLocalTranscriptionAdapter",
 ]

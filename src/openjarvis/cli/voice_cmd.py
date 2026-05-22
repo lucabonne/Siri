@@ -11,6 +11,11 @@ import click
 import httpx
 
 from openjarvis.core.config import load_config
+from openjarvis.voice.models import TranscriptionUnavailableError
+from openjarvis.voice.transcription import (
+    LOCAL_TRANSCRIPTION_ADAPTERS,
+    SpeechBackendLocalTranscriptionAdapter,
+)
 
 
 def _base_url(override: str | None) -> str:
@@ -222,6 +227,51 @@ def submit(
         _emit_json(output)
     else:
         _format_dispatch(dispatch)
+
+
+@voice.command("transcribe-file")
+@click.argument(
+    "audio_file",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+)
+@click.option(
+    "--adapter",
+    type=click.Choice(LOCAL_TRANSCRIPTION_ADAPTERS),
+    default="faster-whisper",
+    show_default=True,
+    help="Local transcription adapter to use.",
+)
+@click.option("--language", default=None, help="Optional language code hint.")
+@click.option("--json", "as_json", is_flag=True, help="Print raw JSON response.")
+def transcribe_file(
+    audio_file: Path,
+    adapter: str,
+    language: str | None,
+    as_json: bool,
+) -> None:
+    """Transcribe a local audio file; never dispatch automatically."""
+    transcriber = SpeechBackendLocalTranscriptionAdapter(
+        adapter_id=adapter,
+        config=load_config(),
+    )
+    try:
+        result = transcriber.transcribe_file(audio_file, language=language)
+    except (OSError, TranscriptionUnavailableError) as exc:
+        raise click.ClickException(str(exc)) from exc
+
+    data = result.to_dict()
+    data["dispatch_skipped"] = True
+    data["dispatch_reason"] = "file transcription does not dispatch"
+    if as_json:
+        _emit_json(data)
+        return
+
+    click.echo("Voice file transcription")
+    click.echo(f"  adapter: {data.get('backend') or adapter}")
+    if data.get("language"):
+        click.echo(f"  language: {data['language']}")
+    click.echo(f"  transcript: {data.get('text', '')}")
+    click.echo("  dispatch: skipped (review, then use `jarvis voice submit ...`)")
 
 
 @voice.command("cancel")

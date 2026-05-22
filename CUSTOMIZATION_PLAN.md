@@ -1,5 +1,36 @@
 # Customization Plan
 
+## Voice Control Phase 5
+
+Phase 5 adds the first local transcription adapter boundary while keeping the
+user-facing voice flow explicit and non-recording by default.
+
+- `openjarvis.voice.transcription.LocalTranscriptionAdapter` defines the local
+  audio transcription contract for future adapters.
+- `SpeechBackendLocalTranscriptionAdapter` wraps local speech backends without
+  introducing cloud speech APIs.
+- `jarvis voice transcribe-file <audio>` can transcribe an existing local audio
+  file through a selected local adapter and prints the transcript only.
+- File transcription does not dispatch. Users must still review text and pass it
+  through `jarvis voice submit`, with `/dispatch` remaining gated behind
+  `--approve-dispatch` and `approved=true`.
+
+Expected future adapters:
+
+- `whisper.cpp` local subprocess adapter
+- `faster-whisper` local CTranslate2 adapter
+- macOS dictation fallback only if explicitly enabled in a later phase
+
+Deferred work remains intentionally untouched in this phase:
+
+- no always-on listening
+- no Fn hotkey capture
+- no live microphone recording
+- no cloud speech APIs
+- no automatic dispatch from transcription
+- no TTS response playback
+- no voice-only mode; text input remains available
+
 ## Voice Control Phase 4
 
 Phase 4 adds a local CLI/dev bridge for the typed/mock voice flow before any

@@ -52,6 +52,7 @@ def test_voice_command_help_lists_subcommands() -> None:
 
     assert result.exit_code == 0
     assert "submit" in result.output
+    assert "transcribe-file" in result.output
     assert "cancel" in result.output
 
 
@@ -140,3 +141,64 @@ def test_voice_cancel_calls_cancel_endpoint(monkeypatch) -> None:
     assert result.exit_code == 0
     assert calls == [("/v1/voice/ptt/cancel", {})]
     assert "idle" in result.output
+
+
+def test_voice_transcribe_file_prints_transcript_without_dispatch(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    audio_path = tmp_path / "clip.wav"
+    audio_path.write_bytes(b"fake wav")
+    post_calls: list[tuple[str, dict[str, Any] | None]] = []
+    adapter_calls: list[tuple[Path, str | None]] = []
+
+    class FakeResult:
+        text = "open notes"
+        language = "en"
+        confidence = 0.91
+        duration_seconds = 1.25
+        backend = "faster-whisper"
+        segments: list[Any] = []
+
+        def to_dict(self):
+            return {
+                "text": self.text,
+                "language": self.language,
+                "confidence": self.confidence,
+                "duration_seconds": self.duration_seconds,
+                "backend": self.backend,
+                "segments": self.segments,
+            }
+
+    class FakeAdapter:
+        def __init__(self, *, adapter_id, config):
+            assert adapter_id == "faster-whisper"
+            assert config == "config"
+
+        def transcribe_file(self, path, *, language=None):
+            adapter_calls.append((path, language))
+            return FakeResult()
+
+    def fake_post(endpoint: str, payload: dict[str, Any] | None, **kwargs):
+        post_calls.append((endpoint, payload))
+        return {}
+
+    monkeypatch.setattr(voice_cmd, "load_config", lambda: "config")
+    monkeypatch.setattr(
+        voice_cmd,
+        "SpeechBackendLocalTranscriptionAdapter",
+        FakeAdapter,
+    )
+    monkeypatch.setattr(voice_cmd, "_post_json", fake_post)
+
+    result = CliRunner().invoke(
+        voice_cmd.voice,
+        ["transcribe-file", str(audio_path), "--language", "en"],
+    )
+
+    assert result.exit_code == 0
+    assert adapter_calls == [(audio_path, "en")]
+    assert post_calls == []
+    assert "Voice file transcription" in result.output
+    assert "open notes" in result.output
+    assert "dispatch: skipped" in result.output
