@@ -695,3 +695,36 @@ Deferred work remains intentionally untouched in this phase:
 - no external graph database
 - no autonomous graph mutation from conversations
 - no replacement of existing memory, vault, research, or repo-index systems
+
+## Brain UI Phase 1
+
+Phase 1 begins turning Mission Control's Knowledge Vault graph experience into
+a Siri brain interface while preserving the Knowledge Graph backend and the
+existing Knowledge Vault workflows.
+
+- The Knowledge Vault tab keeps note creation, note search, tag filtering,
+  pinning, deletion, daily notes, type breakdowns, and local markdown export.
+- The graph panel is now a visual Brain Graph surface backed by the existing
+  `/v1/knowledge-graph` status, roots, timeline, neighborhood, and traversal
+  endpoints. It does not introduce mock graph data or new backend contracts.
+- Pinned graph roots are shown as durable entry nodes, the selected focus node
+  expands into connected memories/notes, and relationship edges render between
+  visible graph nodes with relationship labels when available.
+- Timeline events are included as secondary nodes along the brain surface and
+  connect back to visible graph nodes when the event payload includes a
+  `node_id`.
+- Search remains available but is visually secondary to the brain map; search
+  results become selectable graph nodes rather than replacing Knowledge Vault
+  note search.
+- Text-heavy relationship, focus, and timeline details remain in compact side
+  panels so the first read of the experience is the connected graph itself.
+- Voice-first direction is preserved for future phases, but text inputs remain
+  intact for note creation, vault search, and graph neighborhood search.
+
+Deferred work remains intentionally untouched in this phase:
+
+- no backend Knowledge Graph API changes
+- no removal of Knowledge Vault features
+- no voice-only graph interaction
+- no autonomous graph mutation
+- no replacement of text inputs

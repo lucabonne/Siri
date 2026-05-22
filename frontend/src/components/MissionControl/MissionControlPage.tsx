@@ -112,6 +112,8 @@ import type {
   KnowledgeNote,
   KnowledgeNoteListItem,
   VaultTag,
+  KnowledgeGraphEdge,
+  KnowledgeGraphNeighborhood,
   KnowledgeGraphNode,
   KnowledgeGraphStatus,
   KnowledgeNeighborhoodSearchResult,
@@ -2519,6 +2521,78 @@ function NoteTypeBadge({ type }: { type: string }) {
   );
 }
 
+type BrainGraphNodeKind = 'root' | 'center' | 'connected' | 'timeline' | 'search';
+
+interface BrainGraphVisualNode {
+  id: string;
+  title: string;
+  subtitle: string;
+  kind: BrainGraphNodeKind;
+  x: number;
+  y: number;
+  size: number;
+  node?: KnowledgeGraphNode;
+  event?: KnowledgeTimelineEvent;
+  pinnedRoot?: boolean;
+}
+
+interface BrainGraphVisualEdge {
+  id: string;
+  sourceId: string;
+  targetId: string;
+  relationship: string;
+  strength: number;
+}
+
+const compactGraphLabel = (value: string, max = 22) => (
+  value.length > max ? `${value.slice(0, max - 1)}…` : value
+);
+
+const graphNodeTone = (kind: BrainGraphNodeKind, nodeType?: string) => {
+  if (kind === 'center') {
+    return {
+      fill: 'color-mix(in srgb, var(--color-accent) 20%, var(--color-bg-secondary))',
+      stroke: 'var(--color-accent)',
+      text: 'var(--color-text)',
+    };
+  }
+  if (kind === 'root') {
+    return {
+      fill: 'color-mix(in srgb, var(--color-success) 16%, var(--color-bg-secondary))',
+      stroke: 'var(--color-success)',
+      text: 'var(--color-text)',
+    };
+  }
+  if (kind === 'timeline') {
+    return {
+      fill: 'color-mix(in srgb, var(--color-warning) 16%, var(--color-bg-secondary))',
+      stroke: 'var(--color-warning)',
+      text: 'var(--color-text)',
+    };
+  }
+  if (kind === 'search') {
+    return {
+      fill: 'color-mix(in srgb, var(--color-accent) 10%, var(--color-bg-secondary))',
+      stroke: 'color-mix(in srgb, var(--color-accent) 55%, var(--color-border))',
+      text: 'var(--color-text)',
+    };
+  }
+  if (nodeType === 'memory') {
+    return {
+      fill: 'color-mix(in srgb, var(--color-accent) 14%, var(--color-bg-secondary))',
+      stroke: 'color-mix(in srgb, var(--color-accent) 70%, var(--color-border))',
+      text: 'var(--color-text)',
+    };
+  }
+  return {
+    fill: 'var(--color-bg-secondary)',
+    stroke: 'var(--color-border)',
+    text: 'var(--color-text)',
+  };
+};
+
+const relationLabel = (value: string) => value.replace(/_/g, ' ');
+
 function KnowledgeVaultSection() {
   const [notes, setNotes] = useState<KnowledgeNoteListItem[]>([]);
   const [tags, setTags] = useState<VaultTag[]>([]);
@@ -2538,6 +2612,8 @@ function KnowledgeVaultSection() {
   const [neighborhoodQuery, setNeighborhoodQuery] = useState('');
   const [neighborhoodResults, setNeighborhoodResults] = useState<KnowledgeNeighborhoodSearchResult[]>([]);
   const [selectedGraphNode, setSelectedGraphNode] = useState<KnowledgeGraphNode | null>(null);
+  const [graphNeighborhood, setGraphNeighborhood] = useState<KnowledgeGraphNeighborhood | null>(null);
+  const [graphLoadingNodeId, setGraphLoadingNodeId] = useState<string | null>(null);
   const [connectedNodes, setConnectedNodes] = useState<KnowledgeGraphNode[]>([]);
   const [connectedEdges, setConnectedEdges] = useState(0);
 
@@ -2640,17 +2716,159 @@ function KnowledgeVaultSection() {
 
   const handleGraphNodeSelect = async (node: KnowledgeGraphNode) => {
     setSelectedGraphNode(node);
+    setGraphLoadingNodeId(node.id);
     try {
       const graph = await fetchGraphTraversal(node.id, { max_depth: 2 });
+      setGraphNeighborhood(graph);
       setConnectedNodes(graph.nodes.filter((item) => item.id !== node.id).slice(0, 8));
       setConnectedEdges(graph.edges.length);
     } catch {
+      setGraphNeighborhood(null);
       setConnectedNodes([]);
       setConnectedEdges(0);
+    } finally {
+      setGraphLoadingNodeId(null);
     }
   };
 
+  useEffect(() => {
+    if (!selectedGraphNode && graphRoots.length > 0) {
+      void handleGraphNodeSelect(graphRoots[0]);
+    }
+  }, [graphRoots, selectedGraphNode]);
+
   const visibleNotes = searchResults ?? notes;
+  const brainGraph = useMemo(() => {
+    const visualNodes: BrainGraphVisualNode[] = [];
+    const visualEdges: BrainGraphVisualEdge[] = [];
+    const seen = new Set<string>();
+    const rootIds = new Set(graphRoots.map((node) => node.id));
+    const selectedId = selectedGraphNode?.id ?? null;
+    const connected = graphNeighborhood?.nodes.filter((node) => node.id !== selectedId) ?? [];
+    const searched = neighborhoodResults.map((result) => result.node);
+
+    const addGraphNode = (
+      node: KnowledgeGraphNode,
+      kind: BrainGraphNodeKind,
+      x: number,
+      y: number,
+      size: number,
+    ) => {
+      if (seen.has(node.id)) return;
+      seen.add(node.id);
+      visualNodes.push({
+        id: node.id,
+        title: node.title,
+        subtitle: node.source || node.node_type,
+        kind,
+        x,
+        y,
+        size,
+        node,
+        pinnedRoot: node.pinned_root,
+      });
+    };
+
+    if (selectedGraphNode) {
+      addGraphNode(selectedGraphNode, 'center', 382, 180, 50);
+    }
+
+    graphRoots.slice(0, 5).forEach((node, index) => {
+      if (node.id === selectedId) return;
+      const positions = [
+        [180, 82],
+        [106, 176],
+        [198, 274],
+        [278, 142],
+        [292, 246],
+      ];
+      const [x, y] = positions[index] ?? [150 + index * 36, 110 + index * 42];
+      addGraphNode(node, 'root', x, y, node.pinned_root ? 43 : 36);
+    });
+
+    const connectedNodes = (connected.length > 0 ? connected : searched)
+      .filter((node) => node.id !== selectedId && !rootIds.has(node.id))
+      .slice(0, 8);
+    connectedNodes.forEach((node, index) => {
+      const angle = (-95 + index * (190 / Math.max(connectedNodes.length - 1, 1))) * (Math.PI / 180);
+      addGraphNode(
+        node,
+        connected.length > 0 ? 'connected' : 'search',
+        492 + Math.cos(angle) * 145,
+        180 + Math.sin(angle) * 124,
+        node.node_type === 'memory' ? 34 : 30,
+      );
+    });
+
+    timeline.slice(0, 5).forEach((event, index) => {
+      const timelineId = `timeline-${event.id}`;
+      visualNodes.push({
+        id: timelineId,
+        title: event.title,
+        subtitle: event.event_type,
+        kind: 'timeline',
+        x: 340 + index * 78,
+        y: 332,
+        size: 24,
+        event,
+      });
+      if (event.node_id && seen.has(event.node_id)) {
+        visualEdges.push({
+          id: `${timelineId}-${event.node_id}`,
+          sourceId: timelineId,
+          targetId: event.node_id,
+          relationship: event.event_type,
+          strength: 0.45,
+        });
+      }
+    });
+
+    const edgeSource = graphNeighborhood?.edges.length
+      ? graphNeighborhood.edges
+      : neighborhoodResults.flatMap((result) => result.edges);
+    edgeSource.slice(0, 16).forEach((edge: KnowledgeGraphEdge) => {
+      if (!seen.has(edge.source_id) || !seen.has(edge.target_id)) return;
+      visualEdges.push({
+        id: edge.id,
+        sourceId: edge.source_id,
+        targetId: edge.target_id,
+        relationship: edge.relationship,
+        strength: edge.weight,
+      });
+    });
+
+    if (selectedGraphNode) {
+      connectedNodes.forEach((node) => {
+        const hasVisibleEdge = visualEdges.some((edge) => (
+          (edge.sourceId === selectedGraphNode.id && edge.targetId === node.id)
+          || (edge.sourceId === node.id && edge.targetId === selectedGraphNode.id)
+        ));
+        if (!hasVisibleEdge) {
+          visualEdges.push({
+            id: `${selectedGraphNode.id}-${node.id}`,
+            sourceId: selectedGraphNode.id,
+            targetId: node.id,
+            relationship: 'related',
+            strength: 0.35,
+          });
+        }
+      });
+    }
+
+    return { nodes: visualNodes, edges: visualEdges };
+  }, [graphNeighborhood, graphRoots, neighborhoodResults, selectedGraphNode, timeline]);
+
+  const graphNodeById = useMemo(() => {
+    const lookup = new Map<string, BrainGraphVisualNode>();
+    brainGraph.nodes.forEach((node) => lookup.set(node.id, node));
+    return lookup;
+  }, [brainGraph.nodes]);
+  const relationshipSummary = (graphNeighborhood?.edges.length
+    ? graphNeighborhood.edges
+    : neighborhoodResults.flatMap((result) => result.edges)
+  ).slice(0, 5);
+  const timelineNodeIds = new Set(timeline.map((event) => event.node_id).filter(Boolean));
+  const timelineRelevantNodes = brainGraph.nodes.filter((node) => node.node && timelineNodeIds.has(node.node.id)).slice(0, 4);
 
   return (
     <div className="grid gap-4 xl:grid-cols-[1fr_280px]">
@@ -2817,11 +3035,170 @@ function KnowledgeVaultSection() {
 
         {/* Graph */}
         <ShellPanel
-          title="Graph"
+          title="Brain Graph"
           action={graphStatus ? `${graphStatus.node_count} nodes · ${graphStatus.edge_count} links` : 'offline'}
         >
-          <div className="grid gap-3 lg:grid-cols-[1fr_220px]">
+          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_240px]">
             <div className="grid gap-3">
+              <div
+                className="relative min-h-[420px] overflow-hidden rounded-md border"
+                style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg-secondary)' }}
+              >
+                <div className="absolute left-4 top-4 z-10 flex items-center gap-2">
+                  <div
+                    className="flex h-8 w-8 items-center justify-center rounded-md border"
+                    style={{ borderColor: 'var(--color-border)', background: 'var(--color-surface)', color: 'var(--color-accent)' }}
+                  >
+                    <Brain size={17} />
+                  </div>
+                  <div>
+                    <div className="text-xs font-semibold uppercase tracking-normal" style={{ color: 'var(--color-text-secondary)' }}>
+                      Siri Brain
+                    </div>
+                    <div className="text-[11px]" style={{ color: 'var(--color-text-tertiary)' }}>
+                      {selectedGraphNode ? selectedGraphNode.title : `${graphRoots.length} pinned roots`}
+                    </div>
+                  </div>
+                </div>
+
+                <svg
+                  className="h-[420px] w-full"
+                  viewBox="0 0 760 420"
+                  role="img"
+                  aria-label="Knowledge graph brain view"
+                  preserveAspectRatio="xMidYMid meet"
+                >
+                  <defs>
+                    <filter id="brain-node-shadow" x="-30%" y="-30%" width="160%" height="160%">
+                      <feDropShadow dx="0" dy="8" stdDeviation="8" floodColor="black" floodOpacity="0.16" />
+                    </filter>
+                  </defs>
+                  <path
+                    d="M144 210C116 130 163 54 252 70c48-44 125-30 155 28 42-35 112-20 135 30 79-6 129 59 104 133-18 54-69 82-131 73-42 45-115 44-154-2-46 37-119 30-153-19-32 6-55-1-74-20-21-20-28-48-20-83Z"
+                    fill="none"
+                    stroke="var(--color-border)"
+                    strokeWidth="1.5"
+                    strokeDasharray="7 8"
+                  />
+                  <path
+                    d="M382 96C348 132 342 169 362 207c17 32 15 69-12 105"
+                    fill="none"
+                    stroke="var(--color-border-subtle)"
+                    strokeWidth="1"
+                    strokeDasharray="5 7"
+                  />
+
+                  {brainGraph.edges.map((edge) => {
+                    const source = graphNodeById.get(edge.sourceId);
+                    const target = graphNodeById.get(edge.targetId);
+                    if (!source || !target) return null;
+                    const dx = target.x - source.x;
+                    const dy = target.y - source.y;
+                    const curve = Math.max(-48, Math.min(48, dx * 0.12));
+                    const midX = source.x + dx / 2;
+                    const midY = source.y + dy / 2 - curve;
+                    return (
+                      <g key={edge.id}>
+                        <path
+                          d={`M ${source.x} ${source.y} Q ${midX} ${midY} ${target.x} ${target.y}`}
+                          fill="none"
+                          stroke={edge.relationship === 'related' ? 'var(--color-border)' : 'color-mix(in srgb, var(--color-accent) 52%, var(--color-border))'}
+                          strokeWidth={Math.max(1, Math.min(2.5, edge.strength * 1.6))}
+                          strokeOpacity={edge.relationship === 'related' ? 0.55 : 0.75}
+                        />
+                        {edge.relationship !== 'related' && (
+                          <text
+                            x={midX}
+                            y={midY - 4}
+                            textAnchor="middle"
+                            fontSize="9"
+                            fill="var(--color-text-tertiary)"
+                          >
+                            {compactGraphLabel(relationLabel(edge.relationship), 14)}
+                          </text>
+                        )}
+                      </g>
+                    );
+                  })}
+
+                  {brainGraph.nodes.map((visualNode) => {
+                    const tone = graphNodeTone(visualNode.kind, visualNode.node?.node_type);
+                    const isSelected = selectedGraphNode?.id === visualNode.id;
+                    const isLoading = graphLoadingNodeId === visualNode.id;
+                    return (
+                      <g
+                        key={visualNode.id}
+                        role={visualNode.node ? 'button' : 'img'}
+                        tabIndex={visualNode.node ? 0 : undefined}
+                        onClick={() => { if (visualNode.node) void handleGraphNodeSelect(visualNode.node); }}
+                        onKeyDown={(event) => {
+                          if (!visualNode.node) return;
+                          if (event.key === 'Enter' || event.key === ' ') {
+                            event.preventDefault();
+                            void handleGraphNodeSelect(visualNode.node);
+                          }
+                        }}
+                        style={{ cursor: visualNode.node ? 'pointer' : 'default', outline: 'none' }}
+                      >
+                        <circle
+                          cx={visualNode.x}
+                          cy={visualNode.y}
+                          r={visualNode.size}
+                          fill={tone.fill}
+                          stroke={isSelected ? 'var(--color-accent)' : tone.stroke}
+                          strokeWidth={isSelected ? 2.5 : 1.4}
+                          filter="url(#brain-node-shadow)"
+                        />
+                        {visualNode.pinnedRoot && (
+                          <circle
+                            cx={visualNode.x + visualNode.size * 0.62}
+                            cy={visualNode.y - visualNode.size * 0.62}
+                            r="6"
+                            fill="var(--color-success)"
+                          />
+                        )}
+                        {isLoading && (
+                          <circle
+                            cx={visualNode.x}
+                            cy={visualNode.y}
+                            r={visualNode.size + 7}
+                            fill="none"
+                            stroke="var(--color-accent)"
+                            strokeWidth="1"
+                            strokeDasharray="4 6"
+                          />
+                        )}
+                        <text
+                          x={visualNode.x}
+                          y={visualNode.y - 2}
+                          textAnchor="middle"
+                          fontSize={visualNode.kind === 'center' ? 12 : 10}
+                          fontWeight={visualNode.kind === 'center' || visualNode.kind === 'root' ? 700 : 600}
+                          fill={tone.text}
+                        >
+                          {compactGraphLabel(visualNode.title, visualNode.kind === 'center' ? 18 : 13)}
+                        </text>
+                        <text
+                          x={visualNode.x}
+                          y={visualNode.y + 13}
+                          textAnchor="middle"
+                          fontSize="8.5"
+                          fill="var(--color-text-tertiary)"
+                        >
+                          {compactGraphLabel(visualNode.subtitle, 12)}
+                        </text>
+                      </g>
+                    );
+                  })}
+                </svg>
+
+                {brainGraph.nodes.length === 0 && (
+                  <div className="absolute inset-0 grid place-items-center px-6 text-center text-sm" style={{ color: 'var(--color-text-secondary)' }}>
+                    No graph data yet.
+                  </div>
+                )}
+              </div>
+
               <div
                 className="flex items-center gap-2 rounded-md border px-3"
                 style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg-secondary)' }}
@@ -2838,31 +3215,25 @@ function KnowledgeVaultSection() {
                 />
               </div>
 
-              <div className="grid gap-2">
+              <div className="flex flex-wrap gap-2">
                 {(neighborhoodResults.length ? neighborhoodResults.map((item) => item.node) : graphRoots).map((node) => (
                   <button
                     key={node.id}
                     type="button"
                     onClick={() => handleGraphNodeSelect(node)}
-                    className="flex items-center justify-between gap-3 rounded-md border px-3 py-2 text-left"
+                    className="inline-flex max-w-full items-center gap-2 rounded-md border px-2.5 py-1.5 text-left text-xs"
                     style={{
                       borderColor: selectedGraphNode?.id === node.id ? 'var(--color-accent)' : 'var(--color-border)',
                       background: selectedGraphNode?.id === node.id ? 'var(--color-accent-subtle)' : 'var(--color-bg-secondary)',
+                      color: 'var(--color-text)',
                     }}
                   >
-                    <span className="min-w-0">
-                      <span className="block truncate text-sm font-medium" style={{ color: 'var(--color-text)' }}>
-                        {node.title}
-                      </span>
-                      <span className="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
-                        {node.node_type}{node.source ? ` · ${node.source}` : ''}
-                      </span>
-                    </span>
                     {node.pinned_root && <Pin size={13} style={{ color: 'var(--color-accent)' }} />}
+                    <span className="truncate">{node.title}</span>
                   </button>
                 ))}
                 {!neighborhoodResults.length && !graphRoots.length && (
-                  <p className="py-3 text-center text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+                  <p className="py-2 text-xs" style={{ color: 'var(--color-text-secondary)' }}>
                     No graph roots yet.
                   </p>
                 )}
@@ -2870,9 +3241,14 @@ function KnowledgeVaultSection() {
             </div>
 
             <div className="grid content-start gap-3">
-              <div className="rounded-md border p-3" style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg-secondary)' }}>
-                <div className="mb-2 text-xs font-semibold" style={{ color: 'var(--color-text)' }}>
-                  Relationships
+              <div className="grid gap-2 rounded-md border p-3" style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg-secondary)' }}>
+                <div className="flex items-center justify-between gap-2">
+                  <div className="text-xs font-semibold" style={{ color: 'var(--color-text)' }}>
+                    Focus
+                  </div>
+                  <StatusPill tone={selectedGraphNode ? 'good' : 'quiet'}>
+                    {selectedGraphNode ? selectedGraphNode.node_type : 'roots'}
+                  </StatusPill>
                 </div>
                 {selectedGraphNode ? (
                   <div className="grid gap-2">
@@ -2882,18 +3258,48 @@ function KnowledgeVaultSection() {
                     <div className="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
                       {connectedEdges} links
                     </div>
-                    {connectedNodes.slice(0, 5).map((node) => (
-                      <div key={node.id} className="truncate text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+                    {connectedNodes.slice(0, 4).map((node) => (
+                      <button
+                        key={node.id}
+                        type="button"
+                        onClick={() => handleGraphNodeSelect(node)}
+                        className="truncate text-left text-xs"
+                        style={{ color: 'var(--color-text-secondary)' }}
+                      >
                         {node.title}
-                      </div>
+                      </button>
                     ))}
                   </div>
                 ) : (
                   <p className="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
-                    Select a node.
+                    {graphRoots.length} pinned roots
                   </p>
                 )}
               </div>
+
+              <div className="rounded-md border p-3" style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg-secondary)' }}>
+                <div className="mb-2 text-xs font-semibold" style={{ color: 'var(--color-text)' }}>
+                  Relationships
+                </div>
+                <div className="grid gap-2">
+                  {relationshipSummary.map((edge) => (
+                    <div key={edge.id} className="grid gap-0.5">
+                      <div className="truncate text-xs font-medium" style={{ color: 'var(--color-text)' }}>
+                        {relationLabel(edge.relationship)}
+                      </div>
+                      <div className="text-[11px]" style={{ color: 'var(--color-text-tertiary)' }}>
+                        weight {edge.weight.toFixed(1)}
+                      </div>
+                    </div>
+                  ))}
+                  {!relationshipSummary.length && (
+                    <p className="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+                      No visible links.
+                    </p>
+                  )}
+                </div>
+              </div>
+
               <div className="rounded-md border p-3" style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg-secondary)' }}>
                 <div className="mb-2 text-xs font-semibold" style={{ color: 'var(--color-text)' }}>
                   Timeline
@@ -2916,6 +3322,27 @@ function KnowledgeVaultSection() {
                   )}
                 </div>
               </div>
+
+              {timelineRelevantNodes.length > 0 && (
+                <div className="rounded-md border p-3" style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg-secondary)' }}>
+                  <div className="mb-2 text-xs font-semibold" style={{ color: 'var(--color-text)' }}>
+                    Timeline Nodes
+                  </div>
+                  <div className="grid gap-1">
+                    {timelineRelevantNodes.map((node) => (
+                      <button
+                        key={node.id}
+                        type="button"
+                        onClick={() => { if (node.node) void handleGraphNodeSelect(node.node); }}
+                        className="truncate text-left text-xs"
+                        style={{ color: 'var(--color-text-secondary)' }}
+                      >
+                        {node.title}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </ShellPanel>
