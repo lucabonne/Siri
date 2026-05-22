@@ -369,6 +369,8 @@ class MemoryService:
 
         semantic = self._semantic_results(query, limit, project_id, memory_type)
         if semantic:
+            self._apply_memory_weights(semantic)
+            semantic.sort(key=lambda x: x.get("score", 0), reverse=True)
             return semantic
 
         if self._fts_enabled:
@@ -391,7 +393,22 @@ class MemoryService:
                 pinned=pinned,
                 limit=limit,
             )
-        return [self._row_to_memory(row, score=row["score"]) for row in rows]
+        
+        results = [self._row_to_memory(row, score=row["score"]) for row in rows]
+        self._apply_memory_weights(results)
+        results.sort(key=lambda x: x.get("score", 0), reverse=True)
+        return results
+
+    def _apply_memory_weights(self, items: list[dict[str, Any]]) -> None:
+        try:
+            from openjarvis.personalization.memory_weights import get_weight_for_memory_type
+            for item in items:
+                m_type = item.get("memory_type", "note")
+                weight = get_weight_for_memory_type(m_type)
+                if "score" in item:
+                    item["score"] *= weight
+        except ImportError:
+            pass
 
     def delete_memory(self, memory_id: str) -> bool:
         cur = self._conn.execute("DELETE FROM memories WHERE id = ?", (memory_id,))

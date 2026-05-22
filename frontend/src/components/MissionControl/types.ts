@@ -24,6 +24,7 @@ export type MissionSectionId =
   | 'mcp'
   | 'release'
   | 'settings'
+  | 'personalization'
   | 'permissions';
 
 export type MissionSection = {

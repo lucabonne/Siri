@@ -24,6 +24,7 @@ import {
   TerminalSquare,
   Wrench,
   Workflow,
+  User,
 } from 'lucide-react';
 import type {
   ApprovalRecord,
@@ -58,9 +59,9 @@ export const missionSections: MissionSection[] = [
   { id: 'terminal', label: 'Terminal', icon: TerminalSquare },
   { id: 'workflows', label: 'Workflows', icon: Workflow },
   { id: 'research', label: 'Research', icon: FileSearch },
-  { id: 'mcp', label: 'MCP', icon: Package },
   { id: 'release', label: 'Release', icon: ShieldCheck },
   { id: 'settings', label: 'Settings', icon: Settings },
+  { id: 'personalization', label: 'Personalization', icon: User },
   { id: 'permissions', label: 'Permissions', icon: KeyRound },
 ];
 

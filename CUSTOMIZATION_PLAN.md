@@ -957,3 +957,28 @@ the conservative execution default from earlier phases.
 
 Approving a queued item records the user's decision for review and follow-up;
 it does not silently resume or replay the blocked tool call.
+
+## Personalization Phase 1
+
+Phase 1 introduces a safe, explicit, and localized personalization model to Siri.
+It avoids cloud synchronization, autonomous learning loops, or implicit behavior drift.
+
+- `src/openjarvis/personalization/` is introduced as the central subsystem for
+  storing and retrieving user preferences, routines, memory weights, and profiles.
+- Profile states and active profile IDs are stored locally in JSON format under
+  `~/.openjarvis/state/profiles/` and `~/.openjarvis/state/active_profile.json`.
+- `Preferences` defines static configuration points, such as the preferred
+  workspace environment, coding vs. engineering operational focus, and toggle
+  switches for voice interaction and wake words.
+- `MemoryWeights` allow different profiles to place different importance multipliers
+  on memory types (e.g. project context vs coding patterns).
+- `Routines` defines explicitly toggled behaviors like the Morning Briefing.
+- The `PersonalizationService` and API route `/v1/personalization/...` expose
+  the profile and preference management to the rest of the system.
+- Integration points are explicitly injected via decoupled import wrappers across
+  the codebase: `MemoryService` applies the active profile memory weights;
+  `WakeWordService` respects the active wake word preference; `VoicePushToTalkService`
+  checks for voice interaction defaults; `AgentWorkspaceRegistry` overrides the
+  default active agent based on the preferred workspace environment.
+- Mission Control now includes a Personalization panel displaying the active
+  profile, the ability to switch profiles, and a summary of loaded preferences.
