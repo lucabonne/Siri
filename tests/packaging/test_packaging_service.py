@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import faulthandler
 import json
-import platform
 import plistlib
 import sys
 from pathlib import Path
@@ -25,6 +24,7 @@ def _dump_traceback_on_packaging_test_hang():
 
 
 def _project(tmp_path: Path) -> Path:
+    tmp_path.mkdir(parents=True, exist_ok=True)
     (tmp_path / "pyproject.toml").write_text("[project]\nname = 'siri'\n")
     (tmp_path / "frontend").mkdir()
     (tmp_path / "frontend/package.json").write_text("{}")
@@ -48,6 +48,15 @@ def _project(tmp_path: Path) -> Path:
     (tmp_path / "packaging/launchers/siri-launcher.sh").write_text("#!/bin/sh\n")
     (tmp_path / "packaging/scripts/bootstrap_backend.sh").write_text("#!/bin/sh\n")
     (tmp_path / "packaging/scripts/bootstrap_frontend.sh").write_text("#!/bin/sh\n")
+    (tmp_path / "packaging/scripts/install_macos.sh").write_text("#!/bin/sh\n")
+    (tmp_path / "packaging/scripts/uninstall_macos.sh").write_text("#!/bin/sh\n")
+    (tmp_path / "packaging/scripts/release_diagnostics.sh").write_text("#!/bin/sh\n")
+    (tmp_path / "packaging/scripts/package_app.py").write_text(
+        "#!/usr/bin/env python3\n"
+    )
+    for script in (tmp_path / "packaging").glob("**/*.sh"):
+        script.chmod(script.stat().st_mode | 0o755)
+    (tmp_path / "packaging/scripts/package_app.py").chmod(0o755)
     (tmp_path / "packaging/icons/Siri.icns").write_bytes(b"icns")
     return tmp_path
 
@@ -63,7 +72,19 @@ def test_packaging_status_reports_metadata_and_local_readiness(tmp_path: Path):
     assert status["remote_installer"] is False
     assert status["notarization_enabled"] is False
     assert status["updater_enabled"] is False
-    assert status["install_readiness"]["ready"] is (platform.system() == "Darwin")
+    assert status["install_readiness"]["ready"] is (
+        not status["install_readiness"]["blockers"]
+    )
+    assert "installation" in status
+    assert {check["name"] for check in status["checks"]} >= {
+        "python",
+        "uv",
+        "node",
+        "npm",
+        "ollama",
+        "ffmpeg",
+        "macos_permissions_guidance",
+    }
 
 
 def test_build_app_bundle_creates_minimal_local_macos_bundle(tmp_path: Path):
@@ -86,6 +107,30 @@ def test_build_app_bundle_creates_minimal_local_macos_bundle(tmp_path: Path):
     assert result["updater_enabled"] is False
 
 
+def test_install_and_uninstall_app_bundle_updates_launch_agent(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    service = PackagingService(project_root=_project(tmp_path / "project"))
+
+    installed = service.install_app_bundle(destination="user")
+    app_path = Path(installed["app_bundle_path"])
+
+    assert installed["status"] == "installed"
+    assert app_path.exists()
+    assert installed["launch_agent"]["valid"] is True
+    assert installed["launch_agent"]["installed_program_arguments"] == [
+        str(app_path / "Contents/MacOS/Siri")
+    ]
+
+    uninstalled = service.uninstall_app_bundle()
+
+    assert uninstalled["status"] == "uninstalled"
+    assert app_path.exists() is False
+    assert uninstalled["launch_agent"]["installed"] is False
+
+
 def test_packaging_routes_expose_status_diagnostics_launcher_and_build(
     tmp_path: Path,
 ):
@@ -96,6 +141,7 @@ def test_packaging_routes_expose_status_diagnostics_launcher_and_build(
 
     status = client.get("/v1/packaging/status")
     diagnostics = client.get("/v1/packaging/diagnostics")
+    release_diagnostics = client.get("/v1/packaging/release-diagnostics")
     launcher = client.get("/v1/packaging/launcher/state")
     build = client.post(
         "/v1/packaging/build",
@@ -106,6 +152,8 @@ def test_packaging_routes_expose_status_diagnostics_launcher_and_build(
     assert status.json()["metadata"]["name"] == "Siri"
     assert diagnostics.status_code == 200
     assert diagnostics.json()["local_only"] is True
+    assert release_diagnostics.status_code == 200
+    assert "dependency_summary" in release_diagnostics.json()
     assert launcher.status_code == 200
     assert launcher.json()["single_command_launch"].endswith("siri-launcher.sh launch")
     assert build.status_code == 200

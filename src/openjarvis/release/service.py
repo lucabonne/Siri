@@ -48,6 +48,7 @@ class ReleaseHardeningService:
         health = self.health_checks(app_state=app_state)
         diagnostics = self.startup_diagnostics(app_state=app_state)
         report = self.release_report(health_checks=health, diagnostics=diagnostics)
+        packaging_status = self.packaging_service.status().to_dict()
         return ReleaseHealthSnapshot(
             health_checks=health,
             diagnostics=diagnostics,
@@ -59,6 +60,8 @@ class ReleaseHardeningService:
                 "remote_network_required": False,
                 "cloud_uploads": False,
             },
+            packaging_status=packaging_status,
+            install_readiness=packaging_status.get("install_readiness", {}),
         )
 
     def health_checks(self, *, app_state: Any | None = None) -> list[ReleaseCheck]:
@@ -151,6 +154,7 @@ class ReleaseHardeningService:
         health_checks = health_checks or self.health_checks()
         diagnostics = diagnostics or self.startup_diagnostics()
         packaging_status = self.packaging_service.status()
+        installation = packaging_status.installation
         installed_components = [
             {
                 "id": "backend",
@@ -167,6 +171,19 @@ class ReleaseHardeningService:
                 "label": "Packaging",
                 "installed": packaging_status.paths.packaging_dir
                 and Path(packaging_status.paths.packaging_dir).exists(),
+            },
+            {
+                "id": "app_bundle_install",
+                "label": "Siri.app install",
+                "installed": bool(installation.get("installed")),
+                "path": installation.get("preferred_app_path", ""),
+            },
+            {
+                "id": "launch_agent",
+                "label": "LaunchAgent",
+                "installed": bool(
+                    (installation.get("launch_agent") or {}).get("installed")
+                ),
             },
             {
                 "id": "mcp",
@@ -419,9 +436,9 @@ class ReleaseHardeningService:
         for module in ("fastapi", "pydantic", "openjarvis"):
             if importlib.util.find_spec(module) is None:
                 missing.append(module)
-        npm = shutil.which("npm")
-        if npm is None:
-            missing.append("npm")
+        for command in ("uv", "node", "npm", "ollama", "ffmpeg"):
+            if shutil.which(command) is None:
+                missing.append(command)
         return StartupDiagnostic(
             id="missing_dependencies",
             label="Missing dependencies",
@@ -439,6 +456,10 @@ class ReleaseHardeningService:
             self.project_root / "pyproject.toml",
             self.project_root / "frontend/package.json",
             self.project_root / "packaging",
+            self.project_root / "packaging/scripts/install_macos.sh",
+            self.project_root / "packaging/scripts/uninstall_macos.sh",
+            self.project_root / "packaging/scripts/release_diagnostics.sh",
+            self.project_root / "packaging/scripts/package_app.py",
             self.project_root / "src/openjarvis",
         ]
         missing = [str(path) for path in required_paths if not path.exists()]
@@ -686,6 +707,38 @@ class ReleaseHardeningService:
                 encoding="utf-8",
             )
             changed.append(str(metadata_file))
+        script_placeholders = {
+            self.project_root
+            / "packaging/scripts/install_macos.sh": (
+                "#!/bin/sh\n"
+                "set -eu\n"
+                "python3 -m openjarvis.cli package install\n"
+            ),
+            self.project_root
+            / "packaging/scripts/uninstall_macos.sh": (
+                "#!/bin/sh\n"
+                "set -eu\n"
+                "python3 -m openjarvis.cli package uninstall\n"
+            ),
+            self.project_root
+            / "packaging/scripts/release_diagnostics.sh": (
+                "#!/bin/sh\n"
+                "set -eu\n"
+                "python3 -m openjarvis.cli package release-diagnostics\n"
+            ),
+            self.project_root
+            / "packaging/scripts/package_app.py": (
+                "#!/usr/bin/env python3\n"
+                "from openjarvis.packaging import PackagingService\n"
+                "print(PackagingService().release_diagnostics())\n"
+            ),
+        }
+        for path, content in script_placeholders.items():
+            if path.exists():
+                continue
+            path.write_text(content, encoding="utf-8")
+            path.chmod(path.stat().st_mode | 0o755)
+            changed.append(str(path))
         return RecoveryResult(
             action="repair_packaging_state",
             status="completed",

@@ -99,6 +99,8 @@ class ReleaseHealthSnapshot:
     recovery_actions: list[RecoveryAction]
     report: ReleaseReport
     privacy_mode: dict[str, Any]
+    packaging_status: dict[str, Any] = field(default_factory=dict)
+    install_readiness: dict[str, Any] = field(default_factory=dict)
     local_only: bool = True
     telemetry_enabled: bool = False
     autonomous_agents: bool = False
@@ -114,6 +116,8 @@ class ReleaseHealthSnapshot:
             ],
             "report": self.report.to_dict(),
             "privacy_mode": dict(self.privacy_mode),
+            "packaging_status": dict(self.packaging_status),
+            "install_readiness": dict(self.install_readiness),
             "local_only": self.local_only,
             "telemetry_enabled": self.telemetry_enabled,
             "autonomous_agents": self.autonomous_agents,

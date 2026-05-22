@@ -119,6 +119,44 @@ status without changing intelligence behavior.
   does not add wake words, autonomous agents, scheduler-driven actions, cloud
   upload, or new intelligence features.
 
+## Installer / Release App Phase 1
+
+Phase 1 turns the existing local Siri.app bundle into a first usable macOS
+release install while keeping the installer local-only.
+
+- `PackagingService` now builds, installs, updates, uninstalls, and diagnoses
+  the Siri.app bundle using the existing packaging metadata, launcher scripts,
+  and app bundle generator.
+- `jarvis package install`, `uninstall`, and `release-diagnostics` provide the
+  local release app command surface alongside the existing status, diagnostics,
+  build, launch, and restart commands.
+- `packaging/scripts/install_macos.sh`, `uninstall_macos.sh`, and
+  `release_diagnostics.sh` run from the source checkout without requiring a
+  globally installed `jarvis` command; they use the packaging-only
+  `package_app.py` entry point so installer checks avoid importing the full
+  application CLI.
+- Installs target `~/Applications/Siri.app` by default, can opt into
+  `/Applications/Siri.app`, and update the app bundle through a staging path
+  before replacing an existing install.
+- LaunchAgent installation is updated through the packaging service and the
+  macOS script safely unloads any existing user agent before writing and
+  bootstrapping the current plist.
+- Release readiness now verifies backend/frontend launcher paths and required
+  local dependencies: Python, uv, Node, npm, Ollama, and ffmpeg. macOS
+  permissions guidance is surfaced for microphone, accessibility, screen
+  recording, and notifications.
+- Mission Control release readiness now includes Siri.app install state,
+  LaunchAgent state, app executable path, and packaging install readiness.
+- Tests cover install/uninstall behavior, LaunchAgent arguments, release
+  diagnostics, packaging routes, and repair of installer script placeholders.
+
+Deferred work remains intentionally untouched in this phase:
+
+- no notarization
+- no auto-update
+- no wake word
+- no remote installer
+
 ## Frontend Build Stability
 
 Production frontend builds now avoid the Vite/Rollup transform hang without

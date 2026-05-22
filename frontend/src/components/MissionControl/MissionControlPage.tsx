@@ -3209,7 +3209,10 @@ function ResearchSection() {
 
 function releaseTone(status: string): StatusTone {
   if (['ok', 'ready', 'completed'].includes(status)) return 'good';
-  if (['warning', 'needs_attention', 'completed_with_warnings'].includes(status)) return 'watch';
+  if (
+    ['warning', 'needs_attention', 'completed_with_warnings', 'missing', 'blocked'].includes(status)
+  )
+    return 'watch';
   if (['loading', 'running'].includes(status)) return 'busy';
   return 'quiet';
 }
@@ -3252,6 +3255,18 @@ function ReleaseSection() {
   const diagnostics = snapshot?.diagnostics ?? [];
   const recoveryActions = snapshot?.recovery_actions ?? [];
   const report = snapshot?.report;
+  const packaging = snapshot?.packaging_status;
+  const installReadiness = snapshot?.install_readiness as
+    | { ready?: boolean; blockers?: string[]; warnings?: string[] }
+    | undefined;
+  const installation = packaging?.installation as
+    | {
+        installed?: boolean;
+        installed_locations?: string[];
+        app_executable?: string;
+        launch_agent?: { installed?: boolean; valid?: boolean; plist_path?: string };
+      }
+    | undefined;
   const score = report?.readiness_score ?? 0;
   const warnings = report?.warnings ?? [];
 
@@ -3262,7 +3277,7 @@ function ReleaseSection() {
         action={status === 'loading' ? 'loading' : status === 'offline' ? 'offline' : report?.readiness_status}
       >
         <div className="grid gap-4">
-          <div className="grid gap-3 md:grid-cols-3">
+          <div className="grid gap-3 md:grid-cols-4">
             <div
               className="rounded-md border p-4"
               style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg-secondary)' }}
@@ -3303,6 +3318,53 @@ function ReleaseSection() {
                 <StatusPill tone={snapshot?.autonomous_agents ? 'watch' : 'good'}>No agents</StatusPill>
               </div>
             </div>
+            <div
+              className="rounded-md border p-4"
+              style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg-secondary)' }}
+            >
+              <div className="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+                Install
+              </div>
+              <div className="mt-2 flex flex-wrap gap-2">
+                <StatusPill tone={installReadiness?.ready ? 'good' : 'watch'}>
+                  {installReadiness?.ready ? 'Ready' : `${installReadiness?.blockers?.length ?? 0} blockers`}
+                </StatusPill>
+                <StatusPill tone={installation?.installed ? 'good' : 'quiet'}>
+                  {installation?.installed ? 'Installed' : 'Not installed'}
+                </StatusPill>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid gap-3 md:grid-cols-3">
+            <ContextTile
+              icon={<Package size={14} />}
+              label="Siri.app"
+              value={
+                installation?.installed_locations?.length
+                  ? compactPath(installation.installed_locations[0])
+                  : compactPath(String(packaging?.app_bundle_path || ''))
+              }
+              detail={packaging?.app_bundle_exists ? 'Bundle built' : 'Bundle not built'}
+            />
+            <ContextTile
+              icon={<Power size={14} />}
+              label="LaunchAgent"
+              value={
+                installation?.launch_agent?.installed
+                  ? installation.launch_agent.valid
+                    ? 'Installed'
+                    : 'Needs update'
+                  : 'Not installed'
+              }
+              detail={compactPath(installation?.launch_agent?.plist_path || '')}
+            />
+            <ContextTile
+              icon={<TerminalSquare size={14} />}
+              label="Executable"
+              value={basename(installation?.app_executable || '') || 'Unavailable'}
+              detail={compactPath(installation?.app_executable || '')}
+            />
           </div>
 
           <div className="grid gap-3 md:grid-cols-2">

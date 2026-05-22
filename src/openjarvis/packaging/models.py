@@ -50,12 +50,18 @@ class PackagingPaths:
     packaging_dir: str
     app_bundle_template_dir: str
     launcher_script: str
+    installer_script: str
+    uninstaller_script: str
+    release_diagnostics_script: str
+    script_command: str
     backend_bootstrap: str
     frontend_bootstrap: str
     metadata_file: str
     icon_file: str
     fallback_icon_file: str
     default_output_dir: str
+    user_applications_dir: str
+    system_applications_dir: str
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -71,6 +77,7 @@ class PackagingStatus:
     app_bundle_path: str
     app_bundle_exists: bool
     install_readiness: dict[str, Any]
+    installation: dict[str, Any] = field(default_factory=dict)
     checks: list[PackagingCheck] = field(default_factory=list)
     integrations: dict[str, Any] = field(default_factory=dict)
     local_only: bool = True
@@ -87,6 +94,7 @@ class PackagingStatus:
             "app_bundle_path": self.app_bundle_path,
             "app_bundle_exists": self.app_bundle_exists,
             "install_readiness": dict(self.install_readiness),
+            "installation": dict(self.installation),
             "checks": [check.to_dict() for check in self.checks],
             "integrations": self.integrations,
             "local_only": self.local_only,

@@ -673,6 +673,7 @@ export interface PackagingStatus {
   paths: Record<string, string>;
   app_bundle_path: string;
   app_bundle_exists: boolean;
+  installation: Record<string, unknown>;
   install_readiness: {
     ready: boolean;
     blockers: string[];
@@ -762,6 +763,8 @@ export interface ReleaseMissionControlSnapshot {
   recovery_actions: ReleaseRecoveryAction[];
   report: ReleaseReport;
   privacy_mode: Record<string, unknown>;
+  packaging_status: PackagingStatus;
+  install_readiness: Record<string, unknown>;
   local_only: boolean;
   telemetry_enabled: boolean;
   autonomous_agents: boolean;
