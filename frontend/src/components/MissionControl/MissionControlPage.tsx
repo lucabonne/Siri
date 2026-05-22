@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import type { ReactNode } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
 import {
   Activity,
   AlertTriangle,
@@ -172,13 +172,17 @@ function ShellPanel({
   title,
   action,
   children,
+  className = '',
+  style,
 }: {
   title: string;
   action?: string;
   children: ReactNode;
+  className?: string;
+  style?: CSSProperties;
 }) {
   return (
-    <section className="hud-panel p-4">
+    <section className={`hud-panel p-4 ${className}`} style={style}>
       <div className="mb-4 flex items-center justify-between gap-3">
         <h2 className="text-sm font-semibold" style={{ color: 'var(--color-text)' }}>
           {title}
@@ -2612,6 +2616,7 @@ function KnowledgeVaultSection() {
   const [neighborhoodQuery, setNeighborhoodQuery] = useState('');
   const [neighborhoodResults, setNeighborhoodResults] = useState<KnowledgeNeighborhoodSearchResult[]>([]);
   const [selectedGraphNode, setSelectedGraphNode] = useState<KnowledgeGraphNode | null>(null);
+  const [hoveredGraphNodeId, setHoveredGraphNodeId] = useState<string | null>(null);
   const [graphNeighborhood, setGraphNeighborhood] = useState<KnowledgeGraphNeighborhood | null>(null);
   const [graphLoadingNodeId, setGraphLoadingNodeId] = useState<string | null>(null);
   const [connectedNodes, setConnectedNodes] = useState<KnowledgeGraphNode[]>([]);
@@ -2863,12 +2868,40 @@ function KnowledgeVaultSection() {
     brainGraph.nodes.forEach((node) => lookup.set(node.id, node));
     return lookup;
   }, [brainGraph.nodes]);
+  const graphDataNodeById = useMemo(() => {
+    const lookup = new Map<string, KnowledgeGraphNode>();
+    graphRoots.forEach((node) => lookup.set(node.id, node));
+    graphNeighborhood?.nodes.forEach((node) => lookup.set(node.id, node));
+    neighborhoodResults.forEach((result) => lookup.set(result.node.id, result.node));
+    if (selectedGraphNode) lookup.set(selectedGraphNode.id, selectedGraphNode);
+    return lookup;
+  }, [graphNeighborhood, graphRoots, neighborhoodResults, selectedGraphNode]);
   const relationshipSummary = (graphNeighborhood?.edges.length
     ? graphNeighborhood.edges
     : neighborhoodResults.flatMap((result) => result.edges)
   ).slice(0, 5);
+  const relationshipDetails = relationshipSummary.map((edge) => ({
+    edge,
+    source: graphDataNodeById.get(edge.source_id)?.title || graphNodeById.get(edge.source_id)?.title || 'Source node',
+    target: graphDataNodeById.get(edge.target_id)?.title || graphNodeById.get(edge.target_id)?.title || 'Target node',
+    timelineContext: timeline.find((event) => (
+      event.node_id === edge.source_id || event.node_id === edge.target_id
+    )),
+  }));
   const timelineNodeIds = new Set(timeline.map((event) => event.node_id).filter(Boolean));
   const timelineRelevantNodes = brainGraph.nodes.filter((node) => node.node && timelineNodeIds.has(node.node.id)).slice(0, 4);
+  const activeBrainNode = hoveredGraphNodeId
+    ? graphNodeById.get(hoveredGraphNodeId)
+    : selectedGraphNode
+      ? graphNodeById.get(selectedGraphNode.id)
+      : null;
+  const activeGraphNode = activeBrainNode?.node ?? selectedGraphNode;
+  const activeTimelineEvent = activeBrainNode?.event ?? timeline.find((event) => event.node_id === activeGraphNode?.id);
+  const activeGraphLinks = activeGraphNode
+    ? (graphNeighborhood?.edges ?? []).filter((edge) => (
+      edge.source_id === activeGraphNode.id || edge.target_id === activeGraphNode.id
+    ))
+    : [];
 
   return (
     <div className="grid gap-4 xl:grid-cols-[1fr_280px]">
@@ -2877,7 +2910,7 @@ function KnowledgeVaultSection() {
         {/* Header row */}
         <div
           className="flex flex-wrap items-center justify-between gap-3 rounded-md border p-4"
-          style={{ borderColor: 'var(--color-border)', background: 'var(--color-surface)' }}
+          style={{ borderColor: 'var(--color-border)', background: 'var(--color-surface)', order: 1 }}
         >
           <div className="flex items-center gap-3">
             <BookMarked size={20} style={{ color: 'var(--color-accent)' }} />
@@ -2919,7 +2952,7 @@ function KnowledgeVaultSection() {
         )}
 
         {/* Create note */}
-        <ShellPanel title="New Note">
+        <ShellPanel title="New Note" style={{ order: 3 }}>
           <div className="flex flex-wrap gap-2">
             <input
               id="vault-new-title"
@@ -2957,7 +2990,11 @@ function KnowledgeVaultSection() {
         </ShellPanel>
 
         {/* Search */}
-        <ShellPanel title="Notes" action={selectedTag ? `#${selectedTag}` : searchResults ? `${searchResults.length} results` : `${notes.length} total`}>
+        <ShellPanel
+          title="Notes"
+          action={selectedTag ? `#${selectedTag}` : searchResults ? `${searchResults.length} results` : `${notes.length} total`}
+          style={{ order: 4 }}
+        >
           <div className="mb-3 flex items-center gap-2 rounded-md border px-3"
             style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg-secondary)' }}
           >
@@ -3037,11 +3074,12 @@ function KnowledgeVaultSection() {
         <ShellPanel
           title="Brain Graph"
           action={graphStatus ? `${graphStatus.node_count} nodes · ${graphStatus.edge_count} links` : 'offline'}
+          style={{ order: 2 }}
         >
-          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_240px]">
+          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_280px]">
             <div className="grid gap-3">
               <div
-                className="relative min-h-[420px] overflow-hidden rounded-md border"
+                className="relative min-h-[560px] overflow-hidden rounded-md border"
                 style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg-secondary)' }}
               >
                 <div className="absolute left-4 top-4 z-10 flex items-center gap-2">
@@ -3062,8 +3100,8 @@ function KnowledgeVaultSection() {
                 </div>
 
                 <svg
-                  className="h-[420px] w-full"
-                  viewBox="0 0 760 420"
+                  className="h-[560px] w-full"
+                  viewBox="0 0 760 560"
                   role="img"
                   aria-label="Knowledge graph brain view"
                   preserveAspectRatio="xMidYMid meet"
@@ -3130,6 +3168,10 @@ function KnowledgeVaultSection() {
                         key={visualNode.id}
                         role={visualNode.node ? 'button' : 'img'}
                         tabIndex={visualNode.node ? 0 : undefined}
+                        onMouseEnter={() => setHoveredGraphNodeId(visualNode.id)}
+                        onMouseLeave={() => setHoveredGraphNodeId(null)}
+                        onFocus={() => setHoveredGraphNodeId(visualNode.id)}
+                        onBlur={() => setHoveredGraphNodeId(null)}
                         onClick={() => { if (visualNode.node) void handleGraphNodeSelect(visualNode.node); }}
                         onKeyDown={(event) => {
                           if (!visualNode.node) return;
@@ -3197,6 +3239,44 @@ function KnowledgeVaultSection() {
                     No graph data yet.
                   </div>
                 )}
+
+                {activeBrainNode && (
+                  <div
+                    className="absolute bottom-4 left-4 right-4 grid gap-2 rounded-md border p-3 md:left-auto md:w-[330px]"
+                    style={{ borderColor: 'var(--color-border)', background: 'var(--color-surface)' }}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="truncate text-sm font-semibold" style={{ color: 'var(--color-text)' }}>
+                          {activeBrainNode.title}
+                        </div>
+                        <div className="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+                          {activeGraphNode?.node_type || activeBrainNode.kind}
+                          {activeGraphNode?.source ? ` · ${activeGraphNode.source}` : ''}
+                        </div>
+                      </div>
+                      <StatusPill tone={activeBrainNode.pinnedRoot ? 'good' : activeBrainNode.kind === 'timeline' ? 'watch' : 'quiet'}>
+                        {activeBrainNode.kind}
+                      </StatusPill>
+                    </div>
+                    {activeGraphNode?.text && (
+                      <p className="line-clamp-3 text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+                        {activeGraphNode.text}
+                      </p>
+                    )}
+                    {activeGraphNode && (
+                      <div className="grid grid-cols-2 gap-2 text-[11px]" style={{ color: 'var(--color-text-tertiary)' }}>
+                        <span>{activeGraphLinks.length} visible links</span>
+                        <span>{formatTime(activeGraphNode.updated_at)}</span>
+                      </div>
+                    )}
+                    {activeTimelineEvent && (
+                      <div className="rounded border px-2 py-1.5 text-xs" style={{ borderColor: 'var(--color-border)', color: 'var(--color-text-secondary)' }}>
+                        {activeTimelineEvent.event_type} · {activeTimelineEvent.title}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
 
               <div
@@ -3241,20 +3321,25 @@ function KnowledgeVaultSection() {
             </div>
 
             <div className="grid content-start gap-3">
-              <div className="grid gap-2 rounded-md border p-3" style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg-secondary)' }}>
-                <div className="flex items-center justify-between gap-2">
+              <details open className="rounded-md border p-3" style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg-secondary)' }}>
+                <summary className="flex cursor-pointer list-none items-center justify-between gap-2">
                   <div className="text-xs font-semibold" style={{ color: 'var(--color-text)' }}>
                     Focus
                   </div>
                   <StatusPill tone={selectedGraphNode ? 'good' : 'quiet'}>
                     {selectedGraphNode ? selectedGraphNode.node_type : 'roots'}
                   </StatusPill>
-                </div>
+                </summary>
                 {selectedGraphNode ? (
-                  <div className="grid gap-2">
+                  <div className="mt-3 grid gap-2">
                     <div className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>
                       {selectedGraphNode.title}
                     </div>
+                    {selectedGraphNode.text && (
+                      <p className="line-clamp-3 text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+                        {selectedGraphNode.text}
+                      </p>
+                    )}
                     <div className="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
                       {connectedEdges} links
                     </div>
@@ -3271,24 +3356,29 @@ function KnowledgeVaultSection() {
                     ))}
                   </div>
                 ) : (
-                  <p className="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+                  <p className="mt-3 text-xs" style={{ color: 'var(--color-text-secondary)' }}>
                     {graphRoots.length} pinned roots
                   </p>
                 )}
-              </div>
+              </details>
 
-              <div className="rounded-md border p-3" style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg-secondary)' }}>
-                <div className="mb-2 text-xs font-semibold" style={{ color: 'var(--color-text)' }}>
+              <details open className="rounded-md border p-3" style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg-secondary)' }}>
+                <summary className="cursor-pointer list-none text-xs font-semibold" style={{ color: 'var(--color-text)' }}>
                   Relationships
-                </div>
-                <div className="grid gap-2">
-                  {relationshipSummary.map((edge) => (
-                    <div key={edge.id} className="grid gap-0.5">
+                </summary>
+                <div className="mt-3 grid gap-2">
+                  {relationshipDetails.map(({ edge, source, target, timelineContext }) => (
+                    <div key={edge.id} className="grid gap-1 rounded border p-2" style={{ borderColor: 'var(--color-border)' }}>
                       <div className="truncate text-xs font-medium" style={{ color: 'var(--color-text)' }}>
                         {relationLabel(edge.relationship)}
                       </div>
-                      <div className="text-[11px]" style={{ color: 'var(--color-text-tertiary)' }}>
-                        weight {edge.weight.toFixed(1)}
+                      <div className="grid gap-0.5 text-[11px]" style={{ color: 'var(--color-text-tertiary)' }}>
+                        <span>source: {source}</span>
+                        <span>target: {target}</span>
+                        <span>weight {edge.weight.toFixed(1)}</span>
+                        {timelineContext && (
+                          <span>timeline: {timelineContext.event_type} · {formatTime(timelineContext.occurred_at)}</span>
+                        )}
                       </div>
                     </div>
                   ))}
@@ -3298,13 +3388,13 @@ function KnowledgeVaultSection() {
                     </p>
                   )}
                 </div>
-              </div>
+              </details>
 
-              <div className="rounded-md border p-3" style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg-secondary)' }}>
-                <div className="mb-2 text-xs font-semibold" style={{ color: 'var(--color-text)' }}>
+              <details className="rounded-md border p-3" style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg-secondary)' }}>
+                <summary className="cursor-pointer list-none text-xs font-semibold" style={{ color: 'var(--color-text)' }}>
                   Timeline
-                </div>
-                <div className="grid gap-2">
+                </summary>
+                <div className="mt-3 grid gap-2">
                   {timeline.slice(0, 4).map((event) => (
                     <div key={event.id}>
                       <div className="truncate text-xs font-medium" style={{ color: 'var(--color-text)' }}>
@@ -3313,6 +3403,11 @@ function KnowledgeVaultSection() {
                       <div className="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
                         {event.event_type} · {formatTime(event.occurred_at)}
                       </div>
+                      {event.summary && (
+                        <p className="mt-1 line-clamp-2 text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+                          {event.summary}
+                        </p>
+                      )}
                     </div>
                   ))}
                   {!timeline.length && (
@@ -3321,14 +3416,14 @@ function KnowledgeVaultSection() {
                     </p>
                   )}
                 </div>
-              </div>
+              </details>
 
               {timelineRelevantNodes.length > 0 && (
-                <div className="rounded-md border p-3" style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg-secondary)' }}>
-                  <div className="mb-2 text-xs font-semibold" style={{ color: 'var(--color-text)' }}>
+                <details className="rounded-md border p-3" style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg-secondary)' }}>
+                  <summary className="cursor-pointer list-none text-xs font-semibold" style={{ color: 'var(--color-text)' }}>
                     Timeline Nodes
-                  </div>
-                  <div className="grid gap-1">
+                  </summary>
+                  <div className="mt-3 grid gap-1">
                     {timelineRelevantNodes.map((node) => (
                       <button
                         key={node.id}
@@ -3341,7 +3436,7 @@ function KnowledgeVaultSection() {
                       </button>
                     ))}
                   </div>
-                </div>
+                </details>
               )}
             </div>
           </div>

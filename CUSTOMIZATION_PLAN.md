@@ -728,3 +728,34 @@ Deferred work remains intentionally untouched in this phase:
 - no voice-only graph interaction
 - no autonomous graph mutation
 - no replacement of text inputs
+
+## Brain UI Phase 2
+
+Phase 2 moves Mission Control further toward an AI-brain-first Knowledge Vault
+experience while keeping all current Knowledge Graph APIs and existing vault
+tools intact.
+
+- The Brain Graph is now ordered as the primary visual surface in the Knowledge
+  Vault tab, ahead of note creation and note-list tooling.
+- The graph canvas is larger and remains backed by the existing graph status,
+  root, timeline, neighborhood search, and traversal responses.
+- Hovering, focusing, or clicking graph nodes reveals memory/thought details in
+  the graph surface, including node type, source, text preview, updated time,
+  visible link count, and matching timeline context when available.
+- Clicking graph nodes still traverses the existing backend graph endpoint and
+  updates the selected focus node without introducing fake local graph
+  behavior.
+- Relationship details now show relationship type, source node, target node,
+  edge weight, and timeline context where the visible graph data provides it.
+- Text-heavy Focus, Relationships, Timeline, and Timeline Nodes panels are
+  secondary collapsible sections beside the graph.
+- Text inputs for note creation, note search, and graph neighborhood search
+  remain available for this phase.
+
+Deferred work remains intentionally untouched in this phase:
+
+- no Knowledge Graph backend or API contract changes
+- no removal of current Knowledge Vault panels or workflows
+- no voice-only controls
+- no autonomous graph updates
+- no fake graph data or mock backend behavior
