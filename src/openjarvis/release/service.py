@@ -49,6 +49,27 @@ class ReleaseHardeningService:
         diagnostics = self.startup_diagnostics(app_state=app_state)
         report = self.release_report(health_checks=health, diagnostics=diagnostics)
         packaging_status = self.packaging_service.status().to_dict()
+
+        active_profile_summary = {}
+        try:
+            from openjarvis.personalization.profiles import get_active_profile
+            profile = get_active_profile()
+            if profile:
+                active_profile_summary = (
+                    profile.model_dump()
+                    if hasattr(profile, "model_dump")
+                    else getattr(profile, "__dict__", {})
+                )
+        except ImportError:
+            pass
+
+        wake_status = {}
+        if app_state and getattr(app_state, "wake_word_service", None) is not None:
+            try:
+                wake_status = app_state.wake_word_service.status()
+            except Exception:
+                pass
+
         return ReleaseHealthSnapshot(
             health_checks=health,
             diagnostics=diagnostics,
@@ -62,6 +83,9 @@ class ReleaseHardeningService:
             },
             packaging_status=packaging_status,
             install_readiness=packaging_status.get("install_readiness", {}),
+            active_profile_summary=active_profile_summary,
+            wake_status=wake_status,
+            readiness_state=report.readiness_status,
         )
 
     def health_checks(self, *, app_state: Any | None = None) -> list[ReleaseCheck]:

@@ -1000,3 +1000,16 @@ It avoids cloud synchronization, autonomous learning loops, or implicit behavior
   default active agent based on the preferred workspace environment.
 - Mission Control now includes a Personalization panel displaying the active
   profile, the ability to switch profiles, and a summary of loaded preferences.
+
+## Desktop Integration Phase 1 (Personalization)
+
+Phase 1 unifies Siri's isolated systems with the Personalization module, allowing user preferences to influence Wake Word, Memory, Agent Workspace, Mission Control, Voice, and Release systems, without adding autonomy, cloud sync, new models, or new UI systems.
+
+- `src/openjarvis/voice/wake_word.py`: Disables wake word detection if the quiet profile preference is enabled.
+- `src/openjarvis/memory/service.py`: Adjusts `search_memories` to boost scores dynamically based on the user's preferred workspace or coding vs. engineering operational focus.
+- `src/openjarvis/agent_workspace/registry.py`: Ensures `get_active_agent()` uses the preferred workspace, falling back to the operational focus preference to dictate the default agent.
+- `src/openjarvis/desktop/service.py`: Exposes a new personalization block in the integration snapshot, allowing Mission Control to read default tabs, section visibility, and startup layout from the active profile.
+- `src/openjarvis/voice/service.py`: Integrates `get_voice_interaction_enabled()` and `get_ptt_priority()` to influence voice interaction mode and PTT priority handling.
+- `src/openjarvis/tts/service.py`: Updates text-to-speech to intrinsically respect quiet mode without requiring explicit flags on every speak request.
+- `src/openjarvis/release/service.py`: Includes active profile summary, wake status, and readiness state directly within `ReleaseHealthSnapshot` for diagnostic reporting.
+- Tests are added in `tests/integration/test_personalization_integration.py` to ensure local configuration propagates cleanly through all systems.
