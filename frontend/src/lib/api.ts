@@ -353,6 +353,136 @@ export async function switchActiveSiriMode(modeId: string): Promise<ActiveSiriMo
 }
 
 // ---------------------------------------------------------------------------
+// Controlled automation workflows
+// ---------------------------------------------------------------------------
+
+export interface WorkflowStepDefinition {
+  id: string;
+  name: string;
+  tool_name: string;
+  description: string;
+  arguments: Record<string, unknown>;
+  required_permission: string;
+  approval_required: boolean;
+  rollback_hint: string;
+  allowed_agents: string[];
+  mode_restrictions: string[];
+  local_only: boolean;
+  passive_only: boolean;
+}
+
+export interface WorkflowDefinition {
+  id: string;
+  name: string;
+  description: string;
+  steps: WorkflowStepDefinition[];
+  required_permissions: string[];
+  approval_requirements: string[];
+  rollback_hints: string[];
+  allowed_agents: string[];
+  mode_restrictions: string[];
+  privacy_local_only: boolean;
+  external_sync: boolean;
+  requires_approval: boolean;
+}
+
+export interface WorkflowStepRun {
+  step_id: string;
+  name: string;
+  tool_name: string;
+  status: string;
+  permission_action: string;
+  permission_level: string;
+  reason: string;
+  approval_id: string;
+  rollback_hint: string;
+  output: Record<string, unknown>;
+}
+
+export interface WorkflowRun {
+  id: string;
+  workflow_id: string;
+  workflow_name: string;
+  status: string;
+  requested_at: string;
+  updated_at: string;
+  completed_at: string | null;
+  requested_by: string;
+  agent_id: string;
+  mode_id: string;
+  cwd: string;
+  privacy_mode: boolean;
+  local_only: boolean;
+  external_sync: boolean;
+  current_step_id: string;
+  failure_reason: string;
+  approvals: string[];
+  context_summary: Record<string, unknown>;
+  steps: WorkflowStepRun[];
+}
+
+export interface WorkflowPanelSnapshot {
+  available_workflows: WorkflowDefinition[];
+  running_workflows: WorkflowRun[];
+  history: WorkflowRun[];
+  approvals: SecurityApproval[];
+  failures: WorkflowRun[];
+  privacy: {
+    local_only: boolean;
+    external_sync: boolean;
+  };
+}
+
+export async function fetchWorkflows(): Promise<WorkflowDefinition[]> {
+  const res = await fetch(`${getBase()}/v1/workflows`);
+  if (!res.ok) throw new Error(`Failed to fetch workflows: ${res.status}`);
+  const data = await res.json();
+  return data.workflows || [];
+}
+
+export async function runWorkflow(
+  workflowId: string,
+  body: {
+    agent_id?: string;
+    mode_id?: string;
+    cwd?: string;
+    requested_by?: string;
+    dry_run?: boolean;
+  } = {},
+): Promise<WorkflowRun> {
+  const res = await fetch(`${getBase()}/v1/workflows/${encodeURIComponent(workflowId)}/run`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(`Failed to run workflow: ${res.status}`);
+  const data = await res.json();
+  return data.run;
+}
+
+export async function fetchWorkflowHistory(limit = 50): Promise<WorkflowRun[]> {
+  const res = await fetch(`${getBase()}/v1/workflows/history?limit=${limit}`);
+  if (!res.ok) throw new Error(`Failed to fetch workflow history: ${res.status}`);
+  const data = await res.json();
+  return data.history || [];
+}
+
+export async function fetchWorkflowApprovals(
+  status: 'pending' | 'approved' | 'denied' | 'all' = 'pending',
+): Promise<SecurityApproval[]> {
+  const res = await fetch(`${getBase()}/v1/workflows/approvals?status=${status}`);
+  if (!res.ok) throw new Error(`Failed to fetch workflow approvals: ${res.status}`);
+  const data = await res.json();
+  return data.approvals || [];
+}
+
+export async function fetchWorkflowPanel(): Promise<WorkflowPanelSnapshot> {
+  const res = await fetch(`${getBase()}/v1/workflows/mission-control`);
+  if (!res.ok) throw new Error(`Failed to fetch workflow panel: ${res.status}`);
+  return res.json();
+}
+
+// ---------------------------------------------------------------------------
 // Passive local context
 // ---------------------------------------------------------------------------
 
@@ -365,6 +495,353 @@ export interface DesktopContext {
   recent_files: string[];
   privacy_mode: boolean;
   passive_only: boolean;
+  desktop_status?: DesktopStatus;
+}
+
+export interface DesktopAppInfo {
+  name: string;
+  bundle_id: string;
+  process_id: number | null;
+  executable: string;
+  frontmost: boolean;
+  local_only: boolean;
+  passive_only: boolean;
+}
+
+export interface DesktopWindowInfo {
+  application_name: string;
+  title: string;
+  process_id: number | null;
+  platform: string;
+  privacy_mode: boolean;
+  passive_only: boolean;
+  local_only: boolean;
+}
+
+export interface DesktopWorkspaceFocus {
+  path: string;
+  name: string;
+  git_repository: string;
+  current_branch: string;
+  project_type: string;
+  source: string;
+  local_only: boolean;
+  passive_only: boolean;
+}
+
+export interface DesktopLaunchResult {
+  action: string;
+  target: string;
+  status: string;
+  message: string;
+  app_name: string;
+  workspace_path: string;
+  coding_environment: string;
+  launched_at: string;
+  command_preview: string[];
+  privacy_mode: boolean;
+  local_only: boolean;
+  autonomous: boolean;
+  background_monitoring: boolean;
+  telemetry_enabled: boolean;
+}
+
+export interface DesktopLauncherHealthCheck {
+  name: string;
+  status: string;
+  url: string;
+  message: string;
+  checked_at: string;
+  local_only: boolean;
+  telemetry_enabled: boolean;
+}
+
+export interface DesktopLauncherDiagnostic {
+  name: string;
+  status: string;
+  message: string;
+  checked_at: string;
+  local_only: boolean;
+  telemetry_enabled: boolean;
+}
+
+export interface DesktopLauncherState {
+  backend_status: string;
+  frontend_status: string;
+  backend_command: string[];
+  frontend_command: string[];
+  health_checks: DesktopLauncherHealthCheck[];
+  startup_diagnostics: DesktopLauncherDiagnostic[];
+  last_action: string;
+  last_restart_at: string;
+  local_only: boolean;
+  passive_only: boolean;
+  telemetry_enabled: boolean;
+}
+
+export interface DesktopNotification {
+  kind: string;
+  title: string;
+  body: string;
+  status: string;
+  created_at: string;
+  user_triggered: boolean;
+  delivered: boolean;
+  local_only: boolean;
+  autonomous: boolean;
+  telemetry_enabled: boolean;
+}
+
+export interface DesktopNotificationState {
+  recent: DesktopNotification[];
+  allowed_kinds: string[];
+  last_notification_at: string;
+  enabled: boolean;
+  autonomous_notifications: boolean;
+  local_only: boolean;
+  passive_only: boolean;
+  telemetry_enabled: boolean;
+}
+
+export interface DesktopTrayMenuItem {
+  id: string;
+  label: string;
+  enabled: boolean;
+  checked: boolean;
+  destructive: boolean;
+  user_triggered_only: boolean;
+  local_only: boolean;
+  telemetry_enabled: boolean;
+}
+
+export interface DesktopTrayState {
+  items: DesktopTrayMenuItem[];
+  last_action: string;
+  voice_trigger_enabled: boolean;
+  current_workspace_available: boolean;
+  launcher_running: boolean;
+  pending_notifications: number;
+  local_only: boolean;
+  passive_only: boolean;
+  telemetry_enabled: boolean;
+}
+
+export interface DesktopSessionState {
+  focused_workspace: DesktopWorkspaceFocus;
+  recent_launches: DesktopLaunchResult[];
+  recent_notifications: DesktopNotification[];
+  launcher_state: DesktopLauncherState;
+  updated_at: string;
+  local_only: boolean;
+  passive_only: boolean;
+  telemetry_enabled: boolean;
+}
+
+export interface DesktopStatus {
+  active_window: DesktopWindowInfo;
+  active_application: DesktopAppInfo | null;
+  open_apps: DesktopAppInfo[];
+  focused_workspace: DesktopWorkspaceFocus;
+  session_state: DesktopSessionState;
+  clipboard_preview: string;
+  clipboard_sensitive: boolean;
+  recent_launches: DesktopLaunchResult[];
+  launcher_state: DesktopLauncherState;
+  notification_state: DesktopNotificationState;
+  tray_state: DesktopTrayState;
+  integrations: Record<string, unknown>;
+  privacy_mode: boolean;
+  local_only: boolean;
+  passive_only: boolean;
+  autonomous_launching: boolean;
+  background_monitoring: boolean;
+  telemetry_enabled: boolean;
+}
+
+export interface PackagingCheck {
+  name: string;
+  status: string;
+  message: string;
+  required: boolean;
+  local_only: boolean;
+  telemetry_enabled: boolean;
+}
+
+export interface PackagingStatus {
+  status: string;
+  metadata: Record<string, unknown>;
+  paths: Record<string, string>;
+  app_bundle_path: string;
+  app_bundle_exists: boolean;
+  installation: Record<string, unknown>;
+  install_readiness: {
+    ready: boolean;
+    blockers: string[];
+    warnings: string[];
+    local_only: boolean;
+    remote_installer: boolean;
+    notarization_required: boolean;
+    updater_required: boolean;
+  };
+  checks: PackagingCheck[];
+  integrations: Record<string, unknown>;
+  local_only: boolean;
+  telemetry_enabled: boolean;
+  remote_installer: boolean;
+  notarization_enabled: boolean;
+  updater_enabled: boolean;
+}
+
+export interface PackagingDiagnostics {
+  package_status: PackagingStatus;
+  launcher_state: Record<string, unknown>;
+  environment_checks: PackagingCheck[];
+  local_only: boolean;
+  telemetry_enabled: boolean;
+  remote_installer: boolean;
+  notarization_enabled: boolean;
+  updater_enabled: boolean;
+}
+
+export interface ReleaseCheck {
+  id: string;
+  label: string;
+  category: string;
+  status: string;
+  summary: string;
+  detail: string;
+  required: boolean;
+  repair_action: string;
+  local_only: boolean;
+  telemetry_enabled: boolean;
+}
+
+export interface ReleaseDiagnostic {
+  id: string;
+  label: string;
+  status: string;
+  summary: string;
+  detail: string;
+  required: boolean;
+  local_only: boolean;
+  telemetry_enabled: boolean;
+}
+
+export interface ReleaseRecoveryAction {
+  id: string;
+  label: string;
+  description: string;
+  status: string;
+  requires_confirmation: boolean;
+  local_only: boolean;
+  telemetry_enabled: boolean;
+}
+
+export interface ReleaseRecoveryResult {
+  action: string;
+  status: string;
+  summary: string;
+  changed_paths: string[];
+  warnings: string[];
+  local_only: boolean;
+  telemetry_enabled: boolean;
+}
+
+export interface ReleaseReport {
+  installed_components: Array<Record<string, unknown>>;
+  enabled_modules: string[];
+  warnings: string[];
+  readiness_score: number;
+  readiness_status: string;
+  local_only: boolean;
+  telemetry_enabled: boolean;
+}
+
+export interface ReleaseMissionControlSnapshot {
+  health_checks: ReleaseCheck[];
+  diagnostics: ReleaseDiagnostic[];
+  recovery_actions: ReleaseRecoveryAction[];
+  report: ReleaseReport;
+  privacy_mode: Record<string, unknown>;
+  packaging_status: PackagingStatus;
+  install_readiness: Record<string, unknown>;
+  local_only: boolean;
+  telemetry_enabled: boolean;
+  autonomous_agents: boolean;
+  wake_words: boolean;
+  intelligence_features: boolean;
+}
+
+export interface EngineeringCadFile {
+  path: string;
+  name: string;
+  format: string;
+  role: string;
+  size_bytes: number;
+  modified_at: string;
+  local_only: boolean;
+  passive_only: boolean;
+  uploaded: boolean;
+}
+
+export interface EngineeringProject {
+  id: string;
+  name: string;
+  path: string;
+  project_kind: string;
+  formats: string[];
+  cad_files: EngineeringCadFile[];
+  markers: string[];
+  summary: string;
+  opened_at: string;
+  local_only: boolean;
+  passive_only: boolean;
+  autonomous_editing: boolean;
+  cad_modifications_enabled: boolean;
+  cloud_uploads_enabled: boolean;
+}
+
+export interface EngineeringWorkspaceState {
+  active_project: EngineeringProject | null;
+  recent_projects: EngineeringProject[];
+  recent_files: EngineeringCadFile[];
+  updated_at: string;
+  local_only: boolean;
+  passive_only: boolean;
+  cloud_uploads_enabled: boolean;
+  autonomous_editing: boolean;
+  cad_modifications_enabled: boolean;
+}
+
+export interface EngineeringStatus {
+  active_project: EngineeringProject | null;
+  projects: EngineeringProject[];
+  recent_files: EngineeringCadFile[];
+  workspace_state: EngineeringWorkspaceState;
+  supported_formats: string[];
+  integrations: Record<string, unknown>;
+  privacy_mode: boolean;
+  local_only: boolean;
+  passive_only: boolean;
+  cloud_uploads_enabled: boolean;
+  autonomous_editing: boolean;
+  cad_modifications_enabled: boolean;
+}
+
+export interface EngineeringProjectSummary {
+  project: EngineeringProject;
+  file_count: number;
+  formats: Record<string, number>;
+  largest_files: EngineeringCadFile[];
+  recent_files: EngineeringCadFile[];
+  viewer_hints: Array<Record<string, unknown>>;
+  analysis_notes: string[];
+  privacy_mode: boolean;
+  local_only: boolean;
+  passive_only: boolean;
+  cloud_uploaded: boolean;
+  autonomous_editing: boolean;
+  cad_modifications_enabled: boolean;
 }
 
 export interface ProjectContext {
@@ -649,6 +1126,106 @@ export async function fetchDesktopContext(): Promise<DesktopContext> {
   return res.json();
 }
 
+export async function fetchDesktopStatus(cwd?: string): Promise<DesktopStatus> {
+  const params = cwd ? `?cwd=${encodeURIComponent(cwd)}` : '';
+  const res = await fetch(`${getBase()}/v1/desktop/status${params}`);
+  if (!res.ok) throw new Error(`Failed to fetch desktop status: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchPackagingStatus(): Promise<PackagingStatus> {
+  const res = await fetch(`${getBase()}/v1/packaging/status`);
+  if (!res.ok) throw new Error(`Failed to fetch packaging status: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchPackagingDiagnostics(): Promise<PackagingDiagnostics> {
+  const res = await fetch(`${getBase()}/v1/packaging/diagnostics`);
+  if (!res.ok) throw new Error(`Failed to fetch packaging diagnostics: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchPackagingLauncherState(): Promise<Record<string, unknown>> {
+  const res = await fetch(`${getBase()}/v1/packaging/launcher/state`);
+  if (!res.ok) throw new Error(`Failed to fetch packaging launcher state: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchReleaseMissionControl(): Promise<ReleaseMissionControlSnapshot> {
+  const res = await fetch(`${getBase()}/v1/release/mission-control`);
+  if (!res.ok) throw new Error(`Failed to fetch release status: ${res.status}`);
+  return res.json();
+}
+
+export async function runReleaseRecoveryAction(action: string): Promise<ReleaseRecoveryResult> {
+  const res = await fetch(`${getBase()}/v1/release/recovery/run`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action }),
+  });
+  if (!res.ok) throw new Error(`Failed to run release recovery action: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchEngineeringStatus(cwd?: string): Promise<EngineeringStatus> {
+  const params = cwd ? `?cwd=${encodeURIComponent(cwd)}` : '';
+  const res = await fetch(`${getBase()}/v1/engineering/status${params}`);
+  if (!res.ok) throw new Error(`Failed to fetch engineering status: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchEngineeringProjectSummary(path: string): Promise<EngineeringProjectSummary> {
+  const res = await fetch(`${getBase()}/v1/engineering/project-summary?path=${encodeURIComponent(path)}`);
+  if (!res.ok) throw new Error(`Failed to fetch engineering project summary: ${res.status}`);
+  const data = await res.json();
+  return data.summary;
+}
+
+export async function openEngineeringProject(path: string): Promise<EngineeringProject> {
+  const res = await fetch(`${getBase()}/v1/engineering/open-project`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path }),
+  });
+  if (!res.ok) throw new Error(`Failed to open engineering project: ${res.status}`);
+  const data = await res.json();
+  return data.project;
+}
+
+export async function fetchRecentEngineeringFiles(limit = 12, root?: string): Promise<EngineeringCadFile[]> {
+  const params = new URLSearchParams({ limit: String(limit) });
+  if (root) params.set('root', root);
+  const res = await fetch(`${getBase()}/v1/engineering/recent-files?${params.toString()}`);
+  if (!res.ok) throw new Error(`Failed to fetch engineering files: ${res.status}`);
+  const data = await res.json();
+  return data.files || [];
+}
+
+export async function launchDesktopApp(appName: string): Promise<DesktopLaunchResult> {
+  const res = await fetch(`${getBase()}/v1/desktop/launch-app`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ app_name: appName }),
+  });
+  if (!res.ok) throw new Error(`Failed to launch app: ${res.status}`);
+  const data = await res.json();
+  return data.launch;
+}
+
+export async function launchDesktopWorkspace(
+  path: string,
+  appName = '',
+): Promise<DesktopLaunchResult> {
+  const res = await fetch(`${getBase()}/v1/desktop/launch-workspace`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path, app_name: appName }),
+  });
+  if (!res.ok) throw new Error(`Failed to launch workspace: ${res.status}`);
+  const data = await res.json();
+  return data.launch;
+}
+
 export async function fetchProjectContext(): Promise<ProjectContext> {
   const res = await fetch(`${getBase()}/v1/context/project`);
   if (!res.ok) throw new Error(`Failed to fetch project context: ${res.status}`);
@@ -893,10 +1470,118 @@ export interface VoicePttStatus {
   latest: VoiceSession | null;
 }
 
+export interface HotkeyBinding {
+  kind: string;
+  keys: string[];
+  fallback_keys: string[];
+  display_name: string;
+  fallback_display_name: string;
+}
+
+export interface HotkeyTriggerEvent {
+  source: string;
+  phase: string;
+  binding: string;
+  timestamp: number;
+  active: boolean;
+  approved: boolean;
+  test: boolean;
+  blocked: boolean;
+  reason: string;
+}
+
+export interface HotkeyStatus {
+  enabled: boolean;
+  effective_enabled: boolean;
+  listener_running: boolean;
+  active: boolean;
+  binding: HotkeyBinding;
+  privacy_mode: boolean;
+  approval_required: boolean;
+  last_trigger: HotkeyTriggerEvent | null;
+  voice_status: Record<string, unknown>;
+  tts_status: Record<string, unknown>;
+  desktop_status: Record<string, unknown>;
+  push_to_talk_only: boolean;
+  wake_word_enabled: boolean;
+  background_transcription: boolean;
+  always_listening: boolean;
+  autonomous_speech: boolean;
+  local_only: boolean;
+}
+
 export interface VoicePttStartResponse {
   status: VoicePttStatus;
   session: VoiceSession;
   recording: VoiceSession;
+}
+
+export interface TTSVoice {
+  id: string;
+  name: string;
+  engine: string;
+  locale: string;
+  local_only: boolean;
+  metadata: Record<string, unknown>;
+}
+
+export interface TTSSpeech {
+  id: string;
+  text: string;
+  spoken_text: string;
+  text_length: number;
+  spoken_text_length: number;
+  started_at: number;
+  stopped_at: number | null;
+  status: string;
+  engine: string;
+  voice_id: string;
+  active_agent: string;
+  active_mode: string;
+  local_only: boolean;
+  user_triggered: boolean;
+  passive_only: boolean;
+  autonomous_speech: boolean;
+  truncated: boolean;
+  permission_decisions: Array<Record<string, unknown>>;
+  context: Record<string, unknown>;
+}
+
+export interface TTSStatus {
+  state: 'idle' | 'speaking' | string;
+  speaking: boolean;
+  local_only: boolean;
+  cloud_tts_enabled: boolean;
+  autonomous_speech: boolean;
+  passive_only: boolean;
+  quiet_mode: boolean;
+  muted: boolean;
+  privacy_mode: boolean;
+  active_mode_id: string;
+  active_agent_id: string;
+  selected_voice_id: string;
+  selected_engine: string;
+  available: boolean;
+  available_engines: string[];
+  response_style: string;
+  voice_input: Record<string, unknown>;
+  latest: TTSSpeech | null;
+}
+
+export interface TTSSpeakResponse {
+  status: TTSStatus;
+  speech: TTSSpeech;
+}
+
+export interface TTSStopResponse {
+  status: TTSStatus;
+  speech: TTSSpeech | null;
+}
+
+export interface TTSVoicesResponse {
+  local_only: boolean;
+  cloud_tts_enabled: boolean;
+  voices: TTSVoice[];
 }
 
 export interface VoiceTranscriptResult extends TranscriptionResult {
@@ -973,6 +1658,74 @@ export async function transcribeLatestVoiceRecording(): Promise<VoiceTranscriptR
     body: JSON.stringify({}),
   });
   if (!res.ok) throw new Error(`Failed to transcribe voice recording: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchHotkeyStatus(): Promise<HotkeyStatus> {
+  const res = await fetch(`${getBase()}/v1/hotkeys/status`);
+  if (!res.ok) throw new Error(`Failed to fetch hotkey status: ${res.status}`);
+  return res.json();
+}
+
+export async function enableHotkey(binding = '', fallback = ''): Promise<HotkeyStatus> {
+  const res = await fetch(`${getBase()}/v1/hotkeys/enable`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ approved: true, binding, fallback }),
+  });
+  if (!res.ok) throw new Error(`Failed to enable hotkey: ${res.status}`);
+  return res.json();
+}
+
+export async function disableHotkey(): Promise<HotkeyStatus> {
+  const res = await fetch(`${getBase()}/v1/hotkeys/disable`, { method: 'POST' });
+  if (!res.ok) throw new Error(`Failed to disable hotkey: ${res.status}`);
+  return res.json();
+}
+
+export async function testHotkeyTrigger(): Promise<{
+  status: HotkeyStatus;
+  trigger: HotkeyTriggerEvent;
+}> {
+  const res = await fetch(`${getBase()}/v1/hotkeys/test-trigger`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ approved: true }),
+  });
+  if (!res.ok) throw new Error(`Failed to test hotkey: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchTTSStatus(): Promise<TTSStatus> {
+  const res = await fetch(`${getBase()}/v1/tts/status`);
+  if (!res.ok) throw new Error(`Failed to fetch TTS status: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchTTSVoices(): Promise<TTSVoicesResponse> {
+  const res = await fetch(`${getBase()}/v1/tts/voices`);
+  if (!res.ok) throw new Error(`Failed to fetch TTS voices: ${res.status}`);
+  return res.json();
+}
+
+export async function speakTTS(text: string, voiceId = '', allowQuiet = false): Promise<TTSSpeakResponse> {
+  const res = await fetch(`${getBase()}/v1/tts/speak`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      text,
+      voice_id: voiceId,
+      user_triggered: true,
+      allow_quiet: allowQuiet,
+    }),
+  });
+  if (!res.ok) throw new Error(`Failed to speak: ${res.status}`);
+  return res.json();
+}
+
+export async function stopTTS(): Promise<TTSStopResponse> {
+  const res = await fetch(`${getBase()}/v1/tts/stop`, { method: 'POST' });
+  if (!res.ok) throw new Error(`Failed to stop speech: ${res.status}`);
   return res.json();
 }
 
@@ -1927,4 +2680,138 @@ export async function getMemoryConfig(): Promise<MemoryConfig> {
   const res = await fetch(`${getBase()}/v1/memory/config`);
   if (!res.ok) throw new Error('Failed to fetch memory config');
   return res.json();
+}
+
+// ---------------------------------------------------------------------------
+// Autonomous Research Mode
+// ---------------------------------------------------------------------------
+
+export interface ResearchPlan {
+  question: string;
+  search_strategy: string[];
+  subtopics: string[];
+  open_questions: string[];
+  created_at: string;
+}
+
+export interface ResearchSource {
+  id: string;
+  title: string;
+  url: string;
+  access_date: string;
+  relevance: number;
+  extracted_claims: string[];
+  snippet: string;
+  source_type: string;
+  metadata: Record<string, unknown>;
+}
+
+export interface ResearchCitation {
+  id: string;
+  source_id: string;
+  label: string;
+  title: string;
+  url: string;
+  access_date: string;
+  relevance: number;
+}
+
+export interface ResearchReport {
+  id: string;
+  question: string;
+  title: string;
+  notes: string[];
+  summary: string;
+  citations: ResearchCitation[];
+  unresolved_questions: string[];
+  body: string;
+  created_at: string;
+  metadata: Record<string, unknown>;
+}
+
+export interface ResearchSession {
+  id: string;
+  question: string;
+  status: string;
+  plan: ResearchPlan;
+  sources: ResearchSource[];
+  report: ResearchReport | null;
+  memory_ids: string[];
+  privacy_mode: boolean;
+  cached_sources_only: boolean;
+  local_only: boolean;
+  passive_only: boolean;
+  active_mode_id: string;
+  workspace_agent_id: string;
+  created_at: string;
+  updated_at: string;
+  metadata: Record<string, unknown>;
+}
+
+export interface ResearchStatus {
+  id: string;
+  question: string;
+  status: string;
+  source_count: number;
+  citation_count: number;
+  memory_count: number;
+  privacy_mode: boolean;
+  cached_sources_only: boolean;
+  local_only: boolean;
+  passive_only: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export async function listResearch(limit: number = 20): Promise<ResearchSession[]> {
+  const res = await fetch(`${getBase()}/v1/research?limit=${limit}`);
+  if (!res.ok) throw new Error(`Failed to list research: ${res.status}`);
+  const data = await res.json();
+  return data.research;
+}
+
+export async function startResearch(data: {
+  question: string;
+  sources?: Array<Record<string, unknown>>;
+  engineering_project_path?: string;
+  allow_external_search?: boolean;
+  max_sources?: number;
+}): Promise<ResearchSession> {
+  const res = await fetch(`${getBase()}/v1/research/start`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error(`Failed to start research: ${res.status}`);
+  const body = await res.json();
+  return body.research;
+}
+
+export async function fetchResearchStatus(researchId: string): Promise<ResearchStatus> {
+  const res = await fetch(`${getBase()}/v1/research/${encodeURIComponent(researchId)}/status`);
+  if (!res.ok) throw new Error(`Failed to fetch research status: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchResearchReport(researchId: string): Promise<ResearchReport | null> {
+  const res = await fetch(`${getBase()}/v1/research/${encodeURIComponent(researchId)}/report`);
+  if (!res.ok) throw new Error(`Failed to fetch research report: ${res.status}`);
+  const data = await res.json();
+  return data.report;
+}
+
+export async function fetchResearchCitations(researchId: string): Promise<{
+  citations: ResearchCitation[];
+  sources: ResearchSource[];
+}> {
+  const res = await fetch(`${getBase()}/v1/research/${encodeURIComponent(researchId)}/citations`);
+  if (!res.ok) throw new Error(`Failed to fetch research citations: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchResearchMemoryEntries(researchId: string): Promise<StructuredMemory[]> {
+  const res = await fetch(`${getBase()}/v1/research/${encodeURIComponent(researchId)}/memory`);
+  if (!res.ok) throw new Error(`Failed to fetch research memory entries: ${res.status}`);
+  const data = await res.json();
+  return data.memories;
 }

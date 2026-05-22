@@ -9,9 +9,22 @@ from openjarvis.startup.models import (
     SchedulerStatus,
     StartupStatus,
 )
-from openjarvis.startup.scheduler import StartupScheduler
-from openjarvis.startup.service import StartupService
-from openjarvis.startup.state import StartupStateStore
+
+
+def __getattr__(name: str):
+    if name == "StartupScheduler":
+        from openjarvis.startup.scheduler import StartupScheduler
+
+        return StartupScheduler
+    if name == "StartupService":
+        from openjarvis.startup.service import StartupService
+
+        return StartupService
+    if name == "StartupStateStore":
+        from openjarvis.startup.state import StartupStateStore
+
+        return StartupStateStore
+    raise AttributeError(name)
 
 __all__ = [
     "LaunchAgentConfig",

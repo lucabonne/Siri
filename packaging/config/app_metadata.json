@@ -1,0 +1,14 @@
+{
+  "name": "Siri",
+  "display_name": "Siri",
+  "bundle_identifier": "com.openjarvis.siri",
+  "version": "0.0.0+source",
+  "icon": "packaging/icons/Siri.icns",
+  "backend_health_url": "http://127.0.0.1:8000/health",
+  "frontend_health_url": "http://127.0.0.1:5173",
+  "local_only": true,
+  "telemetry_enabled": false,
+  "remote_installer": false,
+  "notarization": false,
+  "updater": false
+}
