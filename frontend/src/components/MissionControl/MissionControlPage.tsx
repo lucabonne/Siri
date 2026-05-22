@@ -82,6 +82,11 @@ import {
   getDailyNote,
   searchKnowledgeVault,
   exportVault,
+  fetchKnowledgeGraphStatus,
+  fetchGraphRoots,
+  fetchKnowledgeTimeline,
+  searchKnowledgeNeighborhood,
+  fetchGraphTraversal,
 } from '../../lib/api';
 import type {
   MemorySearchResult,
@@ -107,6 +112,10 @@ import type {
   KnowledgeNote,
   KnowledgeNoteListItem,
   VaultTag,
+  KnowledgeGraphNode,
+  KnowledgeGraphStatus,
+  KnowledgeNeighborhoodSearchResult,
+  KnowledgeTimelineEvent,
 } from '../../lib/api';
 import {
   approvalQueue,
@@ -2523,17 +2532,31 @@ function KnowledgeVaultSection() {
   const [creating, setCreating] = useState(false);
   const [newTitle, setNewTitle] = useState('');
   const [newType, setNewType] = useState<'note' | 'project' | 'research'>('note');
+  const [graphStatus, setGraphStatus] = useState<KnowledgeGraphStatus | null>(null);
+  const [graphRoots, setGraphRoots] = useState<KnowledgeGraphNode[]>([]);
+  const [timeline, setTimeline] = useState<KnowledgeTimelineEvent[]>([]);
+  const [neighborhoodQuery, setNeighborhoodQuery] = useState('');
+  const [neighborhoodResults, setNeighborhoodResults] = useState<KnowledgeNeighborhoodSearchResult[]>([]);
+  const [selectedGraphNode, setSelectedGraphNode] = useState<KnowledgeGraphNode | null>(null);
+  const [connectedNodes, setConnectedNodes] = useState<KnowledgeGraphNode[]>([]);
+  const [connectedEdges, setConnectedEdges] = useState(0);
 
   const load = async () => {
     try {
-      const [noteList, tagList, daily] = await Promise.all([
+      const [noteList, tagList, daily, status, roots, events] = await Promise.all([
         fetchKnowledgeNotes({ limit: 40 }),
         fetchVaultTags(),
         getDailyNote().catch(() => null),
+        fetchKnowledgeGraphStatus().catch(() => null),
+        fetchGraphRoots(8).catch(() => []),
+        fetchKnowledgeTimeline(8).catch(() => []),
       ]);
       setNotes(noteList);
       setTags(tagList);
       setDailyNote(daily);
+      setGraphStatus(status);
+      setGraphRoots(roots);
+      setTimeline(events);
       setLive(true);
     } catch {
       setLive(false);
@@ -2601,6 +2624,29 @@ function KnowledgeVaultSection() {
       setExportResult(`Export failed: ${e.message}`);
     } finally {
       setExporting(false);
+    }
+  };
+
+  const handleNeighborhoodSearch = async (q: string) => {
+    setNeighborhoodQuery(q);
+    if (!q.trim()) { setNeighborhoodResults([]); return; }
+    try {
+      const results = await searchKnowledgeNeighborhood(q, { limit: 8, max_depth: 2 });
+      setNeighborhoodResults(results);
+    } catch {
+      setNeighborhoodResults([]);
+    }
+  };
+
+  const handleGraphNodeSelect = async (node: KnowledgeGraphNode) => {
+    setSelectedGraphNode(node);
+    try {
+      const graph = await fetchGraphTraversal(node.id, { max_depth: 2 });
+      setConnectedNodes(graph.nodes.filter((item) => item.id !== node.id).slice(0, 8));
+      setConnectedEdges(graph.edges.length);
+    } catch {
+      setConnectedNodes([]);
+      setConnectedEdges(0);
     }
   };
 
@@ -2766,6 +2812,111 @@ function KnowledgeVaultSection() {
                 </div>
               </div>
             ))}
+          </div>
+        </ShellPanel>
+
+        {/* Graph */}
+        <ShellPanel
+          title="Graph"
+          action={graphStatus ? `${graphStatus.node_count} nodes · ${graphStatus.edge_count} links` : 'offline'}
+        >
+          <div className="grid gap-3 lg:grid-cols-[1fr_220px]">
+            <div className="grid gap-3">
+              <div
+                className="flex items-center gap-2 rounded-md border px-3"
+                style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg-secondary)' }}
+              >
+                <GitBranch size={14} style={{ color: 'var(--color-text-tertiary)' }} />
+                <input
+                  id="graph-neighborhood-search"
+                  type="text"
+                  placeholder="Neighborhood search…"
+                  value={neighborhoodQuery}
+                  onChange={(e) => handleNeighborhoodSearch(e.target.value)}
+                  className="h-9 flex-1 bg-transparent text-sm outline-none"
+                  style={{ color: 'var(--color-text)' }}
+                />
+              </div>
+
+              <div className="grid gap-2">
+                {(neighborhoodResults.length ? neighborhoodResults.map((item) => item.node) : graphRoots).map((node) => (
+                  <button
+                    key={node.id}
+                    type="button"
+                    onClick={() => handleGraphNodeSelect(node)}
+                    className="flex items-center justify-between gap-3 rounded-md border px-3 py-2 text-left"
+                    style={{
+                      borderColor: selectedGraphNode?.id === node.id ? 'var(--color-accent)' : 'var(--color-border)',
+                      background: selectedGraphNode?.id === node.id ? 'var(--color-accent-subtle)' : 'var(--color-bg-secondary)',
+                    }}
+                  >
+                    <span className="min-w-0">
+                      <span className="block truncate text-sm font-medium" style={{ color: 'var(--color-text)' }}>
+                        {node.title}
+                      </span>
+                      <span className="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+                        {node.node_type}{node.source ? ` · ${node.source}` : ''}
+                      </span>
+                    </span>
+                    {node.pinned_root && <Pin size={13} style={{ color: 'var(--color-accent)' }} />}
+                  </button>
+                ))}
+                {!neighborhoodResults.length && !graphRoots.length && (
+                  <p className="py-3 text-center text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+                    No graph roots yet.
+                  </p>
+                )}
+              </div>
+            </div>
+
+            <div className="grid content-start gap-3">
+              <div className="rounded-md border p-3" style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg-secondary)' }}>
+                <div className="mb-2 text-xs font-semibold" style={{ color: 'var(--color-text)' }}>
+                  Relationships
+                </div>
+                {selectedGraphNode ? (
+                  <div className="grid gap-2">
+                    <div className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>
+                      {selectedGraphNode.title}
+                    </div>
+                    <div className="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+                      {connectedEdges} links
+                    </div>
+                    {connectedNodes.slice(0, 5).map((node) => (
+                      <div key={node.id} className="truncate text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+                        {node.title}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+                    Select a node.
+                  </p>
+                )}
+              </div>
+              <div className="rounded-md border p-3" style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg-secondary)' }}>
+                <div className="mb-2 text-xs font-semibold" style={{ color: 'var(--color-text)' }}>
+                  Timeline
+                </div>
+                <div className="grid gap-2">
+                  {timeline.slice(0, 4).map((event) => (
+                    <div key={event.id}>
+                      <div className="truncate text-xs font-medium" style={{ color: 'var(--color-text)' }}>
+                        {event.title}
+                      </div>
+                      <div className="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+                        {event.event_type} · {formatTime(event.occurred_at)}
+                      </div>
+                    </div>
+                  ))}
+                  {!timeline.length && (
+                    <p className="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+                      No events.
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
           </div>
         </ShellPanel>
       </div>
