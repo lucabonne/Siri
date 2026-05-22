@@ -157,6 +157,24 @@ Deferred work remains intentionally untouched in this phase:
 - no wake word
 - no remote installer
 
+## Release Candidate Polish Phase 1
+
+Phase 1 makes Siri easier to install, launch, diagnose, and verify as a local macOS app.
+
+- Adds a clear `RELEASE_CHECKLIST.md` for manual and automated validation.
+- Adds `packaging/scripts/validate_release.sh` for one-command local release validation.
+- Validation covers frontend build, backend import, packaging diagnostics, app bundle exists/builds, installer/uninstaller script existence, LaunchAgent plist generation, and required binaries (`ffmpeg`, `ollama`).
+- Mission Control release readiness natively surfaces the diagnostics and install state through `src/openjarvis/release/service.py` and `ReleasePanel.tsx`.
+- Explicitly adds clear PASS/FAIL output with troubleshooting hints for common failures in the validation script.
+
+Deferred work remains intentionally untouched in this phase:
+
+- no new features
+- no wake word expansion
+- no autonomy
+- no cloud services
+- Focus remains purely on release usability and diagnostics.
+
 ## Release Smoke Phase 1
 
 Phase 1 validation was run against the local macOS packaging flow on
