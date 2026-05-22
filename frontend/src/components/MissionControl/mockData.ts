@@ -25,6 +25,7 @@ import {
   Wrench,
   Workflow,
   User,
+  Cpu,
 } from 'lucide-react';
 import type {
   ApprovalRecord,
@@ -63,6 +64,7 @@ export const missionSections: MissionSection[] = [
   { id: 'settings', label: 'Settings', icon: Settings },
   { id: 'personalization', label: 'Personalization', icon: User },
   { id: 'permissions', label: 'Permissions', icon: KeyRound },
+  { id: 'autonomy', label: 'Autonomy', icon: Cpu },
 ];
 
 export const missionMetrics: MissionMetric[] = [

@@ -2871,3 +2871,119 @@ export async function switchActiveProfile(profileId: string): Promise<ProfileSta
   if (!res.ok) throw new Error(`Failed to switch active profile: ${res.status}`);
   return res.json();
 }
+
+// ---------------------------------------------------------------------------
+// Autonomy Layer
+// ---------------------------------------------------------------------------
+
+export interface AutonomyGoal {
+  id: string;
+  title: string;
+  description: string;
+  status: string;
+  created_at: string;
+  updated_at: string;
+  completed_at: string | null;
+}
+
+export interface AutonomyPlanStep {
+  id: string;
+  title: string;
+  action_type: string;
+  description: string;
+  status: string;
+  requires_approval: boolean;
+  dependencies: string[];
+  output: Record<string, unknown>;
+}
+
+export interface AutonomyPlan {
+  id: string;
+  goal_id: string;
+  steps: AutonomyPlanStep[];
+  created_at: string;
+}
+
+export interface AutonomyExecutionState {
+  plan_id: string;
+  goal_id: string;
+  status: string;
+  current_step_id: string | null;
+  updated_at: string;
+}
+
+export interface AutonomyApprovalRequest {
+  id: string;
+  plan_id: string;
+  step_id: string;
+  reason: string;
+  status: string;
+  created_at: string;
+  resolved_at: string | null;
+}
+
+export async function createAutonomyGoal(title: string, description: string): Promise<AutonomyGoal> {
+  const res = await fetch(`${getBase()}/v1/autonomy/goals`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title, description }),
+  });
+  if (!res.ok) throw new Error(`Failed to create goal: ${res.status}`);
+  return res.json();
+}
+
+export async function generateAutonomyPlan(goalId: string): Promise<AutonomyPlan> {
+  const res = await fetch(`${getBase()}/v1/autonomy/goals/${encodeURIComponent(goalId)}/plan`, {
+    method: 'POST',
+  });
+  if (!res.ok) throw new Error(`Failed to generate plan: ${res.status}`);
+  return res.json();
+}
+
+export async function startAutonomyPlan(planId: string): Promise<AutonomyExecutionState> {
+  const res = await fetch(`${getBase()}/v1/autonomy/plans/${encodeURIComponent(planId)}/start`, {
+    method: 'POST',
+  });
+  if (!res.ok) throw new Error(`Failed to start plan: ${res.status}`);
+  return res.json();
+}
+
+export async function pauseAutonomyPlan(planId: string): Promise<AutonomyExecutionState> {
+  const res = await fetch(`${getBase()}/v1/autonomy/plans/${encodeURIComponent(planId)}/pause`, {
+    method: 'POST',
+  });
+  if (!res.ok) throw new Error(`Failed to pause plan: ${res.status}`);
+  return res.json();
+}
+
+export async function resumeAutonomyPlan(planId: string): Promise<AutonomyExecutionState> {
+  const res = await fetch(`${getBase()}/v1/autonomy/plans/${encodeURIComponent(planId)}/resume`, {
+    method: 'POST',
+  });
+  if (!res.ok) throw new Error(`Failed to resume plan: ${res.status}`);
+  return res.json();
+}
+
+export async function stopAutonomyPlan(planId: string): Promise<AutonomyExecutionState> {
+  const res = await fetch(`${getBase()}/v1/autonomy/plans/${encodeURIComponent(planId)}/stop`, {
+    method: 'POST',
+  });
+  if (!res.ok) throw new Error(`Failed to stop plan: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchAutonomyApprovals(): Promise<AutonomyApprovalRequest[]> {
+  const res = await fetch(`${getBase()}/v1/autonomy/approvals`);
+  if (!res.ok) throw new Error(`Failed to fetch approvals: ${res.status}`);
+  return res.json();
+}
+
+export async function resolveAutonomyApproval(approvalId: string, approved: boolean): Promise<AutonomyApprovalRequest> {
+  const res = await fetch(`${getBase()}/v1/autonomy/approvals/${encodeURIComponent(approvalId)}/resolve`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ approved }),
+  });
+  if (!res.ok) throw new Error(`Failed to resolve approval: ${res.status}`);
+  return res.json();
+}

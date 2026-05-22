@@ -105,6 +105,14 @@ import {
   listProfiles,
   switchActiveProfile,
   createProfile,
+  fetchAutonomyApprovals,
+  resolveAutonomyApproval,
+  createAutonomyGoal,
+  generateAutonomyPlan,
+  startAutonomyPlan,
+  pauseAutonomyPlan,
+  resumeAutonomyPlan,
+  stopAutonomyPlan,
 } from '../../lib/api';
 import type {
   MemorySearchResult,
@@ -142,6 +150,11 @@ import type {
   Profile,
   ProfileStatus,
   Preferences,
+  AutonomyApprovalRequest,
+  AutonomyGoal,
+  AutonomyPlan,
+  AutonomyPlanStep,
+  AutonomyExecutionState,
 } from '../../lib/api';
 import {
   approvalQueue,
@@ -3954,7 +3967,240 @@ function ActiveSection({ section }: { section: MissionSectionId }) {
   if (section === 'settings') return <SettingsSection />;
   if (section === 'personalization') return <PersonalizationSection />;
   if (section === 'permissions') return <PermissionsSection />;
+  if (section === 'autonomy') return <AutonomySection />;
   return <HomeSection />;
+}
+
+function AutonomySection() {
+  const [approvals, setApprovals] = useState<AutonomyApprovalRequest[]>([]);
+  const [live, setLive] = useState(false);
+  const [goalTitle, setGoalTitle] = useState('');
+  const [goalDesc, setGoalDesc] = useState('');
+  const [activeGoal, setActiveGoal] = useState<AutonomyGoal | null>(null);
+  const [plan, setPlan] = useState<AutonomyPlan | null>(null);
+  const [state, setState] = useState<AutonomyExecutionState | null>(null);
+
+  const loadApprovals = async () => {
+    try {
+      const data = await fetchAutonomyApprovals();
+      setApprovals(data);
+      setLive(true);
+    } catch {
+      setLive(false);
+    }
+  };
+
+  useEffect(() => {
+    loadApprovals();
+    const interval = setInterval(loadApprovals, 5000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const handleCreateGoal = async () => {
+    if (!goalTitle || !goalDesc) return;
+    try {
+      const g = await createAutonomyGoal(goalTitle, goalDesc);
+      setActiveGoal(g);
+      setGoalTitle('');
+      setGoalDesc('');
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleGeneratePlan = async () => {
+    if (!activeGoal) return;
+    try {
+      const p = await generateAutonomyPlan(activeGoal.id);
+      setPlan(p);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleStart = async () => {
+    if (!plan) return;
+    try {
+      const s = await startAutonomyPlan(plan.id);
+      setState(s);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handlePause = async () => {
+    if (!plan) return;
+    try {
+      const s = await pauseAutonomyPlan(plan.id);
+      setState(s);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleResume = async () => {
+    if (!plan) return;
+    try {
+      const s = await resumeAutonomyPlan(plan.id);
+      setState(s);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleStop = async () => {
+    if (!plan) return;
+    try {
+      const s = await stopAutonomyPlan(plan.id);
+      setState(s);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleResolve = async (id: string, approved: boolean) => {
+    try {
+      await resolveAutonomyApproval(id, approved);
+      loadApprovals();
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  return (
+    <div className="grid gap-4 xl:grid-cols-[1fr_0.9fr]">
+      <ShellPanel title="Autonomy Controls" action={live ? 'live' : 'offline'}>
+        <div className="space-y-4">
+          <div className="rounded-md border p-4" style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg-secondary)' }}>
+            <h3 className="mb-2 text-sm font-semibold">1. Set Goal</h3>
+            <div className="space-y-2">
+              <input
+                type="text"
+                placeholder="Goal Title"
+                value={goalTitle}
+                onChange={(e) => setGoalTitle(e.target.value)}
+                className="w-full rounded-md border px-3 py-2 text-sm outline-none"
+                style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg)', color: 'var(--color-text)' }}
+              />
+              <textarea
+                placeholder="Goal Description"
+                value={goalDesc}
+                onChange={(e) => setGoalDesc(e.target.value)}
+                className="w-full rounded-md border px-3 py-2 text-sm outline-none"
+                rows={3}
+                style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg)', color: 'var(--color-text)' }}
+              />
+              <button
+                type="button"
+                onClick={handleCreateGoal}
+                className="rounded-md border px-3 py-2 text-sm font-medium transition-colors"
+                style={{ borderColor: 'var(--color-border)', background: 'var(--color-accent-subtle)', color: 'var(--color-text)' }}
+              >
+                Create Goal
+              </button>
+            </div>
+            {activeGoal && (
+              <div className="mt-4 border-t pt-4" style={{ borderColor: 'var(--color-border)' }}>
+                <div className="text-sm font-medium">Current Goal: {activeGoal.title}</div>
+                <div className="text-xs" style={{ color: 'var(--color-text-secondary)' }}>{activeGoal.status}</div>
+                <button
+                  type="button"
+                  onClick={handleGeneratePlan}
+                  className="mt-2 rounded-md border px-3 py-2 text-sm font-medium transition-colors"
+                  style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg)', color: 'var(--color-text)' }}
+                >
+                  Generate Plan
+                </button>
+              </div>
+            )}
+          </div>
+
+          {plan && (
+            <div className="rounded-md border p-4" style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg-secondary)' }}>
+              <h3 className="mb-2 text-sm font-semibold">2. Execution</h3>
+              <div className="mb-4 flex gap-2">
+                <button
+                  onClick={handleStart}
+                  className="rounded-md border px-3 py-1 text-xs font-medium"
+                  style={{ borderColor: 'var(--color-border)', background: 'var(--color-success)', color: '#fff' }}
+                >
+                  Start
+                </button>
+                <button
+                  onClick={handlePause}
+                  className="rounded-md border px-3 py-1 text-xs font-medium"
+                  style={{ borderColor: 'var(--color-border)', background: 'var(--color-warning)', color: '#fff' }}
+                >
+                  Pause
+                </button>
+                <button
+                  onClick={handleResume}
+                  className="rounded-md border px-3 py-1 text-xs font-medium"
+                  style={{ borderColor: 'var(--color-border)', background: 'var(--color-accent)', color: '#fff' }}
+                >
+                  Resume
+                </button>
+                <button
+                  onClick={handleStop}
+                  className="rounded-md border px-3 py-1 text-xs font-medium"
+                  style={{ borderColor: 'var(--color-border)', background: 'var(--color-error)', color: '#fff' }}
+                >
+                  Stop
+                </button>
+              </div>
+              <div className="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+                Status: {state?.status || 'idle'} <br />
+                Step: {state?.current_step_id || 'none'}
+              </div>
+              <div className="mt-4 space-y-2">
+                {plan.steps.map(step => (
+                  <div key={step.id} className="rounded-md border p-2 text-xs" style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg)' }}>
+                    <div className="font-semibold">{step.title}</div>
+                    <div style={{ color: 'var(--color-text-tertiary)' }}>{step.action_type} - {step.status}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      </ShellPanel>
+
+      <ShellPanel title="Approval Queue" action={`${approvals.length} pending`}>
+        <div className="space-y-3">
+          {approvals.map(app => (
+            <div key={app.id} className="rounded-md border p-3" style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg-secondary)' }}>
+              <div className="mb-2 flex items-center justify-between">
+                <span className="text-sm font-semibold">Step Approval</span>
+                <StatusPill tone="watch">Pending</StatusPill>
+              </div>
+              <div className="mb-3 text-xs" style={{ color: 'var(--color-text-secondary)' }}>{app.reason}</div>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => handleResolve(app.id, true)}
+                  className="rounded-md border px-3 py-1 text-xs font-medium"
+                  style={{ borderColor: 'var(--color-border)', background: 'var(--color-success)', color: '#fff' }}
+                >
+                  Approve
+                </button>
+                <button
+                  onClick={() => handleResolve(app.id, false)}
+                  className="rounded-md border px-3 py-1 text-xs font-medium"
+                  style={{ borderColor: 'var(--color-border)', background: 'var(--color-error)', color: '#fff' }}
+                >
+                  Reject
+                </button>
+              </div>
+            </div>
+          ))}
+          {approvals.length === 0 && (
+            <div className="rounded-md border p-3 text-sm" style={{ borderColor: 'var(--color-border)', color: 'var(--color-text-tertiary)' }}>
+              No pending approvals.
+            </div>
+          )}
+        </div>
+      </ShellPanel>
+    </div>
+  );
 }
 
 const fallbackModes: SiriModeConfig[] = [
