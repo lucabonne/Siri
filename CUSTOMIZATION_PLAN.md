@@ -1,5 +1,34 @@
 # Customization Plan
 
+## Voice Control Phase 4
+
+Phase 4 adds a local CLI/dev bridge for the typed/mock voice flow before any
+real microphone recording is introduced.
+
+- `jarvis voice submit "..."` posts the transcript to
+  `/v1/voice/ptt/submit-transcript` and prints the returned intent preview plus
+  `fsm_state`.
+- Dispatch remains opt-in: the CLI calls `/v1/voice/ptt/dispatch` only when
+  `--approve-dispatch` is present, and it sends `approved=true` through the
+  existing approval-gated endpoint.
+- `jarvis voice cancel` calls `/v1/voice/ptt/cancel` so a local dev session can
+  be reset without touching the UI.
+- `jarvis voice status` reports the current push-to-talk/session state from
+  `/v1/voice/ptt/status`.
+- This command is the future bridge for a Hammerspoon/Fn push-to-talk script:
+  external capture/transcription can hand a transcript to the CLI while the
+  backend keeps the same preview, approval, dispatch, and cancel gates.
+
+Deferred work remains intentionally untouched in this phase:
+
+- no always-on listening
+- no real microphone recording
+- no macOS Fn listener implementation
+- no Whisper/faster-whisper integration
+- no cloud speech APIs
+- no TTS response playback
+- no voice-only mode; text input remains available
+
 ## Voice Control Phase 3
 
 Phase 3 wires the explicit voice-session state machine through the backend and

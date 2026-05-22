@@ -463,6 +463,35 @@ When an agent is configured (e.g., `--agent orchestrator`), non-streaming reques
 
 ---
 
+## `jarvis voice`
+
+Run the local typed/mock voice flow against an already running OpenJarvis API
+server. This is a development bridge for future Hammerspoon/Fn push-to-talk
+automation: an external hotkey/transcription script can submit a transcript
+here, while OpenJarvis keeps the same preview, approval, dispatch, and cancel
+API gates.
+
+```bash
+jarvis voice submit "open notes"                         # Preview only
+jarvis voice submit "open notes" --approve-dispatch      # Preview, then dispatch
+jarvis voice submit "run tests" --agent-id agent-123 --approve-dispatch
+jarvis voice status
+jarvis voice cancel
+```
+
+| Command                 | Description                                      |
+|-------------------------|--------------------------------------------------|
+| `voice submit TEXT`     | POST to `/v1/voice/ptt/submit-transcript` and show the intent preview/session state |
+| `voice submit --approve-dispatch` | Explicitly approve and then POST to `/v1/voice/ptt/dispatch` |
+| `voice status`          | GET `/v1/voice/ptt/status`                       |
+| `voice cancel`          | POST `/v1/voice/ptt/cancel`                      |
+
+This command does not listen in the background, record microphone audio, call a
+cloud speech API, run Whisper/faster-whisper, or play TTS. Text input remains
+available; dispatch is skipped unless `--approve-dispatch` is present.
+
+---
+
 ## LLM-guided spec search (no CLI yet)
 
 LLM-guided spec search (the frontier-driven harness-learning subsystem)

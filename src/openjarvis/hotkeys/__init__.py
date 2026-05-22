@@ -1,6 +1,8 @@
 """Hotkey listener stubs for future push-to-talk activation.
 
 Phase 1 — interface only. Actual macOS Fn / CGEvent listener is deferred.
+Phase 4 adds ``jarvis voice submit`` as the typed/mock transcript bridge that
+future Hammerspoon/Fn automation can call after it obtains a transcript.
 
 Intended flow when implemented:
     Fn key down  → FnKeyPushToTalkListener.on_press()
@@ -10,11 +12,17 @@ Intended flow when implemented:
                      → POST /v1/voice/ptt/transcribe-latest
                      → POST /v1/voice/ptt/dispatch
 
+Typed/mock bridge available before recorder work:
+    external transcript  → jarvis voice submit "..." [--approve-dispatch]
+                         → POST /v1/voice/ptt/submit-transcript
+                         → optional approved POST /v1/voice/ptt/dispatch
+
 Deferred work:
 - CGEventTap / pynput listener for macOS Fn key (requires Accessibility permission)
 - Hotkey configuration (user-settable key combo)
 - Cross-platform support
 - Permission prompting on first launch
+- Real microphone recorder, Whisper/faster-whisper, and TTS wiring
 """
 
 from __future__ import annotations
