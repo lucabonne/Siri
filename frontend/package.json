@@ -9,6 +9,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "build:diagnostics": "node scripts/verify-build-config.mjs",
+    "build:verify": "npm run build:diagnostics && npm run build",
     "build:tauri": "tsc -b && vite build --outDir dist",
     "preview": "vite preview",
     "tauri": "tauri"
@@ -51,8 +53,9 @@
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^4.3.4",
+    "rollup": "4.34.9",
     "typescript": "~5.7.0",
-    "vite": "^6.0.0",
+    "vite": "6.3.5",
     "vite-plugin-pwa": "^1.2.0"
   }
 }

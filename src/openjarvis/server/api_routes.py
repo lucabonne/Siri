@@ -10,14 +10,22 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, HTTPException, Request, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
 
+from openjarvis.personalization.service import router as personalization_router
 from openjarvis.server.agent_workspace_routes import agent_workspace_router
+from openjarvis.server.autonomy_routes import autonomy_router
 from openjarvis.server.coding_assistant_routes import coding_assistant_router
 from openjarvis.server.context_routes import context_router
+from openjarvis.server.desktop_routes import desktop_router
+from openjarvis.server.engineering_routes import engineering_router
 from openjarvis.server.mode_routes import mode_router
 from openjarvis.server.morning_briefing_routes import morning_briefing_router
+from openjarvis.server.notification_routes import notification_router
+from openjarvis.server.packaging_routes import packaging_router
+from openjarvis.server.release_routes import release_router
 from openjarvis.server.repo_index_routes import repo_index_router
+from openjarvis.server.research_routes import research_router
 from openjarvis.server.startup_routes import startup_router
-from openjarvis.server.knowledge_vault_routes import knowledge_vault_router
+from openjarvis.server.workflow_routes import workflow_router
 from openjarvis.server.worldmonitor_routes import worldmonitor_router
 
 logger = logging.getLogger(__name__)
@@ -89,6 +97,33 @@ class VoiceStartRecordingRequest(BaseModel):
 
 class VoiceTranscribeLatestRequest(BaseModel):
     language: str = ""
+
+
+class WakeWordEnableRequest(BaseModel):
+    approved: bool = False
+
+
+class WakeWordTestTriggerRequest(BaseModel):
+    approved: bool = False
+
+
+class HotkeyEnableRequest(BaseModel):
+    approved: bool = True
+    binding: str = ""
+    fallback: str = ""
+
+
+class HotkeyTestTriggerRequest(BaseModel):
+    approved: bool = True
+
+
+class TTSSpeakApiRequest(BaseModel):
+    text: str
+    voice_id: str = ""
+    engine: str = ""
+    user_triggered: bool = True
+    allow_quiet: bool = False
+    speed: float = 1.0
 
 
 # ---- Agent routes ----
@@ -1083,6 +1118,299 @@ async def transcribe_latest_voice(
         raise _voice_error(exc) from exc
 
 
+# ---- Local wake word routes ----
+
+wake_word_router = APIRouter(prefix="/v1/voice/wake-word", tags=["voice"])
+
+
+def _get_wake_word_service(request: Request):
+    service = getattr(request.app.state, "wake_word_service", None)
+    if service is not None:
+        return service
+
+    from openjarvis.security.permissions import PermissionMiddleware
+    from openjarvis.voice.wake_word import WakeWordService
+
+    mode_registry = getattr(request.app.state, "mode_registry", None)
+    permission_middleware = getattr(
+        request.app.state,
+        "permission_middleware",
+        None,
+    )
+    if permission_middleware is None:
+        permission_middleware = PermissionMiddleware(mode_registry=mode_registry)
+        request.app.state.permission_middleware = permission_middleware
+
+    service = WakeWordService(
+        config=getattr(request.app.state, "config", None),
+        voice_service=_get_voice_ptt_service(request),
+        mode_registry=mode_registry,
+        permission_middleware=permission_middleware,
+    )
+    request.app.state.wake_word_service = service
+    return service
+
+
+@wake_word_router.get("/status")
+async def wake_word_status(request: Request):
+    """Return wake word detection status."""
+    return _get_wake_word_service(request).status()
+
+
+@wake_word_router.post("/enable")
+async def enable_wake_word(req: WakeWordEnableRequest, request: Request):
+    """Enable local wake word detection."""
+    try:
+        return _get_wake_word_service(request).enable(explicit_approval=req.approved)
+    except Exception as exc:
+        raise _voice_error(exc) from exc
+
+
+@wake_word_router.post("/disable")
+async def disable_wake_word(request: Request):
+    """Disable local wake word detection."""
+    try:
+        return _get_wake_word_service(request).disable()
+    except Exception as exc:
+        raise _voice_error(exc) from exc
+
+
+@wake_word_router.post("/test-trigger")
+async def test_wake_word_trigger(req: WakeWordTestTriggerRequest, request: Request):
+    """Test wake word detection manually."""
+    try:
+        return _get_wake_word_service(request).test_trigger(
+            explicit_approval=req.approved
+        )
+    except Exception as exc:
+        raise _voice_error(exc) from exc
+
+
+# ---- Global voice hotkey routes ----
+
+hotkey_router = APIRouter(prefix="/v1/hotkeys", tags=["hotkeys"])
+
+
+def _get_hotkey_service(request: Request):
+    service = getattr(request.app.state, "hotkey_service", None)
+    if service is not None:
+        return service
+
+    from openjarvis.hotkeys import GlobalVoiceHotkeyService
+    from openjarvis.security.permissions import PermissionMiddleware
+
+    mode_registry = getattr(request.app.state, "mode_registry", None)
+    permission_middleware = getattr(
+        request.app.state,
+        "permission_middleware",
+        None,
+    )
+    if permission_middleware is None:
+        permission_middleware = PermissionMiddleware(mode_registry=mode_registry)
+        request.app.state.permission_middleware = permission_middleware
+
+    service = GlobalVoiceHotkeyService(
+        config=getattr(request.app.state, "config", None),
+        voice_service=_get_voice_ptt_service(request),
+        tts_service=getattr(request.app.state, "tts_service", None),
+        permission_middleware=permission_middleware,
+        mode_registry=mode_registry,
+        desktop_service=getattr(request.app.state, "desktop_service", None),
+    )
+    request.app.state.hotkey_service = service
+    return service
+
+
+def _hotkey_error(exc: Exception) -> HTTPException:
+    from openjarvis.hotkeys import HotkeyListenerUnavailableError, HotkeyPermissionError
+
+    if isinstance(exc, HotkeyPermissionError):
+        return HTTPException(
+            status_code=403,
+            detail={"status": "blocked", "reason": str(exc)},
+        )
+    if isinstance(exc, HotkeyListenerUnavailableError):
+        return HTTPException(status_code=503, detail=str(exc))
+    return HTTPException(status_code=500, detail=str(exc))
+
+
+@hotkey_router.get("/status")
+async def hotkey_status(request: Request):
+    """Return global voice trigger status."""
+    return _get_hotkey_service(request).status()
+
+
+@hotkey_router.post("/enable")
+async def enable_hotkey(req: HotkeyEnableRequest, request: Request):
+    """Enable explicit system-level voice trigger listening."""
+    service = _get_hotkey_service(request)
+    try:
+        binding = None
+        if req.binding or req.fallback:
+            from openjarvis.hotkeys import HotkeyBinding
+
+            current = service.current_binding()
+            binding = HotkeyBinding.from_config(
+                getattr(request.app.state, "config", None)
+            )
+            if req.binding:
+                binding.keys = [
+                    part.strip().lower().replace("control", "ctrl")
+                    for part in req.binding.replace("-", "+").split("+")
+                    if part.strip()
+                ]
+                binding.display_name = "+".join(part.title() for part in binding.keys)
+                binding.kind = "fn_hold" if binding.keys == ["fn"] else "hotkey_hold"
+            if req.fallback:
+                binding.fallback_keys = [
+                    part.strip().lower().replace("control", "ctrl")
+                    for part in req.fallback.replace("-", "+").split("+")
+                    if part.strip()
+                ]
+                binding.fallback_display_name = "+".join(
+                    part.title() for part in binding.fallback_keys
+                )
+            if not req.binding and current.get("keys"):
+                binding.keys = list(current["keys"])
+            if not req.fallback and current.get("fallback_keys"):
+                binding.fallback_keys = list(current["fallback_keys"])
+        return service.enable(binding=binding, explicit_approval=req.approved)
+    except Exception as exc:
+        raise _hotkey_error(exc) from exc
+
+
+@hotkey_router.post("/disable")
+async def disable_hotkey(request: Request):
+    """Disable global voice trigger listening."""
+    try:
+        return _get_hotkey_service(request).disable()
+    except Exception as exc:
+        raise _hotkey_error(exc) from exc
+
+
+@hotkey_router.get("/binding")
+async def hotkey_binding(request: Request):
+    """Return the current voice trigger binding."""
+    return _get_hotkey_service(request).current_binding()
+
+
+@hotkey_router.post("/test-trigger")
+async def test_hotkey_trigger(req: HotkeyTestTriggerRequest, request: Request):
+    """Test the hotkey route without opening the microphone."""
+    try:
+        return _get_hotkey_service(request).test_trigger(
+            explicit_approval=req.approved
+        )
+    except Exception as exc:
+        raise _hotkey_error(exc) from exc
+
+
+# ---- Local voice output routes ----
+
+tts_router = APIRouter(prefix="/v1/tts", tags=["tts"])
+
+
+def _get_tts_service(request: Request):
+    service = getattr(request.app.state, "tts_service", None)
+    if service is not None:
+        return service
+
+    from openjarvis.agent_workspace import AgentWorkspaceRegistry
+    from openjarvis.security.permissions import PermissionMiddleware
+    from openjarvis.tts import LocalTTSService
+
+    mode_registry = getattr(request.app.state, "mode_registry", None)
+    workspace_registry = getattr(
+        request.app.state,
+        "agent_workspace_registry",
+        None,
+    )
+    if workspace_registry is None:
+        workspace_registry = AgentWorkspaceRegistry()
+        request.app.state.agent_workspace_registry = workspace_registry
+    permission_middleware = getattr(
+        request.app.state,
+        "permission_middleware",
+        None,
+    )
+    if permission_middleware is None:
+        permission_middleware = PermissionMiddleware(mode_registry=mode_registry)
+        request.app.state.permission_middleware = permission_middleware
+
+    service = LocalTTSService(
+        permission_middleware=permission_middleware,
+        mode_registry=mode_registry,
+        agent_workspace_registry=workspace_registry,
+        context_layer=getattr(request.app.state, "context_layer", None),
+        memory_service=getattr(request.app.state, "structured_memory_service", None),
+        voice_service=getattr(request.app.state, "voice_ptt_service", None),
+    )
+    request.app.state.tts_service = service
+    return service
+
+
+def _tts_error(exc: Exception) -> HTTPException:
+    from openjarvis.tts import TTSPermissionError, TTSUnavailableError
+
+    if isinstance(exc, TTSPermissionError):
+        return HTTPException(
+            status_code=403,
+            detail={"status": "blocked", "reason": str(exc)},
+        )
+    if isinstance(exc, TTSUnavailableError):
+        return HTTPException(status_code=503, detail=str(exc))
+    return HTTPException(status_code=500, detail=str(exc))
+
+
+@tts_router.post("/speak")
+async def speak_tts(req: TTSSpeakApiRequest, request: Request):
+    """Speak text through a local-only TTS engine."""
+    service = _get_tts_service(request)
+    try:
+        speech = service.speak(
+            req.text,
+            voice_id=req.voice_id,
+            engine=req.engine,
+            user_triggered=req.user_triggered,
+            allow_quiet=req.allow_quiet,
+            speed=req.speed,
+        )
+        return {"status": service.status(), "speech": speech.to_dict()}
+    except Exception as exc:
+        raise _tts_error(exc) from exc
+
+
+@tts_router.post("/stop")
+async def stop_tts(request: Request):
+    """Stop active local voice output."""
+    service = _get_tts_service(request)
+    try:
+        speech = service.stop()
+        return {
+            "status": service.status(),
+            "speech": speech.to_dict() if speech is not None else None,
+        }
+    except Exception as exc:
+        raise _tts_error(exc) from exc
+
+
+@tts_router.get("/status")
+async def tts_status(request: Request):
+    """Return local voice output status."""
+    return _get_tts_service(request).status()
+
+
+@tts_router.get("/voices")
+async def tts_voices(request: Request):
+    """List local voice output voices."""
+    voices = _get_tts_service(request).voices()
+    return {
+        "local_only": True,
+        "cloud_tts_enabled": False,
+        "voices": [voice.to_dict() for voice in voices],
+    }
+
+
 # ---- Feedback routes ----
 
 feedback_router = APIRouter(prefix="/v1/feedback", tags=["feedback"])
@@ -1195,6 +1523,9 @@ def include_all_routes(app) -> None:
     app.include_router(learning_router)
     app.include_router(speech_router)
     app.include_router(voice_router)
+    app.include_router(wake_word_router)
+    app.include_router(hotkey_router)
+    app.include_router(tts_router)
     app.include_router(feedback_router)
     app.include_router(optimize_router)
     app.include_router(agent_workspace_router)
@@ -1202,10 +1533,18 @@ def include_all_routes(app) -> None:
     app.include_router(morning_briefing_router)
     app.include_router(startup_router)
     app.include_router(worldmonitor_router)
+    app.include_router(notification_router)
+    app.include_router(packaging_router)
+    app.include_router(release_router)
+    app.include_router(research_router)
     app.include_router(context_router)
+    app.include_router(desktop_router)
+    app.include_router(engineering_router)
     app.include_router(repo_index_router)
     app.include_router(coding_assistant_router)
-    app.include_router(knowledge_vault_router)
+    app.include_router(workflow_router)
+    app.include_router(personalization_router)
+    app.include_router(autonomy_router)
 
     # Agent Manager routes (if available)
     try:
@@ -1254,11 +1593,18 @@ __all__ = [
     "learning_router",
     "speech_router",
     "voice_router",
+    "wake_word_router",
+    "hotkey_router",
+    "tts_router",
     "feedback_router",
     "optimize_router",
     "agent_workspace_router",
     "coding_assistant_router",
     "mode_router",
+    "packaging_router",
     "repo_index_router",
-    "knowledge_vault_router",
+    "release_router",
+    "research_router",
+    "workflow_router",
+    "autonomy_router",
 ]

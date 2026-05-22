@@ -8,6 +8,7 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel
 
 from openjarvis.morning_briefing import MorningBriefingService, PrivacyModeError
+from openjarvis.server.notification_routes import get_notification_service
 from openjarvis.server.worldmonitor_routes import get_worldmonitor_service
 
 morning_briefing_router = APIRouter(
@@ -142,6 +143,13 @@ async def regenerate_briefing(body: RegenerateBriefingRequest, request: Request)
         )
     except PrivacyModeError as exc:
         raise HTTPException(status_code=403, detail=str(exc))
+    try:
+        get_notification_service(request).notify_morning_briefing_ready(
+            briefing,
+            privacy_mode=privacy,
+        )
+    except Exception:
+        pass
     return {
         "briefing": briefing.to_dict(),
         "privacy_mode": privacy,

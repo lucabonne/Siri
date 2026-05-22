@@ -30,6 +30,7 @@ from openjarvis.cli.mine_cmd import mine
 from openjarvis.cli.model import model
 from openjarvis.cli.operators_cmd import operators
 from openjarvis.cli.optimize_cmd import optimize_group
+from openjarvis.cli.packaging_cmd import package_cmd
 from openjarvis.cli.pearl_cmd import pearl
 from openjarvis.cli.quickstart_cmd import quickstart
 from openjarvis.cli.registry_cmd import registry
@@ -101,6 +102,7 @@ cli.add_command(eval_group, "eval")
 cli.add_command(host, "host")
 cli.add_command(quickstart, "quickstart")
 cli.add_command(optimize_group, "optimize")
+cli.add_command(package_cmd, "package")
 cli.add_command(feedback_group, "feedback")
 cli.add_command(compose, "compose")
 cli.add_command(gateway, "gateway")

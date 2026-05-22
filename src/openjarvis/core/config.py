@@ -1291,6 +1291,9 @@ class SpeechConfig:
     persist_raw_audio: bool = False
     max_recording_seconds: int = 120
     macos_input_device: str = ":0"
+    global_voice_trigger_enabled: bool = False
+    global_voice_trigger_binding: str = "fn"
+    global_voice_trigger_fallback: str = "ctrl+space"
 
 
 @dataclass(slots=True)
@@ -1960,6 +1963,9 @@ require_explicit_voice_approval = true
 persist_raw_audio = false
 max_recording_seconds = 120
 macos_input_device = ":0" # ffmpeg avfoundation input, e.g. ":0"
+global_voice_trigger_enabled = false
+global_voice_trigger_binding = "fn"
+global_voice_trigger_fallback = "ctrl+space"
 
 [security]
 enabled = true

@@ -1,174 +1,125 @@
-<div align="center">
-  <img alt="OpenJarvis" src="assets/OpenJarvis_Horizontal_Logo.png" width="400">
+# Siri Layer
 
-  <p><i>Personal AI, On Personal Devices.</i></p>
+Personal AI on personal devices.
 
-  <p>
-    <a href="https://scalingintelligence.stanford.edu/blogs/openjarvis/"><img src="https://img.shields.io/badge/project-OpenJarvis-blue" alt="Project"></a>
-    <a href="https://open-jarvis.github.io/OpenJarvis/"><img src="https://img.shields.io/badge/docs-mkdocs-blue" alt="Docs"></a>
-    <img src="https://img.shields.io/badge/python-%3E%3D3.10-blue" alt="Python">
-    <img src="https://img.shields.io/badge/license-Apache%202.0-green" alt="License">
-    <a href="https://discord.gg/YZZRxCAhmm"><img src="https://img.shields.io/badge/discord-join-7289da?logo=discord&logoColor=white" alt="Discord"></a>
-  </p>
-</div>
+Siri Layer is a customized local-first AI operating layer built from OpenJarvis. It is designed to run as a private assistant environment for coding, research, desktop awareness, automation, memory, and agent workflows.
 
----
+The project keeps the original internal package and command structure stable while changing the visible product layer into Siri.
 
-> **[Documentation](https://open-jarvis.github.io/OpenJarvis/)**
->
-> **[Project Site](https://scalingintelligence.stanford.edu/blogs/openjarvis/)**
->
-> **[Leaderboard](https://open-jarvis.github.io/OpenJarvis/leaderboard/)**
->
-> **[Roadmap](https://open-jarvis.github.io/OpenJarvis/development/roadmap/)**
+## What this build includes
 
-## Why OpenJarvis?
+### Mission Control
 
-Personal AI agents are exploding in popularity, but nearly all of them still route intelligence through cloud APIs. Your "personal" AI continues to depend on someone else's server. At the same time, our [Intelligence Per Watt](https://www.intelligence-per-watt.ai/) research showed that local language models already handle 88.7% of single-turn chat and reasoning queries, with intelligence efficiency improving 5.3× from 2023 to 2025. The models and hardware are increasingly ready. What has been missing is the software stack to make local-first personal AI practical.
+Mission Control is the central dashboard for controlling the system.
 
-OpenJarvis is that stack. It is an opinionated framework for local-first personal AI, built around three core ideas: shared primitives for building on-device agents; evaluations that treat energy, FLOPs, latency, and dollar cost as first-class constraints alongside accuracy; and a learning loop that improves models using local trace data. The goal is simple: make it possible to build personal AI agents that run locally by default, calling the cloud only when truly necessary. OpenJarvis aims to be both a research platform and a production foundation for local AI, in the spirit of PyTorch.
+Current sections include:
 
-## Installation
+- Home
+- Today
+- World Map
+- Tasks
+- Agents
+- Memory
+- Projects
+- Terminal
+- Research
+- Settings
+- Permissions
 
-```bash
-curl -fsSL https://openjarvis.ai/install.sh | bash
-```
+### Local-first agent workspace
 
-That's it. The installer handles everything: uv, the Python venv, Ollama, and pulling a small starter model. About 3 minutes on a typical broadband connection. Then:
+The build is structured around a main orchestrator with specialized agents:
 
-```bash
-jarvis
-```
+- Coding Agent
+- Research Agent
+- Engineering Agent
+- Privacy and Security Agent
+- Scheduler Agent
+- CAD Agent
+- Terminal Agent
 
-The Rust extension and bigger models continue downloading in the background while you chat. Run `jarvis doctor` to see status.
+### Permission system
 
-**Platforms:** macOS (Intel + Apple Silicon), Linux, WSL2 on Windows.
+The permission model has four levels:
 
-**Manual install / contributors:** see [docs/getting-started/install.md](docs/getting-started/install.md).
+| Level | Name | Purpose |
+|---|---|---|
+| 0 | Read-only | Analyze, summarize, inspect files, review context |
+| 1 | Safe actions | Create notes, draft changes, prepare commands |
+| 2 | Confirmed execution | Run shell commands, modify files, install packages, commit changes |
+| 3 | Dangerous actions | Requires explicit confirmation for destructive or sensitive operations |
 
-## Quick Start
+Destructive commands are blocked unless explicit confirmation is provided.
 
-```bash
-curl -fsSL https://openjarvis.ai/install.sh | bash
-jarvis
-```
+### Packaging and release layer
 
-`jarvis init --preset <name>` switches to a starter config. Available presets: `morning-digest-mac`, `morning-digest-linux`, `morning-digest-minimal`, `deep-research`, `code-assistant`, `scheduled-monitor`, `chat-simple`.
+The build includes the first release and installer foundation:
 
-## Starter Configs
+- macOS install script
+- macOS uninstall script
+- app packaging script
+- release diagnostics script
+- backend packaging models
+- packaging service updates
+- release service updates
+- packaging API routes
+- packaging and release tests
 
-Install any preset with one command:
+### Developer tools
 
-```bash
-uv run jarvis init --preset morning-digest-mac   # or any preset below
-```
+The developer layer is intended to support:
 
-> Prefix every `jarvis ...` invocation with `uv run`, or activate the venv first (`source .venv/bin/activate`) so plain `jarvis ...` works for the rest of your shell session.
+- Repo analysis
+- Architecture maps
+- Semantic search
+- Test running
+- Terminal error explanation
+- Java, Fabric, Gradle, and Minecraft mod workflows
+- Live debugging hooks
 
-| Preset | Use Case | What it does |
-|--------|----------|-------------|
-| `morning-digest-mac` | Daily Briefing (Mac) | Spoken briefing from email, calendar, health, news with Jarvis voice |
-| `morning-digest-linux` | Daily Briefing (Linux) | Same, with vLLM support for GPU servers |
-| `morning-digest-minimal` | Daily Briefing (minimal) | Just Gmail + Calendar, runs on any machine |
-| `deep-research` | Research Assistant | Multi-hop research across indexed docs with citations |
-| `code-assistant` | Code Companion | Agent with code execution, file I/O, and shell access |
-| `scheduled-monitor` | Persistent Monitor | Stateful agent that runs on a schedule with memory |
-| `chat-simple` | Simple Chat | Lightweight conversation, no tools needed |
+### Memory and knowledge system
 
-```bash
-# Example: Morning Digest on Mac
-uv run jarvis init --preset morning-digest-mac
-uv run jarvis connect gdrive          # one OAuth flow covers Gmail, Calendar, Tasks
-uv run jarvis digest --fresh          # generate and play your first briefing
+The planned memory layer combines structured and semantic memory:
 
-# Example: Deep Research
-uv run jarvis init --preset deep-research
-uv run jarvis memory index ./docs/    # requires the Rust extension — see Setup above
-uv run jarvis ask "Summarize all emails about Project X"
-```
+- SQLite structured memory
+- Vector database semantic memory
+- File and project index
+- Source and citation storage
+- Navigable memory UI
 
-### Skills
+### Automation layer
 
-Skills teach agents how to better use tools and improve their reasoning. Every skill is a tool — agents discover them from a catalog and invoke them on demand.
+The automation layer is designed for controlled local actions:
 
-```bash
-# Install skills from public sources
-jarvis skill install hermes:arxiv
-jarvis skill sync hermes --category research
+- Shell execution
+- File operations
+- App control
+- Browser/search tools
+- OS actions
+- Permission gates
+- Dry-run previews
+- Execution logs
 
-# Use skills with any agent
-jarvis ask "Use the code-explainer skill to explain this Python code: for i in range(5): print(i*2)"
+## Internal naming note
 
-# Optimize skills from your trace history
-jarvis optimize skills --policy dspy
+Visible UI branding is being changed to Siri Layer.
 
-# Benchmark the impact
-jarvis bench skills --max-samples 5 --seeds 42
-```
+Internal names such as Python packages, CLI commands, imports, folders, and backend identifiers may still use OpenJarvis or Jarvis for compatibility. These should not be renamed until the migration is planned and tested.
 
-Import from [Hermes Agent](https://github.com/NousResearch/hermes-agent) (~150 skills), [OpenClaw](https://github.com/openclaw/skills) (~13,700 community skills), or any GitHub repo. Skills follow the [agentskills.io](https://agentskills.io/specification) open standard.
+## Project direction
 
-See the [Skills User Guide](https://open-jarvis.github.io/OpenJarvis/user-guide/skills/) and [Skills Tutorial](https://open-jarvis.github.io/OpenJarvis/tutorials/skills-workflow/) for details.
+### Product path
 
-### Built-in Agents
+Installer, notarization, updater, and release app.
 
-| Agent | Type | What it does |
-|-------|------|-------------|
-| `morning_digest` | Scheduled | Daily briefing from email, calendar, health, news — with TTS audio |
-| `deep_research` | On-demand | Multi-hop research with citations across web and local docs |
-| `monitor_operative` | Continuous | Long-horizon monitoring with memory, compression, and retrieval |
-| `orchestrator` | On-demand | Multi-turn reasoning with automatic tool selection |
-| `native_react` | On-demand | ReAct (Thought-Action-Observation) loop agent |
-| `operative` | Continuous | Persistent autonomous agent with state management |
-| `native_openhands` | On-demand | CodeAct — generates and executes Python code |
-| `simple` | On-demand | Single-turn chat, no tools |
+### Interaction path
 
-See the [User Guide](https://open-jarvis.github.io/OpenJarvis/user-guide/morning-digest/) and [Tutorials](https://open-jarvis.github.io/OpenJarvis/tutorials/) for detailed setup instructions.
+Voice control, wake word or push-to-talk, personalization, and adaptive profiles.
 
-Full documentation — including Docker deployment, cloud engines, development setup, and tutorials — at **[open-jarvis.github.io/OpenJarvis](https://open-jarvis.github.io/OpenJarvis/)**.
+### Intelligence path
 
-## Contributing
+Advanced planners, autonomy, long-horizon tasks, and agent coordination.
 
-We welcome contributions! See the [Contributing Guide](CONTRIBUTING.md) for incentives, contribution types, and the PR process.
+### Workspace path
 
-Quick start for contributors:
-
-```bash
-git clone https://github.com/open-jarvis/OpenJarvis.git
-cd OpenJarvis
-uv sync --extra dev
-uv run pre-commit install
-uv run pytest tests/ -v
-```
-
-Browse the [Roadmap](https://open-jarvis.github.io/OpenJarvis/development/roadmap/) for areas where help is needed. Comment **"take"** on any issue to get auto-assigned.
-
-## About
-
-OpenJarvis is part of [Intelligence Per Watt](https://www.intelligence-per-watt.ai/), a research initiative studying the efficiency of on-device AI systems. The project is developed at [Hazy Research](https://hazyresearch.stanford.edu/) and the [Scaling Intelligence Lab](https://scalingintelligence.stanford.edu/) at [Stanford SAIL](https://ai.stanford.edu/).
-
-## Sponsors
-
-<p>
-  <a href="https://www.laude.org/">Laude Institute</a> &bull;
-  <a href="https://datascience.stanford.edu/marlowe">Stanford Marlowe</a> &bull;
-  <a href="https://cloud.google.com/">Google Cloud Platform</a> &bull;
-  <a href="https://lambda.ai/">Lambda Labs</a> &bull;
-  <a href="https://ollama.com/">Ollama</a> &bull;
-  <a href="https://research.ibm.com/">IBM Research</a> &bull;
-  <a href="https://hai.stanford.edu/">Stanford HAI</a>
-</p>
-
-## Citation
-```bibtex
-@misc{saadfalcon2026openjarvis,
-  title={OpenJarvis: Personal AI, On Personal Devices},
-  author={Jon Saad-Falcon and Avanika Narayan and Herumb Shandilya and Hakki Orhun Akengin and Robby Manihani and Gabriel Bo and John Hennessy and Christopher R\'{e} and Azalia Mirhoseini},
-  year={2026},
-  howpublished={\url{https://scalingintelligence.stanford.edu/blogs/openjarvis/}},
-}
-```
-
-## License
-
-[Apache 2.0](LICENSE)
+CAD expansion, engineering tools, simulations, and project-specific assistants.

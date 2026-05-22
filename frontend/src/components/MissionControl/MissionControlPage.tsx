@@ -20,13 +20,16 @@ import {
   FolderGit2,
   Gauge,
   GitBranch,
+  History,
   Image,
+  Keyboard,
   LockKeyhole,
   Mic2,
   Package,
   Pin,
+  Play,
+  Power,
   Plus,
-  Radar,
   RefreshCw,
   Search,
   ShieldAlert,
@@ -34,6 +37,10 @@ import {
   Square,
   TerminalSquare,
   Trash2,
+  Volume2,
+  VolumeX,
+  Workflow,
+  Wrench,
   XCircle,
 } from 'lucide-react';
 import {
@@ -41,47 +48,73 @@ import {
   captureVisionScreenshot,
   decideSecurityApproval,
   deleteMemory,
+  disableHotkey,
+  enableHotkey,
   fetchCodingPanel,
   fetchBriefingStatus,
+  fetchDesktopStatus,
+  fetchEngineeringProjectSummary,
+  fetchEngineeringStatus,
+  fetchHotkeyStatus,
   fetchLatestVisualContext,
   fetchLocalContextSnapshot,
   fetchLatestMorningBriefing,
   fetchMorningEvents,
   fetchPermissionAudit,
   fetchRepoSummary,
+  fetchReleaseMissionControl,
   fetchRecentVisionScreenshots,
+  fetchResearchCitations,
+  fetchResearchMemoryEntries,
+  fetchResearchReport,
+  fetchResearchStatus,
   fetchStartupStatus,
   fetchSecurityApprovals,
   fetchTerminalContext,
+  fetchTTSStatus,
+  fetchTTSVoices,
   fetchVoicePttStatus,
   fetchWorldEvents,
   fetchWorldMonitorStatus,
   fetchWorldMonitorSyncStatus,
+  fetchWorkflowPanel,
   listWorkspaceAgents,
   listSiriModes,
   listMemories,
+  listResearch,
+  openEngineeringProject,
   installStartup,
   regenerateMorningBriefing,
   removeStartup,
   requestTerminalCommandApproval,
+  runReleaseRecoveryAction,
   searchRepoIndex,
   searchMemory,
   setMemoryPinned,
+  startResearch,
+  runWorkflow,
   startVoicePttRecording,
+  speakTTS,
   switchActiveWorkspaceAgent,
   switchActiveSiriMode,
   triggerStartupMorningBriefing,
   stopVoicePttRecording,
+  stopTTS,
   syncWorldMonitor,
+  testHotkeyTrigger,
   transcribeLatestVoiceRecording,
-  fetchKnowledgeNotes,
-  createKnowledgeNote,
-  deleteKnowledgeNote,
-  pinKnowledgeNote,
-  fetchVaultTags,
-  getDailyNote,
-  searchKnowledgeVault,
-  exportVault,
+  fetchPersonalizationStatus,
+  listProfiles,
+  switchActiveProfile,
+  createProfile,
+  fetchAutonomyApprovals,
+  resolveAutonomyApproval,
+  createAutonomyGoal,
+  generateAutonomyPlan,
+  startAutonomyPlan,
+  pauseAutonomyPlan,
+  resumeAutonomyPlan,
+  stopAutonomyPlan,
 } from '../../lib/api';
 import type {
   MemorySearchResult,
@@ -92,16 +125,38 @@ import type {
   SiriModeConfig,
   StructuredMemory,
   TerminalContextSnapshot,
+  TTSStatus,
+  TTSVoice,
   VisualContext,
   VoicePttStatus,
   WorkspaceAgentConfig,
   CodingPanelSnapshot,
   BriefingStatus,
   DailyBriefing,
+  DesktopStatus,
+  EngineeringProjectSummary,
+  EngineeringStatus,
+  HotkeyStatus,
   MorningEvent,
+  ResearchReport,
+  ResearchSession,
+  ResearchSource,
+  ReleaseMissionControlSnapshot,
+  ReleaseRecoveryResult,
   StartupStatus,
   WorldMonitorStatus,
   WorldMonitorSyncStatus,
+  WorkflowDefinition,
+  WorkflowPanelSnapshot,
+  WorkflowRun,
+  Profile,
+  ProfileStatus,
+  Preferences,
+  AutonomyApprovalRequest,
+  AutonomyGoal,
+  AutonomyPlan,
+  AutonomyPlanStep,
+  AutonomyExecutionState,
 } from '../../lib/api';
 import type {
   KnowledgeNote,
@@ -275,6 +330,181 @@ function ContextTile({
           {detail}
         </div>
       )}
+    </div>
+  );
+}
+
+function DesktopSection() {
+  const [status, setStatus] = useState<DesktopStatus | null>(null);
+  const [live, setLive] = useState(false);
+
+  const refresh = async () => {
+    try {
+      const data = await fetchDesktopStatus();
+      setStatus(data);
+      setLive(true);
+    } catch {
+      setLive(false);
+    }
+  };
+
+  useEffect(() => {
+    refresh();
+  }, []);
+
+  const openApps = status?.open_apps ?? [];
+  const recentLaunches = status?.recent_launches ?? [];
+  const focus = status?.focused_workspace;
+  const launcher = status?.launcher_state;
+  const notifications = status?.notification_state;
+  const tray = status?.tray_state;
+  const packaging = status?.integrations?.packaging as
+    | {
+        status?: string;
+        app_bundle_exists?: boolean;
+        install_readiness?: { ready?: boolean; blockers?: string[] };
+        app_bundle_path?: string;
+      }
+    | undefined;
+
+  return (
+    <div className="grid gap-4 xl:grid-cols-[1fr_0.9fr]">
+      <ShellPanel title="Desktop Layer" action={live ? 'Live local status' : 'Fallback unavailable'}>
+        <div className="grid gap-3 md:grid-cols-3">
+          <ContextTile
+            icon={<AppWindow size={14} />}
+            label="Active App"
+            value={status?.active_application?.name || status?.active_window.application_name || 'Unavailable'}
+            detail={status?.active_window.title || 'No active window title'}
+          />
+          <ContextTile
+            icon={<FolderGit2 size={14} />}
+            label="Focused Workspace"
+            value={focus?.name || 'No workspace'}
+            detail={focus?.path ? compactPath(focus.path) : 'Session or cwd focus'}
+          />
+          <ContextTile
+            icon={<ShieldCheck size={14} />}
+            label="Privacy"
+            value={status?.privacy_mode ? 'Privacy Mode' : 'Local only'}
+            detail={status?.telemetry_enabled ? 'Telemetry enabled' : 'No telemetry'}
+          />
+        </div>
+        <div className="mt-4 flex items-center justify-between gap-3">
+          <div className="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+            Launches are explicit only; no background desktop monitor is active.
+          </div>
+          <button
+            type="button"
+            onClick={refresh}
+            className="flex h-9 w-9 items-center justify-center rounded-md border transition-colors"
+            style={{
+              borderColor: 'var(--color-border)',
+              color: 'var(--color-text-secondary)',
+              background: 'var(--color-bg-secondary)',
+            }}
+            title="Refresh desktop"
+          >
+            <RefreshCw size={16} />
+          </button>
+        </div>
+      </ShellPanel>
+
+      <ShellPanel title="Open Apps" action={`${openApps.length} visible`}>
+        <div className="space-y-2">
+          {(openApps.length ? openApps.slice(0, 8) : [{ name: 'No apps reported', frontmost: false }]).map((app) => (
+            <div
+              key={`${app.name}-${'process_id' in app ? app.process_id ?? '' : ''}`}
+              className="flex items-center justify-between gap-3 rounded-md border px-3 py-2"
+              style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg-secondary)' }}
+            >
+              <span className="min-w-0 truncate text-sm font-medium" style={{ color: 'var(--color-text)' }}>
+                {app.name}
+              </span>
+              {'frontmost' in app && app.frontmost ? <StatusPill tone="good">Active</StatusPill> : null}
+            </div>
+          ))}
+        </div>
+      </ShellPanel>
+
+      <ShellPanel title="Focused Workspace" action={focus?.source || 'cwd'}>
+        <div className="grid gap-3 md:grid-cols-2">
+          <ContextTile icon={<Code2 size={14} />} label="Project Type" value={focus?.project_type || 'unknown'} />
+          <ContextTile icon={<GitBranch size={14} />} label="Branch" value={focus?.current_branch || 'No branch'} />
+        </div>
+        <div className="mt-3 rounded-md border p-3 text-sm" style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg-secondary)', color: 'var(--color-text-secondary)' }}>
+          {focus?.path || 'No focused project has been resolved yet.'}
+        </div>
+      </ShellPanel>
+
+      <ShellPanel title="Wrapper Status" action={status?.local_only ? 'local only' : 'unavailable'}>
+        <div className="grid gap-3 md:grid-cols-4">
+          <ContextTile
+            icon={<Power size={14} />}
+            label="Launcher"
+            value={`${launcher?.backend_status || 'stopped'} / ${launcher?.frontend_status || 'stopped'}`}
+            detail={
+              launcher?.startup_diagnostics?.length
+                ? `${launcher.startup_diagnostics.length} startup checks`
+                : launcher?.last_action || 'Backend and frontend helpers'
+            }
+          />
+          <ContextTile
+            icon={<ShieldAlert size={14} />}
+            label="Notifications"
+            value={`${notifications?.recent.length ?? 0} local`}
+            detail={notifications?.autonomous_notifications ? 'Autonomous enabled' : 'User-triggered only'}
+          />
+          <ContextTile
+            icon={<Mic2 size={14} />}
+            label="Menu Bar"
+            value={tray?.voice_trigger_enabled ? 'Voice trigger on' : 'Voice trigger off'}
+            detail={`${tray?.items.length ?? 0} actions · ${tray?.pending_notifications ?? 0} pending`}
+          />
+          <ContextTile
+            icon={<Package size={14} />}
+            label="Package"
+            value={packaging?.install_readiness?.ready ? 'Install ready' : packaging?.status || 'Unchecked'}
+            detail={
+              packaging?.app_bundle_exists
+                ? compactPath(packaging.app_bundle_path || '')
+                : `${packaging?.install_readiness?.blockers?.length ?? 0} blockers`
+            }
+          />
+        </div>
+      </ShellPanel>
+
+      <ShellPanel title="Recent Launches" action={`${recentLaunches.length} local`}>
+        <div className="space-y-2">
+          {(recentLaunches.length ? recentLaunches.slice(0, 6) : []).map((launch) => (
+            <div
+              key={`${launch.action}-${launch.target}-${launch.launched_at}`}
+              className="grid gap-1 rounded-md border p-3"
+              style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg-secondary)' }}
+            >
+              <div className="flex items-center justify-between gap-3">
+                <span className="flex min-w-0 items-center gap-2 text-sm font-medium" style={{ color: 'var(--color-text)' }}>
+                  <Play size={14} />
+                  <span className="truncate">{launch.action.replace(/_/g, ' ')}</span>
+                </span>
+                <StatusPill tone={launch.status === 'launched' ? 'good' : 'watch'}>{launch.status}</StatusPill>
+              </div>
+              <div className="truncate text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+                {launch.workspace_path || launch.app_name || launch.target}
+              </div>
+              <div className="flex items-center gap-2 text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+                <History size={12} />
+                {formatTime(launch.launched_at)}
+              </div>
+            </div>
+          ))}
+          {!recentLaunches.length && (
+            <div className="rounded-md border p-3 text-sm" style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg-secondary)', color: 'var(--color-text-secondary)' }}>
+              Recent explicit launches will appear here.
+            </div>
+          )}
+        </div>
+      </ShellPanel>
     </div>
   );
 }
@@ -1372,6 +1602,167 @@ function RepoSection() {
   );
 }
 
+function EngineeringSection() {
+  const [status, setStatus] = useState<EngineeringStatus | null>(null);
+  const [summary, setSummary] = useState<EngineeringProjectSummary | null>(null);
+  const [state, setState] = useState<'loading' | 'ready' | 'offline'>('loading');
+  const [error, setError] = useState('');
+
+  const loadEngineering = async () => {
+    setState('loading');
+    setError('');
+    try {
+      const data = await fetchEngineeringStatus();
+      setStatus(data);
+      const activePath = data.active_project?.path || '';
+      if (activePath) {
+        const nextSummary = await fetchEngineeringProjectSummary(activePath).catch(() => null);
+        setSummary(nextSummary);
+      } else {
+        setSummary(null);
+      }
+      setState('ready');
+    } catch {
+      setStatus(null);
+      setSummary(null);
+      setState('offline');
+    }
+  };
+
+  useEffect(() => {
+    loadEngineering();
+  }, []);
+
+  const active = status?.active_project ?? null;
+  const projects = status?.projects ?? [];
+  const recentFiles = status?.recent_files ?? [];
+  const formatCounts = summary?.formats ?? {};
+
+  const openProject = async (path: string) => {
+    setError('');
+    try {
+      await openEngineeringProject(path);
+      await loadEngineering();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to open engineering project');
+    }
+  };
+
+  return (
+    <div className="grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">
+      <ShellPanel title="Engineering Workspace" action={state === 'ready' ? 'local only' : state}>
+        <div className="grid gap-3 md:grid-cols-3">
+          <ContextTile
+            icon={<Wrench size={15} />}
+            label="Active Project"
+            value={active?.name || 'No CAD project'}
+            detail={active?.path ? compactPath(active.path) : 'STEP, STL, OBJ, Fusion, FreeCAD'}
+          />
+          <ContextTile
+            icon={<Package size={15} />}
+            label="Formats"
+            value={joinStack(active?.formats ?? status?.supported_formats ?? [])}
+            detail={`${summary?.file_count ?? active?.cad_files.length ?? 0} detected files`}
+          />
+          <ContextTile
+            icon={<LockKeyhole size={15} />}
+            label="Privacy"
+            value={status?.privacy_mode ? 'Privacy' : 'Local'}
+            detail={status?.cloud_uploads_enabled ? 'Uploads enabled' : 'No uploads'}
+          />
+        </div>
+        <div className="mt-4 flex flex-wrap gap-2">
+          {(active?.markers.length ? active.markers : ['passive only', 'no CAD edits']).slice(0, 10).map((item) => (
+            <StatusPill key={item} tone="quiet">{item}</StatusPill>
+          ))}
+        </div>
+        {error && (
+          <p className="mt-3 text-sm" style={{ color: 'var(--color-danger)' }}>
+            {error}
+          </p>
+        )}
+        <div className="mt-4 flex gap-2">
+          <button
+            type="button"
+            onClick={loadEngineering}
+            className="inline-flex h-10 items-center gap-2 rounded-md border px-3 text-sm"
+            style={{ borderColor: 'var(--color-border)', color: 'var(--color-text)' }}
+          >
+            <RefreshCw size={16} />
+            <span>Refresh</span>
+          </button>
+        </div>
+      </ShellPanel>
+
+      <ShellPanel title="Project Summary" action={active?.project_kind || 'waiting'}>
+        <div className="grid gap-3 md:grid-cols-2">
+          {Object.entries(formatCounts).slice(0, 6).map(([format, count]) => (
+            <ContextTile
+              key={format}
+              icon={<Package size={15} />}
+              label={format}
+              value={String(count)}
+              detail="local file count"
+            />
+          ))}
+          {!Object.keys(formatCounts).length && (
+            <div className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
+              Engineering summaries appear when supported CAD files are detected.
+            </div>
+          )}
+        </div>
+        <div className="mt-4 grid gap-2">
+          {(summary?.analysis_notes ?? []).slice(0, 6).map((note) => (
+            <div key={note} className="rounded-md border px-3 py-2 text-sm" style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg-secondary)', color: 'var(--color-text-secondary)' }}>
+              {note}
+            </div>
+          ))}
+        </div>
+      </ShellPanel>
+
+      <ShellPanel title="Detected Projects" action={`${projects.length} found`}>
+        <div className="space-y-2">
+          {projects.slice(0, 10).map((project) => (
+            <div key={project.id} className="grid gap-3 rounded-md border p-3 md:grid-cols-[1fr_auto]" style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg-secondary)' }}>
+              <div className="min-w-0">
+                <div className="truncate text-sm font-semibold" style={{ color: 'var(--color-text)' }}>{project.name}</div>
+                <div className="mt-1 truncate text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+                  {compactPath(project.path)} / {project.project_kind}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => openProject(project.path)}
+                className="inline-flex h-9 w-9 items-center justify-center rounded-md border"
+                style={{ borderColor: 'var(--color-border)', color: 'var(--color-text)' }}
+                title="Open engineering project"
+              >
+                <ArrowUpRight size={15} />
+              </button>
+            </div>
+          ))}
+          {!projects.length && <div className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>No engineering projects detected in the current workspace.</div>}
+        </div>
+      </ShellPanel>
+
+      <ShellPanel title="Recent Engineering Files" action={`${recentFiles.length} local`}>
+        <div className="grid gap-2 md:grid-cols-2">
+          {recentFiles.slice(0, 12).map((file) => (
+            <div key={file.path} className="rounded-md border px-3 py-2" style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg-secondary)' }}>
+              <div className="truncate font-mono text-sm" style={{ color: 'var(--color-text)' }}>{file.name}</div>
+              <div className="mt-1 flex flex-wrap gap-2 text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+                <span>{file.format}</span>
+                <span>{formatBytes(file.size_bytes)}</span>
+              </div>
+            </div>
+          ))}
+          {!recentFiles.length && <div className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>Recent STEP, STL, OBJ, Fusion, and FreeCAD files will appear here.</div>}
+        </div>
+      </ShellPanel>
+    </div>
+  );
+}
+
 function CodingSection() {
   const [panel, setPanel] = useState<CodingPanelSnapshot | null>(null);
   const [status, setStatus] = useState<'loading' | 'ready' | 'offline'>('loading');
@@ -1754,11 +2145,216 @@ function TerminalSection() {
   );
 }
 
+function workflowTone(status: string): StatusTone {
+  if (status === 'completed') return 'good';
+  if (status === 'waiting_approval' || status === 'running') return 'busy';
+  if (status === 'blocked' || status === 'failed') return 'watch';
+  return 'quiet';
+}
+
+function WorkflowCard({
+  workflow,
+  running,
+  onRun,
+}: {
+  workflow: WorkflowDefinition;
+  running: boolean;
+  onRun: (workflowId: string) => void;
+}) {
+  return (
+    <div
+      className="rounded-md border p-4"
+      style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg-secondary)' }}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <Workflow size={16} style={{ color: 'var(--color-accent)' }} />
+            <h3 className="truncate text-sm font-semibold" style={{ color: 'var(--color-text)' }}>
+              {workflow.name}
+            </h3>
+          </div>
+          <p className="mt-2 line-clamp-2 text-sm" style={{ color: 'var(--color-text-secondary)' }}>
+            {workflow.description}
+          </p>
+        </div>
+        <button
+          type="button"
+          disabled={running}
+          onClick={() => onRun(workflow.id)}
+          className="inline-flex h-9 shrink-0 items-center justify-center rounded-md border px-3 text-xs font-semibold disabled:opacity-50"
+          style={{
+            borderColor: 'var(--color-border)',
+            color: 'var(--color-text)',
+            background: 'var(--color-bg)',
+          }}
+          title={`Run ${workflow.name}`}
+        >
+          <Play size={14} />
+        </button>
+      </div>
+      <div className="mt-4 flex flex-wrap gap-2">
+        <StatusPill tone={workflow.requires_approval ? 'watch' : 'good'}>
+          {workflow.requires_approval ? 'Approval gated' : 'Local safe'}
+        </StatusPill>
+        <StatusPill tone="quiet">{workflow.steps.length} steps</StatusPill>
+        <StatusPill tone="quiet">{workflow.allowed_agents.slice(0, 2).join(', ')}</StatusPill>
+      </div>
+    </div>
+  );
+}
+
+function WorkflowRunRow({ run }: { run: WorkflowRun }) {
+  return (
+    <div
+      className="grid gap-3 rounded-md border p-3 md:grid-cols-[1fr_auto]"
+      style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg-secondary)' }}
+    >
+      <div className="min-w-0">
+        <div className="flex items-center gap-2">
+          <span className="truncate text-sm font-semibold" style={{ color: 'var(--color-text)' }}>
+            {run.workflow_name}
+          </span>
+          <StatusPill tone={workflowTone(run.status)}>{run.status}</StatusPill>
+        </div>
+        <div className="mt-1 truncate text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+          {run.mode_id || 'mode'} / {run.agent_id || 'agent'} / {formatTime(run.updated_at)}
+        </div>
+      </div>
+      <div className="flex items-center gap-2 text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+        <History size={14} />
+        {run.steps.length} steps
+      </div>
+    </div>
+  );
+}
+
+function WorkflowsSection() {
+  const [snapshot, setSnapshot] = useState<WorkflowPanelSnapshot | null>(null);
+  const [live, setLive] = useState(false);
+  const [runningId, setRunningId] = useState<string | null>(null);
+
+  const loadWorkflows = async () => {
+    try {
+      const data = await fetchWorkflowPanel();
+      setSnapshot(data);
+      setLive(true);
+    } catch {
+      setSnapshot(null);
+      setLive(false);
+    }
+  };
+
+  useEffect(() => {
+    loadWorkflows();
+  }, []);
+
+  const launch = async (workflowId: string) => {
+    setRunningId(workflowId);
+    try {
+      await runWorkflow(workflowId, { requested_by: 'mission_control' });
+      await loadWorkflows();
+    } finally {
+      setRunningId(null);
+    }
+  };
+
+  const workflows = snapshot?.available_workflows ?? [];
+  const running = snapshot?.running_workflows ?? [];
+  const history = snapshot?.history ?? [];
+  const approvals = snapshot?.approvals ?? [];
+  const failures = snapshot?.failures ?? [];
+
+  return (
+    <div className="grid gap-4 xl:grid-cols-[1fr_340px]">
+      <ShellPanel title="Available Workflows" action={live ? 'local registry' : 'waiting'}>
+        <div className="grid gap-3 md:grid-cols-2">
+          {workflows.map((workflow) => (
+            <WorkflowCard
+              key={workflow.id}
+              workflow={workflow}
+              running={runningId === workflow.id}
+              onRun={launch}
+            />
+          ))}
+          {!workflows.length && (
+            <div className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
+              Workflow registry is not available yet.
+            </div>
+          )}
+        </div>
+      </ShellPanel>
+
+      <div className="grid gap-4">
+        <ShellPanel title="Running" action={`${running.length} active`}>
+          <div className="space-y-2">
+            {running.map((run) => <WorkflowRunRow key={run.id} run={run} />)}
+            {!running.length && (
+              <div className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
+                No workflows are currently active.
+              </div>
+            )}
+          </div>
+        </ShellPanel>
+
+        <ShellPanel title="Approvals" action={`${approvals.length} pending`}>
+          <div className="space-y-2">
+            {approvals.slice(0, 5).map((approval) => (
+              <div key={approval.id} className="rounded-md border p-3" style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg-secondary)' }}>
+                <div className="truncate text-sm font-semibold" style={{ color: 'var(--color-text)' }}>
+                  {approval.tool}
+                </div>
+                <div className="mt-1 truncate text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+                  {approval.reason}
+                </div>
+              </div>
+            ))}
+            {!approvals.length && (
+              <div className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
+                No workflow approvals are pending.
+              </div>
+            )}
+          </div>
+        </ShellPanel>
+
+        <ShellPanel title="Failures" action={`${failures.length} recent`}>
+          <div className="space-y-2">
+            {failures.map((run) => <WorkflowRunRow key={run.id} run={run} />)}
+            {!failures.length && (
+              <div className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
+                No recent workflow failures.
+              </div>
+            )}
+          </div>
+        </ShellPanel>
+      </div>
+
+      <ShellPanel title="History" action="recent">
+        <div className="grid gap-2">
+          {history.slice(0, 10).map((run) => <WorkflowRunRow key={run.id} run={run} />)}
+          {!history.length && (
+            <div className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
+              Workflow history will appear after the first run.
+            </div>
+          )}
+        </div>
+      </ShellPanel>
+    </div>
+  );
+}
+
 function VoiceSection() {
   const [status, setStatus] = useState<VoicePttStatus | null>(null);
+  const [hotkeyStatus, setHotkeyStatus] = useState<HotkeyStatus | null>(null);
+  const [ttsStatus, setTtsStatus] = useState<TTSStatus | null>(null);
+  const [ttsVoices, setTtsVoices] = useState<TTSVoice[]>([]);
+  const [selectedVoiceId, setSelectedVoiceId] = useState('');
   const [transcript, setTranscript] = useState('');
   const [error, setError] = useState('');
+  const [ttsError, setTtsError] = useState('');
   const [busy, setBusy] = useState<'idle' | 'starting' | 'stopping' | 'transcribing'>('idle');
+  const [hotkeyBusy, setHotkeyBusy] = useState<'idle' | 'toggle' | 'test'>('idle');
+  const [ttsBusy, setTtsBusy] = useState<'idle' | 'speaking' | 'stopping'>('idle');
 
   const loadVoiceStatus = async () => {
     try {
@@ -1770,8 +2366,35 @@ function VoiceSection() {
     }
   };
 
+  const loadHotkeyStatus = async () => {
+    try {
+      const data = await fetchHotkeyStatus();
+      setHotkeyStatus(data);
+    } catch {
+      setHotkeyStatus(null);
+    }
+  };
+
+  const loadTtsStatus = async () => {
+    try {
+      const [nextStatus, voices] = await Promise.all([
+        fetchTTSStatus(),
+        fetchTTSVoices(),
+      ]);
+      setTtsStatus(nextStatus);
+      setTtsVoices(voices.voices);
+      setSelectedVoiceId((current) => current || nextStatus.selected_voice_id || voices.voices[0]?.id || '');
+      setTtsError('');
+    } catch {
+      setTtsStatus(null);
+      setTtsVoices([]);
+    }
+  };
+
   useEffect(() => {
     loadVoiceStatus();
+    loadHotkeyStatus();
+    loadTtsStatus();
   }, []);
 
   const startHold = async () => {
@@ -1807,12 +2430,72 @@ function VoiceSection() {
     }
   };
 
+  const toggleHotkey = async () => {
+    if (hotkeyBusy !== 'idle') return;
+    setHotkeyBusy('toggle');
+    setError('');
+    try {
+      const next = hotkeyStatus?.enabled ? await disableHotkey() : await enableHotkey();
+      setHotkeyStatus(next);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Hotkey update failed');
+    } finally {
+      setHotkeyBusy('idle');
+    }
+  };
+
+  const runHotkeyTest = async () => {
+    if (hotkeyBusy !== 'idle') return;
+    setHotkeyBusy('test');
+    setError('');
+    try {
+      const result = await testHotkeyTrigger();
+      setHotkeyStatus(result.status);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Hotkey test failed');
+    } finally {
+      setHotkeyBusy('idle');
+    }
+  };
+
   const recording = status?.recording ?? false;
+  const hotkeyActive = hotkeyStatus?.active ?? false;
   const latest = status?.latest;
   const intent = latest?.intent_preview;
+  const selectedVoice = ttsVoices.find((voice) => voice.id === selectedVoiceId);
+  const speaking = ttsStatus?.speaking ?? false;
   const buttonBusy = busy !== 'idle';
   const buttonLabel = recording ? 'Release to stop' : buttonBusy ? 'Working' : 'Hold to talk';
-  const stateLabel = recording ? 'Recording' : busy === 'transcribing' ? 'Transcribing' : 'Idle';
+  const stateLabel = recording || hotkeyActive ? 'Recording' : busy === 'transcribing' ? 'Transcribing' : 'Idle';
+
+  const speakTestPhrase = async () => {
+    if (ttsBusy !== 'idle') return;
+    setTtsBusy('speaking');
+    setTtsError('');
+    try {
+      const response = await speakTTS('Siri voice output is local and ready.', selectedVoiceId, true);
+      setTtsStatus(response.status);
+      setSelectedVoiceId(response.status.selected_voice_id || selectedVoiceId);
+    } catch (err) {
+      setTtsError(err instanceof Error ? err.message : 'Speech failed');
+    } finally {
+      setTtsBusy('idle');
+    }
+  };
+
+  const stopSpeaking = async () => {
+    if (ttsBusy !== 'idle') return;
+    setTtsBusy('stopping');
+    setTtsError('');
+    try {
+      const response = await stopTTS();
+      setTtsStatus(response.status);
+    } catch (err) {
+      setTtsError(err instanceof Error ? err.message : 'Stop speech failed');
+    } finally {
+      setTtsBusy('idle');
+    }
+  };
 
   return (
     <div className="grid gap-4 xl:grid-cols-[0.9fr_1.1fr]">
@@ -1836,6 +2519,83 @@ function VoiceSection() {
             value={latest?.active_agent || status?.active_agent_id || 'Workspace'}
             detail={latest?.active_mode || status?.active_mode_id || 'mode pending'}
           />
+        </div>
+
+        <div
+          className="mt-5 rounded-md border p-4"
+          style={{
+            borderColor: 'var(--color-border)',
+            background: 'var(--color-bg-secondary)',
+          }}
+        >
+          <div className="grid gap-3 md:grid-cols-3">
+            <ContextTile
+              icon={<Keyboard size={15} />}
+              label="Global Trigger"
+              value={hotkeyStatus?.effective_enabled ? 'Enabled' : hotkeyStatus?.enabled ? 'Privacy held' : 'Disabled'}
+              detail={hotkeyStatus?.listener_running ? 'Listener active' : 'Listener idle'}
+            />
+            <ContextTile
+              icon={<Power size={15} />}
+              label="Binding"
+              value={hotkeyStatus?.binding?.display_name || 'Fn'}
+              detail={hotkeyStatus?.binding?.fallback_display_name || 'Ctrl+Space'}
+            />
+            <ContextTile
+              icon={<ShieldCheck size={15} />}
+              label="Last Trigger"
+              value={hotkeyStatus?.active ? 'Pressed' : hotkeyStatus?.last_trigger?.phase || 'None'}
+              detail={hotkeyStatus?.privacy_mode ? 'Privacy Mode' : hotkeyStatus?.last_trigger?.binding || 'Explicit only'}
+            />
+          </div>
+          <div className="mt-4 flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              onClick={toggleHotkey}
+              disabled={hotkeyBusy !== 'idle' || hotkeyStatus?.privacy_mode}
+              className="inline-flex h-10 items-center justify-center gap-2 rounded-md border px-3 text-sm font-semibold transition-colors disabled:opacity-60"
+              style={{
+                borderColor: hotkeyStatus?.effective_enabled ? 'var(--color-success)' : 'var(--color-border)',
+                color: 'var(--color-text)',
+                background: 'var(--color-bg-primary)',
+              }}
+              title="Toggle global trigger"
+            >
+              <Keyboard size={16} />
+              {hotkeyStatus?.enabled ? 'Disable' : 'Enable'}
+            </button>
+            <button
+              type="button"
+              onClick={runHotkeyTest}
+              disabled={hotkeyBusy !== 'idle' || hotkeyStatus?.privacy_mode}
+              className="inline-flex h-10 items-center justify-center gap-2 rounded-md border px-3 text-sm font-semibold transition-colors disabled:opacity-60"
+              style={{
+                borderColor: 'var(--color-border)',
+                color: 'var(--color-text)',
+                background: 'var(--color-bg-primary)',
+              }}
+              title="Test trigger"
+            >
+              <Play size={15} />
+              Test
+            </button>
+            <button
+              type="button"
+              onClick={loadHotkeyStatus}
+              className="flex h-10 w-10 items-center justify-center rounded-md border transition-colors"
+              style={{
+                borderColor: 'var(--color-border)',
+                color: 'var(--color-text-secondary)',
+                background: 'var(--color-bg-primary)',
+              }}
+              title="Refresh global trigger"
+            >
+              <RefreshCw size={15} />
+            </button>
+            <StatusPill tone={hotkeyStatus?.active ? 'busy' : hotkeyStatus?.privacy_mode ? 'watch' : hotkeyStatus?.effective_enabled ? 'good' : 'quiet'}>
+              {hotkeyStatus?.active ? 'Active' : hotkeyStatus?.privacy_mode ? 'Privacy off' : hotkeyStatus?.effective_enabled ? 'Ready' : 'Off'}
+            </StatusPill>
+          </div>
         </div>
 
         <div className="mt-5 flex flex-wrap items-center gap-3">
@@ -1890,6 +2650,107 @@ function VoiceSection() {
             {error}
           </p>
         )}
+
+        <div
+          className="mt-5 rounded-md border p-4"
+          style={{
+            borderColor: 'var(--color-border)',
+            background: 'var(--color-bg-secondary)',
+          }}
+        >
+          <div className="grid gap-3 md:grid-cols-3">
+            <ContextTile
+              icon={ttsStatus?.muted ? <VolumeX size={15} /> : <Volume2 size={15} />}
+              label="Output"
+              value={speaking ? 'Speaking' : ttsStatus?.muted ? 'Muted' : 'Ready'}
+              detail={ttsStatus?.response_style || 'local voice'}
+            />
+            <ContextTile
+              icon={<ShieldCheck size={15} />}
+              label="TTS"
+              value={ttsStatus?.local_only ? 'Local only' : 'Unavailable'}
+              detail={ttsStatus?.cloud_tts_enabled ? 'Cloud enabled' : 'No cloud TTS'}
+            />
+            <ContextTile
+              icon={<LockKeyhole size={15} />}
+              label="Mode"
+              value={ttsStatus?.privacy_mode ? 'Privacy' : ttsStatus?.quiet_mode ? 'Quiet' : ttsStatus?.active_mode_id || 'Mode'}
+              detail={ttsStatus?.muted ? 'Quiet indicator' : 'Manual output'}
+            />
+          </div>
+
+          <div className="mt-4 flex flex-wrap items-center gap-3">
+            <select
+              value={selectedVoiceId}
+              onChange={(event) => setSelectedVoiceId(event.target.value)}
+              className="h-10 min-w-44 rounded-md border px-3 text-sm outline-none"
+              style={{
+                borderColor: 'var(--color-border)',
+                background: 'var(--color-bg-primary)',
+                color: 'var(--color-text)',
+              }}
+              aria-label="Selected voice"
+            >
+              {ttsVoices.map((voice) => (
+                <option key={`${voice.engine}:${voice.id}`} value={voice.id}>
+                  {voice.name} / {voice.engine}
+                </option>
+              ))}
+              {!ttsVoices.length && <option value="">No local voice</option>}
+            </select>
+            <button
+              type="button"
+              onClick={speakTestPhrase}
+              disabled={ttsBusy !== 'idle' || !ttsStatus?.available}
+              className="inline-flex h-10 items-center justify-center gap-2 rounded-md border px-3 text-sm font-semibold transition-colors disabled:opacity-60"
+              style={{
+                borderColor: 'var(--color-border)',
+                color: 'var(--color-text)',
+                background: 'var(--color-bg-primary)',
+              }}
+              title="Speak test phrase"
+            >
+              <Volume2 size={16} />
+              Test
+            </button>
+            <button
+              type="button"
+              onClick={stopSpeaking}
+              disabled={ttsBusy !== 'idle' || !speaking}
+              className="inline-flex h-10 items-center justify-center gap-2 rounded-md border px-3 text-sm font-semibold transition-colors disabled:opacity-60"
+              style={{
+                borderColor: 'var(--color-border)',
+                color: 'var(--color-text)',
+                background: 'var(--color-bg-primary)',
+              }}
+              title="Stop speaking"
+            >
+              <Square size={15} />
+              Stop
+            </button>
+            <button
+              type="button"
+              onClick={loadTtsStatus}
+              className="flex h-10 w-10 items-center justify-center rounded-md border transition-colors"
+              style={{
+                borderColor: 'var(--color-border)',
+                color: 'var(--color-text-secondary)',
+                background: 'var(--color-bg-primary)',
+              }}
+              title="Refresh voice output"
+            >
+              <RefreshCw size={15} />
+            </button>
+            <StatusPill tone={ttsStatus?.local_only ? 'good' : 'watch'}>
+              {selectedVoice ? selectedVoice.engine : 'Local only'}
+            </StatusPill>
+          </div>
+          {ttsError && (
+            <p className="mt-3 text-sm" style={{ color: 'var(--color-error)' }}>
+              {ttsError}
+            </p>
+          )}
+        </div>
       </ShellPanel>
 
       <ShellPanel title="Transcript Preview" action="not sent">
@@ -2102,36 +2963,547 @@ function VisionSection() {
 }
 
 function ResearchSection() {
+  const [sessions, setSessions] = useState<ResearchSession[]>([]);
+  const [selected, setSelected] = useState<ResearchSession | null>(null);
+  const [report, setReport] = useState<ResearchReport | null>(null);
+  const [sources, setSources] = useState<ResearchSource[]>([]);
+  const [memoryEntries, setMemoryEntries] = useState<StructuredMemory[]>([]);
+  const [query, setQuery] = useState('local-first research workflow');
+  const [status, setStatus] = useState<'loading' | 'ready' | 'offline' | 'running'>('loading');
+
+  const loadResearch = async () => {
+    setStatus('loading');
+    try {
+      const items = await listResearch(12);
+      setSessions(items);
+      setSelected((current) => current ?? items[0] ?? null);
+      setStatus('ready');
+    } catch {
+      setSessions([]);
+      setSelected(null);
+      setReport(null);
+      setSources([]);
+      setMemoryEntries([]);
+      setStatus('offline');
+    }
+  };
+
+  useEffect(() => {
+    loadResearch();
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!selected) {
+      setReport(null);
+      setSources([]);
+      setMemoryEntries([]);
+      return;
+    }
+    Promise.all([
+      fetchResearchStatus(selected.id).catch(() => null),
+      fetchResearchReport(selected.id).catch(() => selected.report),
+      fetchResearchCitations(selected.id).catch(() => ({
+        citations: selected.report?.citations ?? [],
+        sources: selected.sources,
+      })),
+      fetchResearchMemoryEntries(selected.id).catch(() => []),
+    ]).then(([nextStatus, nextReport, citationData, memories]) => {
+      if (cancelled) return;
+      setReport(nextReport);
+      setSources(citationData.sources);
+      setMemoryEntries(memories);
+      if (nextStatus) setStatus('ready');
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [selected]);
+
+  const runResearch = async () => {
+    if (!query.trim()) return;
+    setStatus('running');
+    try {
+      const session = await startResearch({
+        question: query.trim(),
+        allow_external_search: false,
+        max_sources: 8,
+      });
+      setSessions((items) => [session, ...items.filter((item) => item.id !== session.id)]);
+      setSelected(session);
+      setReport(session.report);
+      setSources(session.sources);
+      setStatus('ready');
+    } catch {
+      setStatus('offline');
+    }
+  };
+
+  const activeReport = report ?? selected?.report ?? null;
+  const activeSources = sources.length ? sources : selected?.sources ?? [];
+  const openQuestions = activeReport?.unresolved_questions ?? selected?.plan.open_questions ?? [];
+  const notes = activeReport?.notes ?? [];
+
   return (
-    <ShellPanel title="Research">
-      <div className="grid gap-3 md:grid-cols-3">
-        {['Local-first agents', 'Permission UX', 'Memory ranking'].map((topic, index) => (
-          <div
-            key={topic}
-            className="rounded-md border p-4"
-            style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg-secondary)' }}
+    <div className="grid gap-4 xl:grid-cols-[0.9fr_1.1fr]">
+      <ShellPanel title="Active Research" action={status}>
+        <div className="flex gap-2">
+          <input
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') runResearch();
+            }}
+            placeholder="Research question"
+            className="min-w-0 flex-1 rounded-md border px-3 py-2 text-sm outline-none"
+            style={{
+              borderColor: 'var(--color-border)',
+              color: 'var(--color-text)',
+              background: 'var(--color-bg-secondary)',
+            }}
+          />
+          <button
+            type="button"
+            onClick={runResearch}
+            disabled={status === 'running' || !query.trim()}
+            className="inline-flex h-10 w-10 items-center justify-center rounded-md border disabled:opacity-60"
+            style={{ borderColor: 'var(--color-border)', color: 'var(--color-text)' }}
+            title="Start research"
           >
-            <FileSearchIcon />
-            <div className="mt-3 text-sm font-semibold" style={{ color: 'var(--color-text)' }}>
-              {topic}
+            {status === 'running' ? <RefreshCw size={16} /> : <Search size={16} />}
+          </button>
+        </div>
+
+        <div className="mt-4 grid gap-2">
+          {sessions.length === 0 && (
+            <div className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
+              No research reports cached yet.
             </div>
-            <div className="mt-2 text-xs" style={{ color: 'var(--color-text-secondary)' }}>
-              {[12, 8, 15][index]} sources grouped
+          )}
+          {sessions.slice(0, 8).map((session) => {
+            const active = selected?.id === session.id;
+            return (
+              <button
+                key={session.id}
+                type="button"
+                onClick={() => setSelected(session)}
+                className="rounded-md border p-3 text-left transition-colors"
+                style={{
+                  borderColor: active ? 'var(--color-accent)' : 'var(--color-border)',
+                  background: active ? 'var(--color-accent-subtle)' : 'var(--color-bg-secondary)',
+                  color: 'var(--color-text)',
+                }}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="truncate text-sm font-semibold">{session.question}</div>
+                    <div className="mt-1 text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+                      {session.sources.length} sources · {session.memory_ids.length} memories
+                    </div>
+                  </div>
+                  <StatusPill tone={session.privacy_mode ? 'watch' : 'good'}>
+                    {session.cached_sources_only ? 'Cached' : session.status}
+                  </StatusPill>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </ShellPanel>
+
+      <div className="grid gap-4">
+        <ShellPanel title={activeReport?.title || 'Report'} action={formatTime(activeReport?.created_at || selected?.created_at || '')}>
+          {activeReport ? (
+            <div className="grid gap-4">
+              <p className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
+                {activeReport.summary}
+              </p>
+              <div className="grid gap-3 md:grid-cols-3">
+                {[
+                  ['Notes', String(notes.length)],
+                  ['Sources', String(activeSources.length)],
+                  ['Citations', String(activeReport.citations.length)],
+                ].map(([label, value]) => (
+                  <div
+                    key={label}
+                    className="rounded-md border p-3"
+                    style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg-secondary)' }}
+                  >
+                    <div className="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>{label}</div>
+                    <div className="mt-1 text-xl font-semibold" style={{ color: 'var(--color-text)' }}>{value}</div>
+                  </div>
+                ))}
+              </div>
             </div>
+          ) : (
+            <p className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
+              Select or start a research run.
+            </p>
+          )}
+        </ShellPanel>
+
+        <div className="grid gap-4 lg:grid-cols-2">
+          <ShellPanel title="Notes" action={`${notes.length} claims`}>
+            <div className="space-y-2">
+              {notes.length === 0 && (
+                <div className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
+                  No extracted notes yet.
+                </div>
+              )}
+              {notes.slice(0, 8).map((note) => (
+                <div
+                  key={note}
+                  className="rounded-md border p-3 text-sm"
+                  style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg-secondary)', color: 'var(--color-text)' }}
+                >
+                  {note}
+                </div>
+              ))}
+            </div>
+          </ShellPanel>
+
+          <ShellPanel title="Open Questions" action={`${openQuestions.length} unresolved`}>
+            <div className="space-y-2">
+              {openQuestions.map((question) => (
+                <div
+                  key={question}
+                  className="rounded-md border p-3 text-sm"
+                  style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg-secondary)', color: 'var(--color-text-secondary)' }}
+                >
+                  {question}
+                </div>
+              ))}
+            </div>
+          </ShellPanel>
+        </div>
+
+        <ShellPanel title="Sources" action={`${activeSources.length} collected`}>
+          <div className="grid gap-2">
+            {activeSources.length === 0 && (
+              <div className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
+                No cached sources matched.
+              </div>
+            )}
+            {activeSources.slice(0, 8).map((source) => (
+              <div
+                key={source.id}
+                className="grid gap-2 rounded-md border p-3 md:grid-cols-[1fr_120px_90px]"
+                style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg-secondary)' }}
+              >
+                <div className="min-w-0">
+                  <div className="truncate text-sm font-semibold" style={{ color: 'var(--color-text)' }}>
+                    {source.title}
+                  </div>
+                  <div className="mt-1 truncate text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+                    {source.url || source.source_type}
+                  </div>
+                </div>
+                <span className="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+                  {source.source_type}
+                </span>
+                <span className="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+                  {Math.round(source.relevance * 100)}%
+                </span>
+              </div>
+            ))}
           </div>
-        ))}
+        </ShellPanel>
+
+        <ShellPanel title="Memory Entries" action={`${memoryEntries.length} stored`}>
+          <div className="space-y-2">
+            {memoryEntries.length === 0 && (
+              <div className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
+                No stored research memories found.
+              </div>
+            )}
+            {memoryEntries.slice(0, 5).map((memory) => (
+              <div
+                key={memory.id}
+                className="rounded-md border p-3"
+                style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg-secondary)' }}
+              >
+                <div className="truncate text-sm" style={{ color: 'var(--color-text)' }}>{memory.content}</div>
+                <div className="mt-1 text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+                  {memory.memory_type}
+                </div>
+              </div>
+            ))}
+          </div>
+        </ShellPanel>
       </div>
-    </ShellPanel>
+    </div>
   );
 }
 
-function FileSearchIcon() {
+function releaseTone(status: string): StatusTone {
+  if (['ok', 'ready', 'completed'].includes(status)) return 'good';
+  if (
+    ['warning', 'needs_attention', 'completed_with_warnings', 'missing', 'blocked'].includes(status)
+  )
+    return 'watch';
+  if (['loading', 'running'].includes(status)) return 'busy';
+  return 'quiet';
+}
+
+function ReleaseSection() {
+  const [snapshot, setSnapshot] = useState<ReleaseMissionControlSnapshot | null>(null);
+  const [status, setStatus] = useState<'loading' | 'ready' | 'offline'>('loading');
+  const [acting, setActing] = useState<string>('');
+  const [lastResult, setLastResult] = useState<ReleaseRecoveryResult | null>(null);
+
+  const refreshRelease = async () => {
+    setStatus('loading');
+    try {
+      setSnapshot(await fetchReleaseMissionControl());
+      setStatus('ready');
+    } catch {
+      setSnapshot(null);
+      setStatus('offline');
+    }
+  };
+
+  useEffect(() => {
+    refreshRelease();
+  }, []);
+
+  const runRepair = async (action: string) => {
+    setActing(action);
+    try {
+      const result = await runReleaseRecoveryAction(action);
+      setLastResult(result);
+      await refreshRelease();
+    } catch {
+      setStatus('offline');
+    } finally {
+      setActing('');
+    }
+  };
+
+  const healthChecks = snapshot?.health_checks ?? [];
+  const diagnostics = snapshot?.diagnostics ?? [];
+  const recoveryActions = snapshot?.recovery_actions ?? [];
+  const report = snapshot?.report;
+  const packaging = snapshot?.packaging_status;
+  const installReadiness = snapshot?.install_readiness as
+    | { ready?: boolean; blockers?: string[]; warnings?: string[] }
+    | undefined;
+  const installation = packaging?.installation as
+    | {
+        installed?: boolean;
+        installed_locations?: string[];
+        app_executable?: string;
+        launch_agent?: { installed?: boolean; valid?: boolean; plist_path?: string };
+      }
+    | undefined;
+  const score = report?.readiness_score ?? 0;
+  const warnings = report?.warnings ?? [];
+
   return (
-    <div
-      className="flex h-9 w-9 items-center justify-center rounded-md"
-      style={{ background: 'var(--color-accent-subtle)', color: 'var(--color-accent)' }}
-    >
-      <Radar size={18} />
+    <div className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
+      <ShellPanel
+        title="Release Health"
+        action={status === 'loading' ? 'loading' : status === 'offline' ? 'offline' : report?.readiness_status}
+      >
+        <div className="grid gap-4">
+          <div className="grid gap-3 md:grid-cols-4">
+            <div
+              className="rounded-md border p-4"
+              style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg-secondary)' }}
+            >
+              <div className="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+                Readiness
+              </div>
+              <div className="mt-2 flex items-end gap-2">
+                <span className="text-3xl font-semibold" style={{ color: 'var(--color-text)' }}>
+                  {score}
+                </span>
+                <span className="pb-1 text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+                  / 100
+                </span>
+              </div>
+            </div>
+            <div
+              className="rounded-md border p-4"
+              style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg-secondary)' }}
+            >
+              <div className="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+                Privacy
+              </div>
+              <div className="mt-2 flex flex-wrap gap-2">
+                <StatusPill tone={snapshot?.local_only ? 'good' : 'watch'}>Local only</StatusPill>
+                <StatusPill tone={snapshot?.telemetry_enabled ? 'watch' : 'good'}>No telemetry</StatusPill>
+              </div>
+            </div>
+            <div
+              className="rounded-md border p-4"
+              style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg-secondary)' }}
+            >
+              <div className="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+                Scope
+              </div>
+              <div className="mt-2 flex flex-wrap gap-2">
+                <StatusPill tone={snapshot?.wake_words ? 'watch' : 'good'}>{snapshot?.wake_words ? 'Listening for Wake Word' : 'No wake words'}</StatusPill>
+                <StatusPill tone={snapshot?.autonomous_agents ? 'watch' : 'good'}>No agents</StatusPill>
+              </div>
+            </div>
+            <div
+              className="rounded-md border p-4"
+              style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg-secondary)' }}
+            >
+              <div className="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+                Install
+              </div>
+              <div className="mt-2 flex flex-wrap gap-2">
+                <StatusPill tone={installReadiness?.ready ? 'good' : 'watch'}>
+                  {installReadiness?.ready ? 'Ready' : `${installReadiness?.blockers?.length ?? 0} blockers`}
+                </StatusPill>
+                <StatusPill tone={installation?.installed ? 'good' : 'quiet'}>
+                  {installation?.installed ? 'Installed' : 'Not installed'}
+                </StatusPill>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid gap-3 md:grid-cols-3">
+            <ContextTile
+              icon={<Package size={14} />}
+              label="Siri.app"
+              value={
+                installation?.installed_locations?.length
+                  ? compactPath(installation.installed_locations[0])
+                  : compactPath(String(packaging?.app_bundle_path || ''))
+              }
+              detail={packaging?.app_bundle_exists ? 'Bundle built' : 'Bundle not built'}
+            />
+            <ContextTile
+              icon={<Power size={14} />}
+              label="LaunchAgent"
+              value={
+                installation?.launch_agent?.installed
+                  ? installation.launch_agent.valid
+                    ? 'Installed'
+                    : 'Needs update'
+                  : 'Not installed'
+              }
+              detail={compactPath(installation?.launch_agent?.plist_path || '')}
+            />
+            <ContextTile
+              icon={<TerminalSquare size={14} />}
+              label="Executable"
+              value={basename(installation?.app_executable || '') || 'Unavailable'}
+              detail={compactPath(installation?.app_executable || '')}
+            />
+          </div>
+
+          <div className="grid gap-3 md:grid-cols-2">
+            {healthChecks.map((check) => (
+              <div
+                key={check.id}
+                className="rounded-md border p-4"
+                style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg-secondary)' }}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="text-sm font-semibold" style={{ color: 'var(--color-text)' }}>
+                      {check.label}
+                    </div>
+                    <p className="mt-1 text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+                      {check.summary}
+                    </p>
+                    {check.detail && (
+                      <p className="mt-2 truncate text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+                        {check.detail}
+                      </p>
+                    )}
+                  </div>
+                  <StatusPill tone={releaseTone(check.status)}>{check.status}</StatusPill>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </ShellPanel>
+
+      <div className="grid gap-4">
+        <ShellPanel title="Diagnostics Summary" action={`${diagnostics.length} checks`}>
+          <div className="space-y-2">
+            {diagnostics.map((item) => (
+              <div
+                key={item.id}
+                className="rounded-md border p-3"
+                style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg-secondary)' }}
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>
+                    {item.label}
+                  </span>
+                  <StatusPill tone={releaseTone(item.status)}>{item.status}</StatusPill>
+                </div>
+                <p className="mt-1 text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+                  {item.summary}
+                </p>
+              </div>
+            ))}
+          </div>
+        </ShellPanel>
+
+        <ShellPanel title="Repair Actions" action="explicit">
+          <div className="grid gap-2">
+            {recoveryActions.map((action) => (
+              <button
+                key={action.id}
+                type="button"
+                disabled={!!acting}
+                onClick={() => runRepair(action.id)}
+                className="flex items-center justify-between gap-3 rounded-md border px-3 py-3 text-left text-sm transition-colors disabled:opacity-50"
+                style={{
+                  borderColor: 'var(--color-border)',
+                  color: 'var(--color-text)',
+                  background: 'var(--color-bg-secondary)',
+                }}
+                title={action.description}
+              >
+                <span className="flex min-w-0 items-center gap-2">
+                  {acting === action.id ? <RefreshCw size={15} /> : <Wrench size={15} />}
+                  <span className="truncate">{acting === action.id ? 'Running' : action.label}</span>
+                </span>
+                <ArrowUpRight size={14} />
+              </button>
+            ))}
+          </div>
+          {lastResult && (
+            <div className="mt-3 rounded-md border p-3" style={{ borderColor: 'var(--color-border)' }}>
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-xs font-semibold" style={{ color: 'var(--color-text)' }}>
+                  {lastResult.action}
+                </span>
+                <StatusPill tone={releaseTone(lastResult.status)}>{lastResult.status}</StatusPill>
+              </div>
+              <p className="mt-1 text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+                {lastResult.summary}
+              </p>
+            </div>
+          )}
+        </ShellPanel>
+
+        <ShellPanel title="Warnings" action={`${warnings.length} active`}>
+          <div className="space-y-2">
+            {warnings.length === 0 ? (
+              <div className="flex items-center gap-2 text-sm" style={{ color: 'var(--color-text-secondary)' }}>
+                <CheckCircle2 size={16} style={{ color: 'var(--color-success)' }} />
+                Release checks are quiet
+              </div>
+            ) : (
+              warnings.slice(0, 5).map((warning) => (
+                <div key={warning} className="flex items-start gap-2 text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+                  <AlertTriangle size={14} style={{ color: 'var(--color-warning)' }} />
+                  <span>{warning}</span>
+                </div>
+              ))
+            )}
+          </div>
+        </ShellPanel>
+      </div>
     </div>
   );
 }
@@ -2488,367 +3860,95 @@ function PermissionsSection() {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Knowledge Vault Section
-// ---------------------------------------------------------------------------
+function PersonalizationSection() {
+  const [status, setStatus] = useState<ProfileStatus | null>(null);
+  const [profiles, setProfiles] = useState<Profile[]>([]);
+  const [loading, setLoading] = useState(true);
 
-function NoteTypeBadge({ type }: { type: string }) {
-  const colors: Record<string, { bg: string; text: string }> = {
-    daily: { bg: 'color-mix(in srgb, var(--color-accent) 15%, transparent)', text: 'var(--color-accent)' },
-    project: { bg: 'color-mix(in srgb, var(--color-success) 15%, transparent)', text: 'var(--color-success)' },
-    research: { bg: 'color-mix(in srgb, var(--color-warning) 15%, transparent)', text: 'var(--color-warning)' },
-    note: { bg: 'var(--color-bg-secondary)', text: 'var(--color-text-secondary)' },
-  };
-  const c = colors[type] || colors.note;
-  return (
-    <span
-      className="inline-flex items-center rounded px-2 py-0.5 text-xs font-medium"
-      style={{ background: c.bg, color: c.text }}
-    >
-      {type}
-    </span>
-  );
-}
-
-function KnowledgeVaultSection() {
-  const [notes, setNotes] = useState<KnowledgeNoteListItem[]>([]);
-  const [tags, setTags] = useState<VaultTag[]>([]);
-  const [dailyNote, setDailyNote] = useState<KnowledgeNote | null>(null);
-  const [selectedTag, setSelectedTag] = useState<string | null>(null);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [searchResults, setSearchResults] = useState<KnowledgeNoteListItem[] | null>(null);
-  const [live, setLive] = useState(false);
-  const [exporting, setExporting] = useState(false);
-  const [exportResult, setExportResult] = useState<string | null>(null);
-  const [creating, setCreating] = useState(false);
-  const [newTitle, setNewTitle] = useState('');
-  const [newType, setNewType] = useState<'note' | 'project' | 'research'>('note');
-
-  const load = async () => {
+  const refresh = async () => {
+    setLoading(true);
     try {
-      const [noteList, tagList, daily] = await Promise.all([
-        fetchKnowledgeNotes({ limit: 40 }),
-        fetchVaultTags(),
-        getDailyNote().catch(() => null),
+      const [s, p] = await Promise.all([
+        fetchPersonalizationStatus(),
+        listProfiles()
       ]);
-      setNotes(noteList);
-      setTags(tagList);
-      setDailyNote(daily);
-      setLive(true);
+      setStatus(s);
+      setProfiles(p);
     } catch {
-      setLive(false);
-    }
-  };
-
-  useEffect(() => { load(); }, []);
-
-  const handleSearch = async (q: string) => {
-    setSearchQuery(q);
-    if (!q.trim()) { setSearchResults(null); return; }
-    try {
-      const results = await searchKnowledgeVault(q, 20);
-      setSearchResults(results);
-    } catch {
-      setSearchResults([]);
-    }
-  };
-
-  const handleTagFilter = async (tag: string | null) => {
-    setSelectedTag(tag);
-    setSearchResults(null);
-    setSearchQuery('');
-    if (!tag) { await load(); return; }
-    try {
-      const filtered = await fetchKnowledgeNotes({ tag, limit: 40 });
-      setNotes(filtered);
-    } catch {}
-  };
-
-  const handlePin = async (note: KnowledgeNoteListItem) => {
-    try {
-      await pinKnowledgeNote(note.id, !note.pinned);
-      await load();
-    } catch {}
-  };
-
-  const handleDelete = async (noteId: string) => {
-    try {
-      await deleteKnowledgeNote(noteId);
-      await load();
-    } catch {}
-  };
-
-  const handleCreate = async () => {
-    if (!newTitle.trim()) return;
-    setCreating(true);
-    try {
-      await createKnowledgeNote({ title: newTitle.trim(), note_type: newType });
-      setNewTitle('');
-      setCreating(false);
-      await load();
-    } catch {
-      setCreating(false);
-    }
-  };
-
-  const handleExport = async () => {
-    setExporting(true);
-    setExportResult(null);
-    try {
-      const result = await exportVault();
-      setExportResult(`Exported ${result.exported_count} notes → ${result.output_directory}`);
-    } catch (e: any) {
-      setExportResult(`Export failed: ${e.message}`);
+      // fallback
     } finally {
-      setExporting(false);
+      setLoading(false);
     }
   };
 
-  const visibleNotes = searchResults ?? notes;
+  useEffect(() => {
+    refresh();
+  }, []);
+
+  const switchProfile = async (id: string) => {
+    try {
+      await switchActiveProfile(id);
+      refresh();
+    } catch {
+      // ignore
+    }
+  };
+
+  if (loading) {
+    return <div className="p-8 text-center text-sm" style={{ color: 'var(--color-text-secondary)' }}>Loading personalization...</div>;
+  }
 
   return (
-    <div className="grid gap-4 xl:grid-cols-[1fr_280px]">
-      {/* Main panel */}
-      <div className="grid gap-4">
-        {/* Header row */}
-        <div
-          className="flex flex-wrap items-center justify-between gap-3 rounded-md border p-4"
-          style={{ borderColor: 'var(--color-border)', background: 'var(--color-surface)' }}
-        >
-          <div className="flex items-center gap-3">
-            <BookMarked size={20} style={{ color: 'var(--color-accent)' }} />
-            <div>
-              <div className="text-sm font-semibold" style={{ color: 'var(--color-text)' }}>
-                Knowledge Vault
-              </div>
-              <div className="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
-                {live ? `${notes.length} notes · local only` : 'Waiting for backend…'}
-              </div>
-            </div>
+    <div className="grid gap-4 xl:grid-cols-[1fr_1fr]">
+      <ShellPanel title="Active Profile" action={status?.active_profile?.name || 'Unknown'}>
+        <div className="grid gap-3">
+          <div className="text-sm font-semibold" style={{ color: 'var(--color-text)' }}>
+            Switch Profile
           </div>
-          <div className="flex items-center gap-2">
-            <button
-              id="vault-export-btn"
-              type="button"
-              disabled={exporting}
-              onClick={handleExport}
-              className="inline-flex h-9 items-center gap-2 rounded-md border px-3 text-xs font-medium disabled:opacity-50"
-              style={{ borderColor: 'var(--color-border)', color: 'var(--color-text)', background: 'var(--color-bg-secondary)' }}
-            >
-              <FileDown size={14} />
-              {exporting ? 'Exporting…' : 'Export Vault'}
-            </button>
-          </div>
-        </div>
-
-        {exportResult && (
-          <div
-            className="rounded-md border px-4 py-3 text-xs"
-            style={{
-              borderColor: exportResult.startsWith('Export failed') ? 'color-mix(in srgb, var(--color-warning) 40%, transparent)' : 'color-mix(in srgb, var(--color-success) 40%, transparent)',
-              color: exportResult.startsWith('Export failed') ? 'var(--color-warning)' : 'var(--color-success)',
-              background: 'var(--color-bg-secondary)',
-            }}
-          >
-            {exportResult}
-          </div>
-        )}
-
-        {/* Create note */}
-        <ShellPanel title="New Note">
           <div className="flex flex-wrap gap-2">
-            <input
-              id="vault-new-title"
-              type="text"
-              placeholder="Note title…"
-              value={newTitle}
-              onChange={(e) => setNewTitle(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') handleCreate(); }}
-              className="h-9 flex-1 rounded-md border bg-transparent px-3 text-sm outline-none"
-              style={{ borderColor: 'var(--color-border)', color: 'var(--color-text)' }}
-            />
-            <select
-              id="vault-new-type"
-              value={newType}
-              onChange={(e) => setNewType(e.target.value as 'note' | 'project' | 'research')}
-              className="h-9 rounded-md border bg-transparent px-2 text-sm"
-              style={{ borderColor: 'var(--color-border)', color: 'var(--color-text)', background: 'var(--color-bg-secondary)' }}
-            >
-              <option value="note">note</option>
-              <option value="project">project</option>
-              <option value="research">research</option>
-            </select>
-            <button
-              id="vault-create-btn"
-              type="button"
-              disabled={creating || !newTitle.trim()}
-              onClick={handleCreate}
-              className="inline-flex h-9 items-center gap-2 rounded-md border px-3 text-xs font-medium disabled:opacity-50"
-              style={{ borderColor: 'var(--color-accent)', color: 'var(--color-accent)', background: 'var(--color-accent-subtle)' }}
-            >
-              <Plus size={14} />
-              {creating ? 'Creating…' : 'Create'}
-            </button>
-          </div>
-        </ShellPanel>
-
-        {/* Search */}
-        <ShellPanel title="Notes" action={selectedTag ? `#${selectedTag}` : searchResults ? `${searchResults.length} results` : `${notes.length} total`}>
-          <div className="mb-3 flex items-center gap-2 rounded-md border px-3"
-            style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg-secondary)' }}
-          >
-            <Search size={14} style={{ color: 'var(--color-text-tertiary)' }} />
-            <input
-              id="vault-search"
-              type="text"
-              placeholder="Search notes…"
-              value={searchQuery}
-              onChange={(e) => handleSearch(e.target.value)}
-              className="h-9 flex-1 bg-transparent text-sm outline-none"
-              style={{ color: 'var(--color-text)' }}
-            />
-          </div>
-
-          <div className="grid gap-2">
-            {visibleNotes.length === 0 && (
-              <p className="py-4 text-center text-sm" style={{ color: 'var(--color-text-secondary)' }}>
-                {live ? 'No notes yet. Create your first note above.' : 'Backend unavailable — notes will appear here once connected.'}
-              </p>
-            )}
-            {visibleNotes.map((note) => (
-              <div
-                key={note.id}
-                className="flex items-start justify-between gap-3 rounded-md border p-3"
-                style={{ borderColor: note.pinned ? 'color-mix(in srgb, var(--color-accent) 35%, transparent)' : 'var(--color-border)', background: 'var(--color-bg-secondary)' }}
-              >
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    {note.pinned && <Pin size={12} style={{ color: 'var(--color-accent)' }} />}
-                    <span className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>{note.title}</span>
-                    <NoteTypeBadge type={note.note_type} />
-                  </div>
-                  <div className="mt-1 flex flex-wrap gap-1">
-                    {note.tags.slice(0, 4).map((tag) => (
-                      <button
-                        key={tag}
-                        type="button"
-                        onClick={() => handleTagFilter(tag)}
-                        className="rounded px-1.5 py-0.5 text-xs"
-                        style={{ color: 'var(--color-accent)', background: 'var(--color-accent-subtle)' }}
-                      >
-                        #{tag}
-                      </button>
-                    ))}
-                  </div>
-                  <div className="mt-1 text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
-                    {note.date || formatTime(note.created_at)}
-                  </div>
-                </div>
-                <div className="flex shrink-0 gap-1">
-                  <button
-                    type="button"
-                    onClick={() => handlePin(note)}
-                    title={note.pinned ? 'Unpin' : 'Pin'}
-                    className="rounded p-1 transition-colors"
-                    style={{ color: note.pinned ? 'var(--color-accent)' : 'var(--color-text-tertiary)' }}
-                  >
-                    <Pin size={13} />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleDelete(note.id)}
-                    title="Delete"
-                    className="rounded p-1 transition-colors"
-                    style={{ color: 'var(--color-text-tertiary)' }}
-                  >
-                    <Trash2 size={13} />
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </ShellPanel>
-      </div>
-
-      {/* Sidebar panels */}
-      <div className="grid gap-4 content-start">
-        {/* Daily note */}
-        <ShellPanel title="Daily Note" action={dailyNote?.date || 'today'}>
-          {dailyNote ? (
-            <div className="grid gap-2">
-              <div className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>
-                {dailyNote.title}
-              </div>
-              <p className="line-clamp-4 text-xs" style={{ color: 'var(--color-text-secondary)' }}>
-                {dailyNote.content.replace(/^#[^\n]*\n?/, '').trim() || 'Empty daily note.'}
-              </p>
-              <div className="flex flex-wrap gap-1">
-                {dailyNote.tags.slice(0, 3).map((t) => (
-                  <span key={t} className="rounded px-1.5 py-0.5 text-xs" style={{ background: 'var(--color-accent-subtle)', color: 'var(--color-accent)' }}>#{t}</span>
-                ))}
-              </div>
-            </div>
-          ) : (
-            <p className="text-xs" style={{ color: 'var(--color-text-secondary)' }}>No daily note yet.</p>
-          )}
-        </ShellPanel>
-
-        {/* Tags */}
-        <ShellPanel title="Tags" action={`${tags.length} tags`}>
-          {tags.length === 0 && (
-            <p className="text-xs" style={{ color: 'var(--color-text-secondary)' }}>No tags yet.</p>
-          )}
-          <div className="flex flex-wrap gap-2">
-            {selectedTag && (
+            {profiles.map(p => (
               <button
+                key={p.id}
                 type="button"
-                onClick={() => handleTagFilter(null)}
-                className="rounded-full border px-2.5 py-1 text-xs font-medium"
-                style={{ borderColor: 'var(--color-accent)', color: 'var(--color-accent)', background: 'var(--color-accent-subtle)' }}
-              >
-                × clear
-              </button>
-            )}
-            {tags.slice(0, 20).map((tag) => (
-              <button
-                key={tag.name}
-                type="button"
-                onClick={() => handleTagFilter(tag.name)}
-                className="rounded-full border px-2.5 py-1 text-xs font-medium transition-colors"
+                onClick={() => switchProfile(p.id)}
+                className={`rounded-md border px-3 py-2 text-sm transition-colors ${p.id === status?.active_profile_id ? 'font-bold' : ''}`}
                 style={{
-                  borderColor: selectedTag === tag.name ? 'var(--color-accent)' : 'var(--color-border)',
-                  color: selectedTag === tag.name ? 'var(--color-accent)' : 'var(--color-text-secondary)',
-                  background: selectedTag === tag.name ? 'var(--color-accent-subtle)' : 'var(--color-bg-secondary)',
+                  borderColor: p.id === status?.active_profile_id ? 'var(--color-accent)' : 'var(--color-border)',
+                  background: p.id === status?.active_profile_id ? 'var(--color-accent-subtle)' : 'var(--color-bg-secondary)',
+                  color: 'var(--color-text)'
                 }}
               >
-                #{tag.name}
-                <span className="ml-1 opacity-60">{tag.count}</span>
+                {p.name}
               </button>
             ))}
           </div>
-        </ShellPanel>
+        </div>
+      </ShellPanel>
 
-        {/* Note type breakdown */}
-        <ShellPanel title="By Type">
-          <div className="grid gap-2">
-            {(['note', 'project', 'research', 'daily'] as const).map((type) => {
-              const count = notes.filter((n) => n.note_type === type).length;
-              return (
-                <button
-                  key={type}
-                  type="button"
-                  onClick={() => handleTagFilter(null)}
-                  className="flex items-center justify-between rounded-md border px-3 py-2 text-xs"
-                  style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg-secondary)' }}
-                >
-                  <NoteTypeBadge type={type} />
-                  <span style={{ color: 'var(--color-text-tertiary)' }}>{count}</span>
-                </button>
-              );
-            })}
-          </div>
-        </ShellPanel>
-      </div>
+      <ShellPanel title="Preferences">
+        <div className="grid gap-3 md:grid-cols-2">
+          {[
+            ['Preferred Workspace', status?.preferences?.preferred_workspace || 'Default'],
+            ['Agent Preference', status?.preferences?.coding_vs_engineering_preference || 'Balanced'],
+            ['Voice Interaction', status?.preferences?.voice_interaction ? 'Enabled' : 'Disabled'],
+            ['Wake Word', status?.preferences?.wake_word_preference ? 'Enabled' : 'Disabled'],
+            ['Quiet Mode', status?.preferences?.quiet_mode ? 'Enabled' : 'Disabled']
+          ].map(([label, value]) => (
+            <div
+              key={label}
+              className="rounded-md border p-4"
+              style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg-secondary)' }}
+            >
+              <div className="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+                {label}
+              </div>
+              <div className="mt-2 text-sm font-semibold" style={{ color: 'var(--color-text)' }}>
+                {value}
+              </div>
+            </div>
+          ))}
+        </div>
+      </ShellPanel>
     </div>
   );
 }
@@ -2862,17 +3962,254 @@ function ActiveSection({ section }: { section: MissionSectionId }) {
   if (section === 'agents') return <AgentsSection />;
   if (section === 'memory') return <MemorySection />;
   if (section === 'projects') return <ProjectsSection />;
+  if (section === 'desktop') return <DesktopSection />;
+  if (section === 'engineering') return <EngineeringSection />;
   if (section === 'coding') return <CodingSection />;
   if (section === 'repo') return <RepoSection />;
   if (section === 'voice') return <VoiceSection />;
   if (section === 'vision') return <VisionSection />;
   if (section === 'terminal') return <TerminalSection />;
+  if (section === 'workflows') return <WorkflowsSection />;
   if (section === 'research') return <ResearchSection />;
   if (section === 'learning') return <LearningPanel />;
-  if (section === 'knowledge-vault') return <KnowledgeVaultSection />;
+  if (section === 'release') return <ReleaseSection />;
   if (section === 'settings') return <SettingsSection />;
+  if (section === 'personalization') return <PersonalizationSection />;
   if (section === 'permissions') return <PermissionsSection />;
+  if (section === 'autonomy') return <AutonomySection />;
   return <HomeSection />;
+}
+
+function AutonomySection() {
+  const [approvals, setApprovals] = useState<AutonomyApprovalRequest[]>([]);
+  const [live, setLive] = useState(false);
+  const [goalTitle, setGoalTitle] = useState('');
+  const [goalDesc, setGoalDesc] = useState('');
+  const [activeGoal, setActiveGoal] = useState<AutonomyGoal | null>(null);
+  const [plan, setPlan] = useState<AutonomyPlan | null>(null);
+  const [state, setState] = useState<AutonomyExecutionState | null>(null);
+
+  const loadApprovals = async () => {
+    try {
+      const data = await fetchAutonomyApprovals();
+      setApprovals(data);
+      setLive(true);
+    } catch {
+      setLive(false);
+    }
+  };
+
+  useEffect(() => {
+    loadApprovals();
+    const interval = setInterval(loadApprovals, 5000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const handleCreateGoal = async () => {
+    if (!goalTitle || !goalDesc) return;
+    try {
+      const g = await createAutonomyGoal(goalTitle, goalDesc);
+      setActiveGoal(g);
+      setGoalTitle('');
+      setGoalDesc('');
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleGeneratePlan = async () => {
+    if (!activeGoal) return;
+    try {
+      const p = await generateAutonomyPlan(activeGoal.id);
+      setPlan(p);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleStart = async () => {
+    if (!plan) return;
+    try {
+      const s = await startAutonomyPlan(plan.id);
+      setState(s);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handlePause = async () => {
+    if (!plan) return;
+    try {
+      const s = await pauseAutonomyPlan(plan.id);
+      setState(s);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleResume = async () => {
+    if (!plan) return;
+    try {
+      const s = await resumeAutonomyPlan(plan.id);
+      setState(s);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleStop = async () => {
+    if (!plan) return;
+    try {
+      const s = await stopAutonomyPlan(plan.id);
+      setState(s);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleResolve = async (id: string, approved: boolean) => {
+    try {
+      await resolveAutonomyApproval(id, approved);
+      loadApprovals();
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  return (
+    <div className="grid gap-4 xl:grid-cols-[1fr_0.9fr]">
+      <ShellPanel title="Autonomy Controls" action={live ? 'live' : 'offline'}>
+        <div className="space-y-4">
+          <div className="rounded-md border p-4" style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg-secondary)' }}>
+            <h3 className="mb-2 text-sm font-semibold">1. Set Goal</h3>
+            <div className="space-y-2">
+              <input
+                type="text"
+                placeholder="Goal Title"
+                value={goalTitle}
+                onChange={(e) => setGoalTitle(e.target.value)}
+                className="w-full rounded-md border px-3 py-2 text-sm outline-none"
+                style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg)', color: 'var(--color-text)' }}
+              />
+              <textarea
+                placeholder="Goal Description"
+                value={goalDesc}
+                onChange={(e) => setGoalDesc(e.target.value)}
+                className="w-full rounded-md border px-3 py-2 text-sm outline-none"
+                rows={3}
+                style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg)', color: 'var(--color-text)' }}
+              />
+              <button
+                type="button"
+                onClick={handleCreateGoal}
+                className="rounded-md border px-3 py-2 text-sm font-medium transition-colors"
+                style={{ borderColor: 'var(--color-border)', background: 'var(--color-accent-subtle)', color: 'var(--color-text)' }}
+              >
+                Create Goal
+              </button>
+            </div>
+            {activeGoal && (
+              <div className="mt-4 border-t pt-4" style={{ borderColor: 'var(--color-border)' }}>
+                <div className="text-sm font-medium">Current Goal: {activeGoal.title}</div>
+                <div className="text-xs" style={{ color: 'var(--color-text-secondary)' }}>{activeGoal.status}</div>
+                <button
+                  type="button"
+                  onClick={handleGeneratePlan}
+                  className="mt-2 rounded-md border px-3 py-2 text-sm font-medium transition-colors"
+                  style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg)', color: 'var(--color-text)' }}
+                >
+                  Generate Plan
+                </button>
+              </div>
+            )}
+          </div>
+
+          {plan && (
+            <div className="rounded-md border p-4" style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg-secondary)' }}>
+              <h3 className="mb-2 text-sm font-semibold">2. Execution</h3>
+              <div className="mb-4 flex gap-2">
+                <button
+                  onClick={handleStart}
+                  className="rounded-md border px-3 py-1 text-xs font-medium"
+                  style={{ borderColor: 'var(--color-border)', background: 'var(--color-success)', color: '#fff' }}
+                >
+                  Start
+                </button>
+                <button
+                  onClick={handlePause}
+                  className="rounded-md border px-3 py-1 text-xs font-medium"
+                  style={{ borderColor: 'var(--color-border)', background: 'var(--color-warning)', color: '#fff' }}
+                >
+                  Pause
+                </button>
+                <button
+                  onClick={handleResume}
+                  className="rounded-md border px-3 py-1 text-xs font-medium"
+                  style={{ borderColor: 'var(--color-border)', background: 'var(--color-accent)', color: '#fff' }}
+                >
+                  Resume
+                </button>
+                <button
+                  onClick={handleStop}
+                  className="rounded-md border px-3 py-1 text-xs font-medium"
+                  style={{ borderColor: 'var(--color-border)', background: 'var(--color-error)', color: '#fff' }}
+                >
+                  Stop
+                </button>
+              </div>
+              <div className="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+                Status: {state?.status || 'idle'} <br />
+                Step: {state?.current_step_id || 'none'}
+              </div>
+              <div className="mt-4 space-y-2">
+                {plan.steps.map(step => (
+                  <div key={step.id} className="rounded-md border p-2 text-xs" style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg)' }}>
+                    <div className="font-semibold">{step.title}</div>
+                    <div style={{ color: 'var(--color-text-tertiary)' }}>{step.action_type} - {step.status}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      </ShellPanel>
+
+      <ShellPanel title="Approval Queue" action={`${approvals.length} pending`}>
+        <div className="space-y-3">
+          {approvals.map(app => (
+            <div key={app.id} className="rounded-md border p-3" style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg-secondary)' }}>
+              <div className="mb-2 flex items-center justify-between">
+                <span className="text-sm font-semibold">Step Approval</span>
+                <StatusPill tone="watch">Pending</StatusPill>
+              </div>
+              <div className="mb-3 text-xs" style={{ color: 'var(--color-text-secondary)' }}>{app.reason}</div>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => handleResolve(app.id, true)}
+                  className="rounded-md border px-3 py-1 text-xs font-medium"
+                  style={{ borderColor: 'var(--color-border)', background: 'var(--color-success)', color: '#fff' }}
+                >
+                  Approve
+                </button>
+                <button
+                  onClick={() => handleResolve(app.id, false)}
+                  className="rounded-md border px-3 py-1 text-xs font-medium"
+                  style={{ borderColor: 'var(--color-border)', background: 'var(--color-error)', color: '#fff' }}
+                >
+                  Reject
+                </button>
+              </div>
+            </div>
+          ))}
+          {approvals.length === 0 && (
+            <div className="rounded-md border p-3 text-sm" style={{ borderColor: 'var(--color-border)', color: 'var(--color-text-tertiary)' }}>
+              No pending approvals.
+            </div>
+          )}
+        </div>
+      </ShellPanel>
+    </div>
+  );
 }
 
 const fallbackModes: SiriModeConfig[] = [
