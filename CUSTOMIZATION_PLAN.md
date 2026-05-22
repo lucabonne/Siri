@@ -797,3 +797,60 @@ and does not complete within 55 seconds when run from the project root. This app
 pre-existing issue unrelated to Phase 3 changes (the two modified files contain no new type
 errors visible in the diff). Phase 3 was committed without a passing tsc run; the hang should
 be investigated separately.
+
+## Voice Control Phase 1
+
+Phase 1 establishes the integration architecture for future macOS push-to-talk voice control
+without removing any existing keyboard or text input.
+
+### Architecture
+
+```
+Fn key (held)
+    └── FnKeyPushToTalkListener.on_press()          [hotkeys/ — deferred]
+            └── POST /v1/voice/ptt/start
+
+Fn key (released)
+    └── FnKeyPushToTalkListener.on_release()        [hotkeys/ — deferred]
+            └── POST /v1/voice/ptt/stop
+            └── POST /v1/voice/ptt/transcribe-latest
+                    └── LocalVoiceTranscriber        [local whisper_cpp / faster-whisper]
+                    └── VoicePermissionGate.check_start()
+                    └── VoiceIntentPreview           [classify: dictation / question / action]
+            └── (user reviews preview)
+            └── POST /v1/voice/ptt/dispatch          [Phase 1 — new endpoint]
+                    └── AgentSendTool.execute(agent_id, message=transcript)
+                            └── existing orchestrator / agent message flow
+```
+
+### What Phase 1 adds
+
+- `src/openjarvis/hotkeys/__init__.py` — `HotkeyListener` abstract base and
+  `FnKeyPushToTalkListener` stub. Raises `NotImplementedError` on `start()`; exists
+  so the rest of the codebase can import and type-hint against the interface.
+
+- `POST /v1/voice/ptt/dispatch` — bridges an approved transcript to the existing
+  `AgentSendTool` orchestrator entry point (`/v1/agents/{agent_id}/message`).
+  Returns `dispatched: false` with a reason when no agent is addressable, rather
+  than raising an error, so callers can surface the state gracefully.
+
+### Invariants preserved
+
+- No always-on or background listening; push-to-talk only.
+- No cloud speech APIs; transcription is local (whisper_cpp / faster-whisper).
+- No removal of keyboard or text inputs.
+- No microphone access without explicit user PTT action.
+- Permission gate already in place via `VoicePermissionGate`.
+
+### Deferred work
+
+The following is explicitly out of scope for Phase 1:
+
+- CGEventTap / pynput macOS Fn key listener (requires Accessibility permission prompt)
+- Configurable hotkey (user-settable key combo)
+- Actual microphone recording integration wiring to the hotkey
+- Transcription backend installation UX
+- TTS / speech output for responses
+- macOS microphone permission prompting on first use
+- Frontend voice-only mode or UI controls
+- Cross-platform hotkey support

@@ -92,6 +92,11 @@ class VoiceTranscribeLatestRequest(BaseModel):
     language: str = ""
 
 
+class VoiceDispatchRequest(BaseModel):
+    transcript: str
+    agent_id: str = ""
+
+
 # ---- Agent routes ----
 
 agents_router = APIRouter(prefix="/v1/agents", tags=["agents"])
@@ -1080,6 +1085,49 @@ async def transcribe_latest_voice(
     service = _get_voice_ptt_service(request)
     try:
         return service.transcribe_latest(language=req.language or None)
+    except Exception as exc:
+        raise _voice_error(exc) from exc
+
+
+@voice_router.post("/dispatch")
+async def dispatch_voice_transcript(req: VoiceDispatchRequest, request: Request):
+    """Route an approved transcript to the active agent as a text message.
+
+    This is the bridge between the voice PTT pipeline and the existing
+    orchestrator. The caller is responsible for obtaining user approval before
+    calling this endpoint (see /transcribe-latest intent_preview).
+
+    Dispatches to POST /v1/agents/{agent_id}/message via AgentSendTool.
+    Returns dispatched=False with a reason when no agent is addressable.
+    """
+    if not req.transcript.strip():
+        raise HTTPException(status_code=422, detail="transcript must not be empty")
+    try:
+        from openjarvis.tools.agent_tools import AgentSendTool
+
+        agent_id = req.agent_id or getattr(
+            request.app.state, "active_agent_id", ""
+        )
+        if not agent_id:
+            return {
+                "dispatched": False,
+                "reason": "no active agent; provide agent_id",
+                "transcript": req.transcript,
+            }
+        tool = AgentSendTool()
+        result = tool.execute(agent_id=agent_id, message=req.transcript)
+        return {
+            "dispatched": result.success,
+            "agent_id": agent_id,
+            "transcript": req.transcript,
+            "content": result.content,
+        }
+    except ImportError:
+        return {
+            "dispatched": False,
+            "reason": "agent tools not available",
+            "transcript": req.transcript,
+        }
     except Exception as exc:
         raise _voice_error(exc) from exc
 

@@ -124,6 +124,22 @@ def test_voice_start_stop_transcribe_latest(client: TestClient) -> None:
     assert data["dispatched_to_agent"] is False
 
 
+def test_voice_dispatch_no_agent_returns_not_dispatched(client: TestClient) -> None:
+    resp = client.post(
+        "/v1/voice/ptt/dispatch",
+        json={"transcript": "open the notes app"},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["dispatched"] is False
+    assert "agent" in data["reason"]
+
+
+def test_voice_dispatch_empty_transcript_is_422(client: TestClient) -> None:
+    resp = client.post("/v1/voice/ptt/dispatch", json={"transcript": "  "})
+    assert resp.status_code == 422
+
+
 def test_voice_transcription_unavailable_response(tmp_path: Path) -> None:
     app = FastAPI()
     service = VoicePushToTalkService(
