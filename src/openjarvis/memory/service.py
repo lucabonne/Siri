@@ -393,7 +393,7 @@ class MemoryService:
                 pinned=pinned,
                 limit=limit,
             )
-        
+
         results = [self._row_to_memory(row, score=row["score"]) for row in rows]
         self._apply_memory_weights(results)
         results.sort(key=lambda x: x.get("score", 0), reverse=True)
@@ -401,10 +401,42 @@ class MemoryService:
 
     def _apply_memory_weights(self, items: list[dict[str, Any]]) -> None:
         try:
-            from openjarvis.personalization.memory_weights import get_weight_for_memory_type
+            from openjarvis.personalization.memory_weights import (
+                get_weight_for_memory_type,
+            )
+            from openjarvis.personalization.preferences import (
+                get_coding_vs_engineering,
+                get_preferred_workspace,
+            )
+
+            preferred_workspace = get_preferred_workspace()
+            coding_vs_eng = get_coding_vs_engineering()
+
             for item in items:
                 m_type = item.get("memory_type", "note")
                 weight = get_weight_for_memory_type(m_type)
+
+                tags = item.get("tags", [])
+                metadata = item.get("metadata", {})
+
+                if (
+                    preferred_workspace in tags
+                    or metadata.get("workspace") == preferred_workspace
+                ):
+                    weight *= 1.2
+                elif (
+                    preferred_workspace == "coding"
+                    and coding_vs_eng == "coding"
+                    and "coding" in tags
+                ):
+                    weight *= 1.1
+                elif (
+                    preferred_workspace == "engineering"
+                    and coding_vs_eng == "engineering"
+                    and "engineering" in tags
+                ):
+                    weight *= 1.1
+
                 if "score" in item:
                     item["score"] *= weight
         except ImportError:

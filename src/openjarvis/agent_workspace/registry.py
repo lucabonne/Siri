@@ -71,10 +71,17 @@ class AgentWorkspaceRegistry:
         agent_id = self._active_agent_id
         if agent_id == DEFAULT_ACTIVE_AGENT_ID:
             try:
-                from openjarvis.personalization.preferences import get_preferred_workspace
+                from openjarvis.personalization.preferences import (
+                    get_coding_vs_engineering,
+                    get_preferred_workspace,
+                )
                 pref = get_preferred_workspace()
                 if pref in self._agents:
                     agent_id = pref
+                else:
+                    fallback = get_coding_vs_engineering()
+                    if fallback in self._agents:
+                        agent_id = fallback
             except ImportError:
                 pass
         agent = self.get_agent(agent_id)

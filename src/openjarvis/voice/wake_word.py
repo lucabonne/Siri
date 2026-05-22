@@ -48,16 +48,25 @@ class WakeWordService:
     def _is_privacy_mode(self) -> bool:
         return getattr(self._active_mode(), "id", "") == "privacy"
 
+    def _is_quiet_mode(self) -> bool:
+        try:
+            from openjarvis.personalization.preferences import get_quiet_mode_preference
+            return get_quiet_mode_preference()
+        except ImportError:
+            return False
+
     def status(self) -> dict[str, Any]:
         """Return the current status of the wake word service."""
         privacy_mode = self._is_privacy_mode()
-        # Ensure it is disabled in privacy mode
-        if privacy_mode and self._enabled:
+        quiet_mode = self._is_quiet_mode()
+        # Ensure it is disabled in privacy mode or quiet mode
+        if (privacy_mode or quiet_mode) and self._enabled:
             self._enabled = False
 
         return {
             "enabled": self._enabled,
             "privacy_mode": privacy_mode,
+            "quiet_mode": quiet_mode,
             "local_only": True,
             "cloud_audio": False,
         }
@@ -67,6 +76,10 @@ class WakeWordService:
         if self._is_privacy_mode():
             raise VoicePermissionError(
                 "Wake word detection is disabled in Privacy Mode."
+            )
+        if self._is_quiet_mode():
+            raise VoicePermissionError(
+                "Wake word detection is disabled in Quiet Mode."
             )
 
         if not explicit_approval:
@@ -90,6 +103,10 @@ class WakeWordService:
         if self._is_privacy_mode():
             raise VoicePermissionError(
                 "Wake word detection is disabled in Privacy Mode."
+            )
+        if self._is_quiet_mode():
+            raise VoicePermissionError(
+                "Wake word detection is disabled in Quiet Mode."
             )
 
         if self._voice_service is None:

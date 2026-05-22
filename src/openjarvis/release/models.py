@@ -106,6 +106,9 @@ class ReleaseHealthSnapshot:
     autonomous_agents: bool = False
     wake_words: bool = False
     intelligence_features: bool = False
+    active_profile_summary: dict[str, Any] = field(default_factory=dict)
+    wake_status: dict[str, Any] = field(default_factory=dict)
+    readiness_state: str = "unknown"
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -123,6 +126,9 @@ class ReleaseHealthSnapshot:
             "autonomous_agents": self.autonomous_agents,
             "wake_words": self.wake_words,
             "intelligence_features": self.intelligence_features,
+            "active_profile_summary": dict(self.active_profile_summary),
+            "wake_status": dict(self.wake_status),
+            "readiness_state": self.readiness_state,
         }
 
 

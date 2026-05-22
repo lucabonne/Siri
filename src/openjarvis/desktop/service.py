@@ -478,7 +478,26 @@ class DesktopService:
             "coding_assistant": self._coding_snapshot(focus, privacy_mode=privacy_mode),
             "engineering": self._engineering_snapshot(privacy_mode=privacy_mode),
             "packaging": self._packaging_snapshot(),
+            "personalization": self._personalization_snapshot(),
         }
+
+    def _personalization_snapshot(self) -> dict[str, Any]:
+        try:
+            from openjarvis.personalization.preferences import (
+                get_mission_control_defaults,
+                get_preferred_workspace,
+            )
+            from openjarvis.personalization.profiles import get_active_profile
+
+            profile = get_active_profile()
+            return {
+                "available": True,
+                "active_profile_id": profile.id if profile else None,
+                "mission_control_defaults": get_mission_control_defaults().model_dump(),
+                "preferred_workspace": get_preferred_workspace(),
+            }
+        except Exception:
+            return {"available": False}
 
     def _memory_snapshot(self, *, privacy_mode: bool) -> dict[str, Any]:
         if self.memory_service is None:
