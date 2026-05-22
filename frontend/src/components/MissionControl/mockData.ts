@@ -2,6 +2,7 @@ import {
   Activity,
   Bot,
   Brain,
+  BookMarked,
   CalendarDays,
   CheckSquare,
   FileSearch,
@@ -11,6 +12,11 @@ import {
   KeyRound,
   Settings,
   TerminalSquare,
+  BookOpen,
+  Wrench,
+  Workflow,
+  User,
+  Cpu,
 } from 'lucide-react';
 import type {
   MissionAgent,
@@ -36,8 +42,12 @@ export const missionSections: MissionSection[] = [
   { id: 'projects', label: 'Projects', icon: FolderKanban },
   { id: 'terminal', label: 'Terminal', icon: TerminalSquare },
   { id: 'research', label: 'Research', icon: FileSearch },
+  { id: 'learning', label: 'Learning', icon: BookOpen },
+  { id: 'release', label: 'Release', icon: ShieldCheck },
   { id: 'settings', label: 'Settings', icon: Settings },
+  { id: 'personalization', label: 'Personalization', icon: User },
   { id: 'permissions', label: 'Permissions', icon: KeyRound },
+  { id: 'autonomy', label: 'Autonomy', icon: Cpu },
 ];
 
 export const missionMetrics: MissionMetric[] = [

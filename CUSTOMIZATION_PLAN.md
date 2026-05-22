@@ -187,6 +187,95 @@ status without changing intelligence behavior.
   does not add wake words, autonomous agents, scheduler-driven actions, cloud
   upload, or new intelligence features.
 
+## Installer / Release App Phase 1
+
+Phase 1 turns the existing local Siri.app bundle into a first usable macOS
+release install while keeping the installer local-only.
+
+- `PackagingService` now builds, installs, updates, uninstalls, and diagnoses
+  the Siri.app bundle using the existing packaging metadata, launcher scripts,
+  and app bundle generator.
+- `jarvis package install`, `uninstall`, and `release-diagnostics` provide the
+  local release app command surface alongside the existing status, diagnostics,
+  build, launch, and restart commands.
+- `packaging/scripts/install_macos.sh`, `uninstall_macos.sh`, and
+  `release_diagnostics.sh` run from the source checkout without requiring a
+  globally installed `jarvis` command; they use the packaging-only
+  `package_app.py` entry point so installer checks avoid importing the full
+  application CLI.
+- Installs target `~/Applications/Siri.app` by default, can opt into
+  `/Applications/Siri.app`, and update the app bundle through a staging path
+  before replacing an existing install.
+- LaunchAgent installation is updated through the packaging service and the
+  macOS script safely unloads any existing user agent before writing and
+  bootstrapping the current plist.
+- Release readiness now verifies backend/frontend launcher paths and required
+  local dependencies: Python, uv, Node, npm, Ollama, and ffmpeg. macOS
+  permissions guidance is surfaced for microphone, accessibility, screen
+  recording, and notifications.
+- Mission Control release readiness now includes Siri.app install state,
+  LaunchAgent state, app executable path, and packaging install readiness.
+- Tests cover install/uninstall behavior, LaunchAgent arguments, release
+  diagnostics, packaging routes, and repair of installer script placeholders.
+
+Deferred work remains intentionally untouched in this phase:
+
+- no notarization
+- no auto-update
+- no wake word
+- no remote installer
+
+## Release Candidate Polish Phase 1
+
+Phase 1 makes Siri easier to install, launch, diagnose, and verify as a local macOS app.
+
+- Adds a clear `RELEASE_CHECKLIST.md` for manual and automated validation.
+- Adds `packaging/scripts/validate_release.sh` for one-command local release validation.
+- Validation covers frontend build, backend import, packaging diagnostics, app bundle exists/builds, installer/uninstaller script existence, LaunchAgent plist generation, and required binaries (`ffmpeg`, `ollama`).
+- Mission Control release readiness natively surfaces the diagnostics and install state through `src/openjarvis/release/service.py` and `ReleasePanel.tsx`.
+- Explicitly adds clear PASS/FAIL output with troubleshooting hints for common failures in the validation script.
+
+Deferred work remains intentionally untouched in this phase:
+
+- no new features
+- no wake word expansion
+- no autonomy
+- no cloud services
+- Focus remains purely on release usability and diagnostics.
+
+## Release Smoke Phase 1
+
+Phase 1 validation was run against the local macOS packaging flow on
+2026-05-22 and updated after Release Smoke Fix Phase 1 in
+`release/reports/smoke_phase_1.md`.
+
+- Building, local user install, uninstall, and clean reinstall all completed
+  through the packaging scripts.
+- The final install state contains `~/Applications/Siri.app`,
+  `Contents/MacOS/Siri`, `Contents/Info.plist`, `Contents/Resources/Siri.icns`,
+  bundled runtime launch scripts, and a valid
+  `~/Library/LaunchAgents/com.openjarvis.siri.plist`.
+- Release diagnostics, packaging status, Mission Control, memory, voice,
+  hotkey, tray, and startup scheduler status now load from the installed local
+  release backend.
+- The launcher no longer assumes a `python` executable. It prefers the project
+  venv Python, then `uv run`, then `python3`.
+- LaunchAgent execution now uses `/bin/bash` plus the installed app executable,
+  while the app executable runs bundled scripts from inside the app bundle
+  instead of source-checkout shell files.
+- Backend health waits now emit actionable stdout/stderr log tails on failure.
+- `ffmpeg` is detected at `/opt/homebrew/bin/ffmpeg`; missing-machine
+  diagnostics include `brew install ffmpeg`.
+- The installed frontend is served from built static assets with SPA fallback,
+  avoiding Vite dev-server dependency scanning during release launch.
+
+Deferred work remains intentionally untouched in this phase:
+
+- no new features
+- no wake word
+- no autonomy
+- no background agent behavior
+
 ## Frontend Build Stability
 
 Production frontend builds now avoid the Vite/Rollup transform hang without
@@ -386,6 +475,27 @@ Deferred work remains intentionally untouched in this phase:
 - no remote telemetry
 - no external uploads
 - no changes to the WorldMonitor repo itself
+
+## Controlled Autonomy Phase 1
+
+Phase 1 adds an explicit, controlled Autonomy Layer that allows Siri to execute multi-step plans without becoming a free-running agent.
+
+- `src/openjarvis/autonomy/` owns goals, planner, execution engine, approvals, memory recording, typed models, and the coordinating autonomy service.
+- The planner breaks down user-created goals into explicit `PlanStep` sequences.
+- Execution steps are processed sequentially. Steps can be gated by an `ApprovalManager` for explicit user approval before execution.
+- The layer supports pausing, resuming, and stopping plans manually.
+- Memory integration records goal creation, plan generation, and execution milestones.
+- `/v1/autonomy` exposes the autonomy API for goals, plans, execution state, and approval resolution.
+- Mission Control includes an Autonomy panel for setting goals, generating plans, running/pausing/stopping execution, and resolving approvals.
+- Privacy Mode remains local-only. Autonomy actions cannot bypass permissions or execute without explicit user triggering.
+
+Deferred work remains intentionally untouched in this phase:
+
+- no background agent loops
+- no self-generated goals
+- no autonomous internet browsing
+- no self-improvement loops
+- no AGI behaviors
 
 ## Memory Architecture Phase 1
 
@@ -652,6 +762,25 @@ Deferred work remains intentionally untouched in this phase:
 - no background polling
 - no OCR or cloud vision analysis
 - no screen control or click automation
+
+## Wake Word Phase 1
+
+Phase 1 adds optional local wake-word support without replacing push-to-talk, enabling a seamless voice experience.
+
+- `src/openjarvis/voice/wake_word.py` owns the local wake word detection service, managing enabled state, Privacy Mode integration, and test triggering.
+- Wake word is disabled by default and requires explicit user approval to enable.
+- Local-only detection ensures no cloud audio streaming.
+- Privacy Mode overrides user settings to disable wake words.
+- No transcription occurs until the wake word is successfully detected.
+- `/v1/voice/wake-word/status`, `/enable`, `/disable`, and `/test-trigger` expose local Wake Word controls for Mission Control and local clients.
+- `PermissionMiddleware` is integrated to enforce Privacy Mode constraints on wake word execution.
+- Mission Control's Voice tab includes a dynamic indicator when listening for a wake word.
+
+Deferred work remains intentionally untouched in this phase:
+
+- no autonomous speech
+- no continuous cloud storage of audio
+- no default enablement
 
 ## Voice Push-to-Talk Phase 1
 
@@ -935,3 +1064,60 @@ the conservative execution default from earlier phases.
 
 Approving a queued item records the user's decision for review and follow-up;
 it does not silently resume or replay the blocked tool call.
+
+## Learning Layer Phase 1
+
+Phase 1 adds explicit, local-only feedback tracking to personalize ranking and
+suggestions across Siri without introducing autonomous adaptation or cloud sync.
+
+- `src/openjarvis/learning_layer/` owns the core feedback, preference, ranking,
+  memory, models, and service logic. Learning state is persisted locally to
+  `~/.openjarvis/state/learning/learning_state.json`.
+- Users explicitly provide thumbs up/down feedback which adjust preference weights
+  and component scores. No self-modifying prompts, no hidden adaptation.
+- Feedback affects:
+  - Memory multipliers (important topics get a relevance boost in searches)
+  - Workflow ranking (preferred workflows move up the list)
+  - Personalization defaults (learning layer aggregates preference weights)
+- `LearningPanel.tsx` in Mission Control offers a dedicated section to view
+  learning metrics, current preference weights, and manually reset, export, or
+  import learning state.
+- Data remains local and is explicitly triggered by user-driven ratings, ensuring
+  maximum predictability and control over adaptation.
+## Personalization Phase 1
+
+Phase 1 introduces a safe, explicit, and localized personalization model to Siri.
+It avoids cloud synchronization, autonomous learning loops, or implicit behavior drift.
+
+- `src/openjarvis/personalization/` is introduced as the central subsystem for
+  storing and retrieving user preferences, routines, memory weights, and profiles.
+- Profile states and active profile IDs are stored locally in JSON format under
+  `~/.openjarvis/state/profiles/` and `~/.openjarvis/state/active_profile.json`.
+- `Preferences` defines static configuration points, such as the preferred
+  workspace environment, coding vs. engineering operational focus, and toggle
+  switches for voice interaction and wake words.
+- `MemoryWeights` allow different profiles to place different importance multipliers
+  on memory types (e.g. project context vs coding patterns).
+- `Routines` defines explicitly toggled behaviors like the Morning Briefing.
+- The `PersonalizationService` and API route `/v1/personalization/...` expose
+  the profile and preference management to the rest of the system.
+- Integration points are explicitly injected via decoupled import wrappers across
+  the codebase: `MemoryService` applies the active profile memory weights;
+  `WakeWordService` respects the active wake word preference; `VoicePushToTalkService`
+  checks for voice interaction defaults; `AgentWorkspaceRegistry` overrides the
+  default active agent based on the preferred workspace environment.
+- Mission Control now includes a Personalization panel displaying the active
+  profile, the ability to switch profiles, and a summary of loaded preferences.
+
+## Desktop Integration Phase 1 (Personalization)
+
+Phase 1 unifies Siri's isolated systems with the Personalization module, allowing user preferences to influence Wake Word, Memory, Agent Workspace, Mission Control, Voice, and Release systems, without adding autonomy, cloud sync, new models, or new UI systems.
+
+- `src/openjarvis/voice/wake_word.py`: Disables wake word detection if the quiet profile preference is enabled.
+- `src/openjarvis/memory/service.py`: Adjusts `search_memories` to boost scores dynamically based on the user's preferred workspace or coding vs. engineering operational focus.
+- `src/openjarvis/agent_workspace/registry.py`: Ensures `get_active_agent()` uses the preferred workspace, falling back to the operational focus preference to dictate the default agent.
+- `src/openjarvis/desktop/service.py`: Exposes a new personalization block in the integration snapshot, allowing Mission Control to read default tabs, section visibility, and startup layout from the active profile.
+- `src/openjarvis/voice/service.py`: Integrates `get_voice_interaction_enabled()` and `get_ptt_priority()` to influence voice interaction mode and PTT priority handling.
+- `src/openjarvis/tts/service.py`: Updates text-to-speech to intrinsically respect quiet mode without requiring explicit flags on every speak request.
+- `src/openjarvis/release/service.py`: Includes active profile summary, wake status, and readiness state directly within `ReleaseHealthSnapshot` for diagnostic reporting.
+- Tests are added in `tests/integration/test_personalization_integration.py` to ensure local configuration propagates cleanly through all systems.

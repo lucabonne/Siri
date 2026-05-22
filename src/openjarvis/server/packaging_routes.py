@@ -16,6 +16,17 @@ class PackageBuildRequest(BaseModel):
     output_dir: str = ""
 
 
+class PackageInstallRequest(BaseModel):
+    destination: str = "user"
+    install_launch_agent: bool = True
+    output_dir: str = ""
+
+
+class PackageUninstallRequest(BaseModel):
+    remove_launch_agent: bool = True
+    destinations: list[str] | None = None
+
+
 def get_packaging_service(request: Request) -> PackagingService:
     service = getattr(request.app.state, "packaging_service", None)
     if service is None:
@@ -43,6 +54,13 @@ async def packaging_diagnostics(request: Request):
     )
 
 
+@packaging_router.get("/release-diagnostics")
+async def packaging_release_diagnostics(request: Request):
+    """Return local installer and release diagnostics."""
+
+    return get_packaging_service(request).release_diagnostics()
+
+
 @packaging_router.get("/launcher/state")
 async def packaging_launcher_state(request: Request):
     """Return local packaging launcher state."""
@@ -58,6 +76,27 @@ async def build_app_bundle(body: PackageBuildRequest, request: Request):
 
     return get_packaging_service(request).build_app_bundle(
         output_dir=body.output_dir or None,
+    )
+
+
+@packaging_router.post("/install")
+async def install_app_bundle(body: PackageInstallRequest, request: Request):
+    """Install or update the local macOS Siri.app bundle."""
+
+    return get_packaging_service(request).install_app_bundle(
+        destination=body.destination,
+        install_launch_agent=body.install_launch_agent,
+        output_dir=body.output_dir or None,
+    )
+
+
+@packaging_router.post("/uninstall")
+async def uninstall_app_bundle(body: PackageUninstallRequest, request: Request):
+    """Remove local Siri.app bundle installs and optionally the LaunchAgent."""
+
+    return get_packaging_service(request).uninstall_app_bundle(
+        remove_launch_agent=body.remove_launch_agent,
+        destinations=body.destinations,
     )
 
 

@@ -50,6 +50,7 @@ class DesktopService:
         workflow_service: Any = None,
         startup_service: Any = None,
         voice_trigger_service: Any = None,
+        wake_word_service: Any = None,
         tts_service: Any = None,
         permission_middleware: Any = None,
         mcp_server: Any = None,
@@ -71,6 +72,7 @@ class DesktopService:
         self.workflow_service = workflow_service
         self.startup_service = startup_service
         self.voice_trigger_service = voice_trigger_service
+        self.wake_word_service = wake_word_service
         self.tts_service = tts_service
         self.permission_middleware = permission_middleware
         self.mcp_server = mcp_server
@@ -476,7 +478,26 @@ class DesktopService:
             "coding_assistant": self._coding_snapshot(focus, privacy_mode=privacy_mode),
             "engineering": self._engineering_snapshot(privacy_mode=privacy_mode),
             "packaging": self._packaging_snapshot(),
+            "personalization": self._personalization_snapshot(),
         }
+
+    def _personalization_snapshot(self) -> dict[str, Any]:
+        try:
+            from openjarvis.personalization.preferences import (
+                get_mission_control_defaults,
+                get_preferred_workspace,
+            )
+            from openjarvis.personalization.profiles import get_active_profile
+
+            profile = get_active_profile()
+            return {
+                "available": True,
+                "active_profile_id": profile.id if profile else None,
+                "mission_control_defaults": get_mission_control_defaults().model_dump(),
+                "preferred_workspace": get_preferred_workspace(),
+            }
+        except Exception:
+            return {"available": False}
 
     def _memory_snapshot(self, *, privacy_mode: bool) -> dict[str, Any]:
         if self.memory_service is None:
@@ -561,11 +582,14 @@ class DesktopService:
             return {"available": False}
         try:
             status = self.voice_trigger_service.status()
+            wake_words = False
+            if self.wake_word_service is not None:
+                wake_words = bool(self.wake_word_service.status().get("enabled", False))
             return {
                 "available": True,
                 "status": status,
                 "voice_trigger_enabled": bool(status.get("enabled", False)),
-                "wake_words": False,
+                "wake_words": wake_words,
                 "local_only": True,
                 "passive_only": True,
             }

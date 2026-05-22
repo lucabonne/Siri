@@ -673,6 +673,7 @@ export interface PackagingStatus {
   paths: Record<string, string>;
   app_bundle_path: string;
   app_bundle_exists: boolean;
+  installation: Record<string, unknown>;
   install_readiness: {
     ready: boolean;
     blockers: string[];
@@ -762,6 +763,8 @@ export interface ReleaseMissionControlSnapshot {
   recovery_actions: ReleaseRecoveryAction[];
   report: ReleaseReport;
   privacy_mode: Record<string, unknown>;
+  packaging_status: PackagingStatus;
+  install_readiness: Record<string, unknown>;
   local_only: boolean;
   telemetry_enabled: boolean;
   autonomous_agents: boolean;
@@ -2811,4 +2814,176 @@ export async function fetchResearchMemoryEntries(researchId: string): Promise<St
   if (!res.ok) throw new Error(`Failed to fetch research memory entries: ${res.status}`);
   const data = await res.json();
   return data.memories;
+}
+// ---------------------------------------------------------------------------
+// Personalization
+// ---------------------------------------------------------------------------
+
+export interface Profile {
+  id: string;
+  name: string;
+  is_default?: boolean;
+}
+
+export interface Preferences {
+  preferred_workspace: string;
+  coding_vs_engineering_preference: string;
+  voice_interaction: boolean;
+  wake_word_preference: boolean;
+  quiet_mode: boolean;
+  mission_control_defaults: Record<string, unknown>;
+}
+
+export interface ProfileStatus {
+  active_profile_id: string;
+  active_profile: Profile | null;
+  preferences: Preferences;
+}
+
+export async function fetchPersonalizationStatus(): Promise<ProfileStatus> {
+  const res = await fetch(`${getBase()}/v1/personalization/status`);
+  if (!res.ok) throw new Error(`Failed to fetch personalization status: ${res.status}`);
+  return res.json();
+}
+
+export async function listProfiles(): Promise<Profile[]> {
+  const res = await fetch(`${getBase()}/v1/personalization/profiles`);
+  if (!res.ok) throw new Error(`Failed to list profiles: ${res.status}`);
+  return res.json();
+}
+
+export async function createProfile(profile: Profile): Promise<Profile> {
+  const res = await fetch(`${getBase()}/v1/personalization/profiles`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(profile),
+  });
+  if (!res.ok) throw new Error(`Failed to create profile: ${res.status}`);
+  return res.json();
+}
+
+export async function switchActiveProfile(profileId: string): Promise<ProfileStatus> {
+  const res = await fetch(`${getBase()}/v1/personalization/active`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ profile_id: profileId }),
+  });
+  if (!res.ok) throw new Error(`Failed to switch active profile: ${res.status}`);
+  return res.json();
+}
+
+// ---------------------------------------------------------------------------
+// Autonomy Layer
+// ---------------------------------------------------------------------------
+
+export interface AutonomyGoal {
+  id: string;
+  title: string;
+  description: string;
+  status: string;
+  created_at: string;
+  updated_at: string;
+  completed_at: string | null;
+}
+
+export interface AutonomyPlanStep {
+  id: string;
+  title: string;
+  action_type: string;
+  description: string;
+  status: string;
+  requires_approval: boolean;
+  dependencies: string[];
+  output: Record<string, unknown>;
+}
+
+export interface AutonomyPlan {
+  id: string;
+  goal_id: string;
+  steps: AutonomyPlanStep[];
+  created_at: string;
+}
+
+export interface AutonomyExecutionState {
+  plan_id: string;
+  goal_id: string;
+  status: string;
+  current_step_id: string | null;
+  updated_at: string;
+}
+
+export interface AutonomyApprovalRequest {
+  id: string;
+  plan_id: string;
+  step_id: string;
+  reason: string;
+  status: string;
+  created_at: string;
+  resolved_at: string | null;
+}
+
+export async function createAutonomyGoal(title: string, description: string): Promise<AutonomyGoal> {
+  const res = await fetch(`${getBase()}/v1/autonomy/goals`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title, description }),
+  });
+  if (!res.ok) throw new Error(`Failed to create goal: ${res.status}`);
+  return res.json();
+}
+
+export async function generateAutonomyPlan(goalId: string): Promise<AutonomyPlan> {
+  const res = await fetch(`${getBase()}/v1/autonomy/goals/${encodeURIComponent(goalId)}/plan`, {
+    method: 'POST',
+  });
+  if (!res.ok) throw new Error(`Failed to generate plan: ${res.status}`);
+  return res.json();
+}
+
+export async function startAutonomyPlan(planId: string): Promise<AutonomyExecutionState> {
+  const res = await fetch(`${getBase()}/v1/autonomy/plans/${encodeURIComponent(planId)}/start`, {
+    method: 'POST',
+  });
+  if (!res.ok) throw new Error(`Failed to start plan: ${res.status}`);
+  return res.json();
+}
+
+export async function pauseAutonomyPlan(planId: string): Promise<AutonomyExecutionState> {
+  const res = await fetch(`${getBase()}/v1/autonomy/plans/${encodeURIComponent(planId)}/pause`, {
+    method: 'POST',
+  });
+  if (!res.ok) throw new Error(`Failed to pause plan: ${res.status}`);
+  return res.json();
+}
+
+export async function resumeAutonomyPlan(planId: string): Promise<AutonomyExecutionState> {
+  const res = await fetch(`${getBase()}/v1/autonomy/plans/${encodeURIComponent(planId)}/resume`, {
+    method: 'POST',
+  });
+  if (!res.ok) throw new Error(`Failed to resume plan: ${res.status}`);
+  return res.json();
+}
+
+export async function stopAutonomyPlan(planId: string): Promise<AutonomyExecutionState> {
+  const res = await fetch(`${getBase()}/v1/autonomy/plans/${encodeURIComponent(planId)}/stop`, {
+    method: 'POST',
+  });
+  if (!res.ok) throw new Error(`Failed to stop plan: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchAutonomyApprovals(): Promise<AutonomyApprovalRequest[]> {
+  const res = await fetch(`${getBase()}/v1/autonomy/approvals`);
+  if (!res.ok) throw new Error(`Failed to fetch approvals: ${res.status}`);
+  return res.json();
+}
+
+export async function resolveAutonomyApproval(approvalId: string, approved: boolean): Promise<AutonomyApprovalRequest> {
+  const res = await fetch(`${getBase()}/v1/autonomy/approvals/${encodeURIComponent(approvalId)}/resolve`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ approved }),
+  });
+  if (!res.ok) throw new Error(`Failed to resolve approval: ${res.status}`);
+  return res.json();
 }

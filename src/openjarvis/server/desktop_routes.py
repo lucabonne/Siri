@@ -128,6 +128,7 @@ def get_desktop_service(request: Request) -> DesktopService:
         workflow_service=workflow_service,
         startup_service=_startup_service(request),
         voice_trigger_service=getattr(request.app.state, "hotkey_service", None),
+        wake_word_service=getattr(request.app.state, "wake_word_service", None),
         tts_service=getattr(request.app.state, "tts_service", None),
         permission_middleware=permission,
         mcp_server=getattr(request.app.state, "mcp_server", None),
@@ -159,6 +160,12 @@ def _attach_runtime_integrations(service: DesktopService, request: Request) -> N
         service.voice_trigger_service = getattr(
             request.app.state,
             "hotkey_service",
+            None,
+        )
+    if getattr(service, "wake_word_service", None) is None:
+        service.wake_word_service = getattr(
+            request.app.state,
+            "wake_word_service",
             None,
         )
     if getattr(service, "tts_service", None) is None:

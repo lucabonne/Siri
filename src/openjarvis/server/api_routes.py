@@ -10,7 +10,9 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, HTTPException, Request, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
 
+from openjarvis.personalization.service import router as personalization_router
 from openjarvis.server.agent_workspace_routes import agent_workspace_router
+from openjarvis.server.autonomy_routes import autonomy_router
 from openjarvis.server.coding_assistant_routes import coding_assistant_router
 from openjarvis.server.context_routes import context_router
 from openjarvis.server.desktop_routes import desktop_router
@@ -95,6 +97,14 @@ class VoiceStartRecordingRequest(BaseModel):
 
 class VoiceTranscribeLatestRequest(BaseModel):
     language: str = ""
+
+
+class WakeWordEnableRequest(BaseModel):
+    approved: bool = False
+
+
+class WakeWordTestTriggerRequest(BaseModel):
+    approved: bool = False
 
 
 class HotkeyEnableRequest(BaseModel):
@@ -1108,6 +1118,74 @@ async def transcribe_latest_voice(
         raise _voice_error(exc) from exc
 
 
+# ---- Local wake word routes ----
+
+wake_word_router = APIRouter(prefix="/v1/voice/wake-word", tags=["voice"])
+
+
+def _get_wake_word_service(request: Request):
+    service = getattr(request.app.state, "wake_word_service", None)
+    if service is not None:
+        return service
+
+    from openjarvis.security.permissions import PermissionMiddleware
+    from openjarvis.voice.wake_word import WakeWordService
+
+    mode_registry = getattr(request.app.state, "mode_registry", None)
+    permission_middleware = getattr(
+        request.app.state,
+        "permission_middleware",
+        None,
+    )
+    if permission_middleware is None:
+        permission_middleware = PermissionMiddleware(mode_registry=mode_registry)
+        request.app.state.permission_middleware = permission_middleware
+
+    service = WakeWordService(
+        config=getattr(request.app.state, "config", None),
+        voice_service=_get_voice_ptt_service(request),
+        mode_registry=mode_registry,
+        permission_middleware=permission_middleware,
+    )
+    request.app.state.wake_word_service = service
+    return service
+
+
+@wake_word_router.get("/status")
+async def wake_word_status(request: Request):
+    """Return wake word detection status."""
+    return _get_wake_word_service(request).status()
+
+
+@wake_word_router.post("/enable")
+async def enable_wake_word(req: WakeWordEnableRequest, request: Request):
+    """Enable local wake word detection."""
+    try:
+        return _get_wake_word_service(request).enable(explicit_approval=req.approved)
+    except Exception as exc:
+        raise _voice_error(exc) from exc
+
+
+@wake_word_router.post("/disable")
+async def disable_wake_word(request: Request):
+    """Disable local wake word detection."""
+    try:
+        return _get_wake_word_service(request).disable()
+    except Exception as exc:
+        raise _voice_error(exc) from exc
+
+
+@wake_word_router.post("/test-trigger")
+async def test_wake_word_trigger(req: WakeWordTestTriggerRequest, request: Request):
+    """Test wake word detection manually."""
+    try:
+        return _get_wake_word_service(request).test_trigger(
+            explicit_approval=req.approved
+        )
+    except Exception as exc:
+        raise _voice_error(exc) from exc
+
+
 # ---- Global voice hotkey routes ----
 
 hotkey_router = APIRouter(prefix="/v1/hotkeys", tags=["hotkeys"])
@@ -1445,6 +1523,7 @@ def include_all_routes(app) -> None:
     app.include_router(learning_router)
     app.include_router(speech_router)
     app.include_router(voice_router)
+    app.include_router(wake_word_router)
     app.include_router(hotkey_router)
     app.include_router(tts_router)
     app.include_router(feedback_router)
@@ -1464,6 +1543,8 @@ def include_all_routes(app) -> None:
     app.include_router(repo_index_router)
     app.include_router(coding_assistant_router)
     app.include_router(workflow_router)
+    app.include_router(personalization_router)
+    app.include_router(autonomy_router)
 
     # Agent Manager routes (if available)
     try:
@@ -1512,6 +1593,7 @@ __all__ = [
     "learning_router",
     "speech_router",
     "voice_router",
+    "wake_word_router",
     "hotkey_router",
     "tts_router",
     "feedback_router",
@@ -1524,4 +1606,5 @@ __all__ = [
     "release_router",
     "research_router",
     "workflow_router",
+    "autonomy_router",
 ]

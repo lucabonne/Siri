@@ -10,8 +10,13 @@ export type MissionSectionId =
   | 'projects'
   | 'terminal'
   | 'research'
+  | 'learning'
+  | 'mcp'
+  | 'release'
   | 'settings'
-  | 'permissions';
+  | 'personalization'
+  | 'permissions'
+  | 'autonomy';
 
 export type StatusTone = 'good' | 'watch' | 'busy' | 'quiet';
 

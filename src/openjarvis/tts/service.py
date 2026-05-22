@@ -73,6 +73,13 @@ class LocalTTSService:
 
         active_mode = self._active_mode()
         mode_id = getattr(active_mode, "id", "")
+        try:
+            from openjarvis.personalization.preferences import get_quiet_mode_preference
+            if get_quiet_mode_preference():
+                mode_id = "quiet"
+        except ImportError:
+            pass
+
         if mode_id == "quiet" and not req.allow_quiet:
             raise TTSPermissionError("Quiet Mode disables voice output by default")
 
@@ -132,6 +139,12 @@ class LocalTTSService:
         """Return voice output status for Mission Control."""
         active_mode = self._active_mode()
         mode_id = getattr(active_mode, "id", "")
+        try:
+            from openjarvis.personalization.preferences import get_quiet_mode_preference
+            if get_quiet_mode_preference():
+                mode_id = "quiet"
+        except ImportError:
+            pass
         voices = self.voices()
         selected_voice = self._state.selected_voice_id
         if not selected_voice and voices:

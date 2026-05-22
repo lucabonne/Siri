@@ -42,6 +42,15 @@ def _project(tmp_path: Path) -> Path:
     (tmp_path / "packaging/launchers/siri-launcher.sh").write_text("#!/bin/sh\n")
     (tmp_path / "packaging/scripts/bootstrap_backend.sh").write_text("#!/bin/sh\n")
     (tmp_path / "packaging/scripts/bootstrap_frontend.sh").write_text("#!/bin/sh\n")
+    (tmp_path / "packaging/scripts/install_macos.sh").write_text("#!/bin/sh\n")
+    (tmp_path / "packaging/scripts/uninstall_macos.sh").write_text("#!/bin/sh\n")
+    (tmp_path / "packaging/scripts/release_diagnostics.sh").write_text("#!/bin/sh\n")
+    (tmp_path / "packaging/scripts/package_app.py").write_text(
+        "#!/usr/bin/env python3\n"
+    )
+    for script in (tmp_path / "packaging").glob("**/*.sh"):
+        script.chmod(script.stat().st_mode | 0o755)
+    (tmp_path / "packaging/scripts/package_app.py").chmod(0o755)
     (tmp_path / "packaging/icons/Siri.icns").write_bytes(b"icns")
     return tmp_path
 
@@ -68,6 +77,8 @@ def test_release_snapshot_is_local_only_and_covers_required_health(tmp_path: Pat
     assert snapshot["autonomous_agents"] is False
     assert snapshot["wake_words"] is False
     assert snapshot["intelligence_features"] is False
+    assert "packaging_status" in snapshot
+    assert "install_readiness" in snapshot
     assert {check["id"] for check in snapshot["health_checks"]} >= {
         "backend",
         "frontend",
@@ -97,6 +108,10 @@ def test_release_recovery_repair_packaging_state_creates_local_paths(tmp_path: P
 
     assert result["status"] == "completed"
     assert (root / "packaging/config/app_metadata.json").exists()
+    assert (root / "packaging/scripts/install_macos.sh").exists()
+    assert (root / "packaging/scripts/uninstall_macos.sh").exists()
+    assert (root / "packaging/scripts/release_diagnostics.sh").exists()
+    assert (root / "packaging/scripts/package_app.py").exists()
     assert result["local_only"] is True
     assert result["telemetry_enabled"] is False
 

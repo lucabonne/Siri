@@ -99,11 +99,16 @@ class ReleaseHealthSnapshot:
     recovery_actions: list[RecoveryAction]
     report: ReleaseReport
     privacy_mode: dict[str, Any]
+    packaging_status: dict[str, Any] = field(default_factory=dict)
+    install_readiness: dict[str, Any] = field(default_factory=dict)
     local_only: bool = True
     telemetry_enabled: bool = False
     autonomous_agents: bool = False
     wake_words: bool = False
     intelligence_features: bool = False
+    active_profile_summary: dict[str, Any] = field(default_factory=dict)
+    wake_status: dict[str, Any] = field(default_factory=dict)
+    readiness_state: str = "unknown"
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -114,11 +119,16 @@ class ReleaseHealthSnapshot:
             ],
             "report": self.report.to_dict(),
             "privacy_mode": dict(self.privacy_mode),
+            "packaging_status": dict(self.packaging_status),
+            "install_readiness": dict(self.install_readiness),
             "local_only": self.local_only,
             "telemetry_enabled": self.telemetry_enabled,
             "autonomous_agents": self.autonomous_agents,
             "wake_words": self.wake_words,
             "intelligence_features": self.intelligence_features,
+            "active_profile_summary": dict(self.active_profile_summary),
+            "wake_status": dict(self.wake_status),
+            "readiness_state": self.readiness_state,
         }
 
 
