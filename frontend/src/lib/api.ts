@@ -1928,3 +1928,246 @@ export async function getMemoryConfig(): Promise<MemoryConfig> {
   if (!res.ok) throw new Error('Failed to fetch memory config');
   return res.json();
 }
+
+// ---------------------------------------------------------------------------
+// Knowledge Vault
+// ---------------------------------------------------------------------------
+
+export type KnowledgeNoteType = 'note' | 'daily' | 'project' | 'research';
+
+export interface KnowledgeSourceLink {
+  title: string;
+  url: string;
+}
+
+export interface KnowledgeBacklink {
+  id: string;
+  source_note_id: string;
+  source_note_title: string;
+  target_note_id: string;
+  context_snippet: string;
+  created_at: string;
+}
+
+export interface KnowledgeNote {
+  id: string;
+  title: string;
+  content: string;
+  note_type: KnowledgeNoteType;
+  tags: string[];
+  pinned: boolean;
+  source_links: KnowledgeSourceLink[];
+  backlinks: KnowledgeBacklink[];
+  project_id: string | null;
+  date: string | null;
+  metadata: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface KnowledgeNoteListItem {
+  id: string;
+  title: string;
+  note_type: KnowledgeNoteType;
+  tags: string[];
+  pinned: boolean;
+  date: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface VaultTag {
+  name: string;
+  count: number;
+}
+
+export interface VaultStatus {
+  status: string;
+  note_count: number;
+  db_path: string;
+  local_only: boolean;
+  cloud_sync: boolean;
+}
+
+export interface VaultExportResult {
+  exported_count: number;
+  output_directory: string;
+  files: string[];
+  local_only: boolean;
+}
+
+// Note CRUD
+
+export async function fetchKnowledgeNotes(filters?: {
+  note_type?: KnowledgeNoteType;
+  tag?: string;
+  pinned?: boolean;
+  project_id?: string;
+  limit?: number;
+  offset?: number;
+}): Promise<KnowledgeNoteListItem[]> {
+  const params = new URLSearchParams();
+  if (filters?.note_type) params.set('note_type', filters.note_type);
+  if (filters?.tag) params.set('tag', filters.tag);
+  if (filters?.pinned !== undefined) params.set('pinned', String(filters.pinned));
+  if (filters?.project_id) params.set('project_id', filters.project_id);
+  if (filters?.limit !== undefined) params.set('limit', String(filters.limit));
+  if (filters?.offset !== undefined) params.set('offset', String(filters.offset));
+  const qs = params.toString();
+  const res = await fetch(`${getBase()}/v1/knowledge-vault/notes${qs ? `?${qs}` : ''}`);
+  if (!res.ok) throw new Error(`Failed to fetch vault notes: ${res.status}`);
+  const data = await res.json();
+  return data.notes || [];
+}
+
+export async function createKnowledgeNote(body: {
+  title: string;
+  content?: string;
+  note_type?: KnowledgeNoteType;
+  tags?: string[];
+  pinned?: boolean;
+  source_links?: KnowledgeSourceLink[];
+  project_id?: string;
+  date?: string;
+  metadata?: Record<string, unknown>;
+}): Promise<KnowledgeNote> {
+  const res = await fetch(`${getBase()}/v1/knowledge-vault/notes`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(`Failed to create vault note: ${res.status}`);
+  const data = await res.json();
+  return data.note;
+}
+
+export async function getKnowledgeNote(noteId: string): Promise<KnowledgeNote> {
+  const res = await fetch(`${getBase()}/v1/knowledge-vault/notes/${encodeURIComponent(noteId)}`);
+  if (!res.ok) throw new Error(`Failed to fetch vault note: ${res.status}`);
+  const data = await res.json();
+  return data.note;
+}
+
+export async function updateKnowledgeNote(
+  noteId: string,
+  body: {
+    title?: string;
+    content?: string;
+    tags?: string[];
+    pinned?: boolean;
+    source_links?: KnowledgeSourceLink[];
+    project_id?: string;
+    metadata?: Record<string, unknown>;
+  },
+): Promise<KnowledgeNote> {
+  const res = await fetch(
+    `${getBase()}/v1/knowledge-vault/notes/${encodeURIComponent(noteId)}`,
+    {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    },
+  );
+  if (!res.ok) throw new Error(`Failed to update vault note: ${res.status}`);
+  const data = await res.json();
+  return data.note;
+}
+
+export async function deleteKnowledgeNote(noteId: string): Promise<void> {
+  const res = await fetch(
+    `${getBase()}/v1/knowledge-vault/notes/${encodeURIComponent(noteId)}`,
+    { method: 'DELETE' },
+  );
+  if (!res.ok) throw new Error(`Failed to delete vault note: ${res.status}`);
+}
+
+export async function pinKnowledgeNote(noteId: string, pinned: boolean): Promise<KnowledgeNote> {
+  const res = await fetch(
+    `${getBase()}/v1/knowledge-vault/notes/${encodeURIComponent(noteId)}/pin`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pinned }),
+    },
+  );
+  if (!res.ok) throw new Error(`Failed to pin vault note: ${res.status}`);
+  const data = await res.json();
+  return data.note;
+}
+
+// Backlinks
+
+export async function getVaultBacklinks(noteId: string): Promise<KnowledgeBacklink[]> {
+  const res = await fetch(
+    `${getBase()}/v1/knowledge-vault/notes/${encodeURIComponent(noteId)}/backlinks`,
+  );
+  if (!res.ok) throw new Error(`Failed to fetch backlinks: ${res.status}`);
+  const data = await res.json();
+  return data.backlinks || [];
+}
+
+// Markdown export
+
+export async function exportVaultNoteMarkdown(noteId: string): Promise<string> {
+  const res = await fetch(
+    `${getBase()}/v1/knowledge-vault/notes/${encodeURIComponent(noteId)}/export`,
+  );
+  if (!res.ok) throw new Error(`Failed to export note: ${res.status}`);
+  const data = await res.json();
+  return data.markdown || '';
+}
+
+export async function exportVault(options?: {
+  note_type?: KnowledgeNoteType;
+  output_dir?: string;
+}): Promise<VaultExportResult> {
+  const params = new URLSearchParams();
+  if (options?.note_type) params.set('note_type', options.note_type);
+  if (options?.output_dir) params.set('output_dir', options.output_dir);
+  const qs = params.toString();
+  const res = await fetch(`${getBase()}/v1/knowledge-vault/export${qs ? `?${qs}` : ''}`);
+  if (!res.ok) throw new Error(`Failed to export vault: ${res.status}`);
+  return res.json();
+}
+
+// Search
+
+export async function searchKnowledgeVault(
+  query: string,
+  limit = 20,
+): Promise<KnowledgeNoteListItem[]> {
+  const res = await fetch(
+    `${getBase()}/v1/knowledge-vault/search?q=${encodeURIComponent(query)}&limit=${limit}`,
+  );
+  if (!res.ok) throw new Error(`Failed to search vault: ${res.status}`);
+  const data = await res.json();
+  return data.results || [];
+}
+
+// Tags
+
+export async function fetchVaultTags(): Promise<VaultTag[]> {
+  const res = await fetch(`${getBase()}/v1/knowledge-vault/tags`);
+  if (!res.ok) throw new Error(`Failed to fetch vault tags: ${res.status}`);
+  const data = await res.json();
+  return data.tags || [];
+}
+
+// Daily note
+
+export async function getDailyNote(date?: string): Promise<KnowledgeNote> {
+  const qs = date ? `?date=${encodeURIComponent(date)}` : '';
+  const res = await fetch(`${getBase()}/v1/knowledge-vault/daily${qs}`);
+  if (!res.ok) throw new Error(`Failed to fetch daily note: ${res.status}`);
+  const data = await res.json();
+  return data.note;
+}
+
+// Status
+
+export async function fetchVaultStatus(): Promise<VaultStatus> {
+  const res = await fetch(`${getBase()}/v1/knowledge-vault/status`);
+  if (!res.ok) throw new Error(`Failed to fetch vault status: ${res.status}`);
+  return res.json();
+}
+

@@ -569,3 +569,84 @@ suggestions across Siri without introducing autonomous adaptation or cloud sync.
   import learning state.
 - Data remains local and is explicitly triggered by user-driven ratings, ensuring
   maximum predictability and control over adaptation.
+
+## Second Brain / Knowledge Vault Phase 1
+
+Phase 1 turns Siri's memory layer into an Obsidian-compatible local knowledge
+vault while keeping the existing SQLite `memories` table as the source of
+truth — the vault never writes to it.
+
+### Architecture
+
+- `src/openjarvis/knowledge_vault/` is a self-contained Python package backed by
+  a dedicated SQLite database (`~/.openjarvis/knowledge_vault.db`), completely
+  separate from `siri_memory.db`.
+- **`models.py`** — Pydantic contracts: `KnowledgeNote`, `NoteType`, `SourceLink`,
+  `BacklinkRecord`, `VaultTag`, and all request/response models.
+- **`notes.py`** — Low-level CRUD against the `vault_notes` table.  Supports FTS5
+  full-text search with a `LIKE` fallback.
+- **`daily_notes.py`** — Idempotent daily note helpers. `get_or_create_daily_note`
+  is the canonical entry point; exactly one daily note per calendar date exists.
+- **`backlinks.py`** — Parses `[[Note Title]]` wiki-link syntax from note content.
+  Backlinks are stored in a `vault_backlinks` table with `ON DELETE CASCADE` to
+  keep them consistent with note deletions.
+- **`tags.py`** — Extracts `#hashtag` inline tags from note content and aggregates
+  tag counts across the vault.
+- **`markdown_export.py`** — Converts notes to Obsidian-compatible markdown with
+  YAML frontmatter (`title`, `tags`, `type`, `created`, `updated`, `pinned`,
+  `sources`).  Wiki-links are preserved as-is.
+- **`service.py`** — `KnowledgeVaultService` coordinates all helpers.  Integration
+  hooks: `from_memory(memory_id, memory_service)` imports a memory record as a
+  note without touching the memory DB, `link_to_research(note_id, summary)`
+  appends a research block.
+
+### API
+
+`knowledge_vault_routes.py` exposes 12 endpoints at `/v1/knowledge-vault/`:
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/notes` | List with filters (type, tag, pinned, project) |
+| `POST` | `/notes` | Create note |
+| `GET` | `/notes/{id}` | Get note (includes backlinks) |
+| `PATCH` | `/notes/{id}` | Partial update |
+| `DELETE` | `/notes/{id}` | Delete note |
+| `POST` | `/notes/{id}/pin` | Pin / unpin |
+| `GET` | `/notes/{id}/backlinks` | Backlinks to this note |
+| `GET` | `/notes/{id}/export` | Markdown export (single note) |
+| `GET` | `/daily` | Today's daily note (created if absent) |
+| `POST` | `/daily` | Daily note for a specific date |
+| `GET` | `/export` | Export full vault to disk |
+| `GET` | `/search` | FTS5 full-text search |
+| `GET` | `/tags` | Tag list with counts |
+| `GET` | `/status` | Health + note count |
+
+### Mission Control
+
+A new **Knowledge Vault** tab (`knowledge-vault` section) in Mission Control
+provides:
+- Note list with type badge, inline tag chips, pin indicator, and date
+- Inline create-note form (title + type picker)
+- Full-text search bar
+- Tag cloud for tag-based filtering
+- Daily Note sidebar panel with content preview
+- "By Type" breakdown sidebar
+- "Export Vault" button with local path feedback
+
+### Privacy
+
+- All data stays on disk under `~/.openjarvis/`.
+- No cloud sync path exists anywhere in the codebase.
+- Export writes `.md` files locally; no upload endpoint is exposed.
+
+### Deferred
+
+The following were intentionally excluded from Phase 1:
+
+- Cloud sync or remote backup
+- Obsidian plugin or direct Obsidian integration (export is compatible, not coupled)
+- Automatic note creation from conversations (user-explicit creation only)
+- Graph view UI (deferred to Phase 2)
+- Note version history / undo
+- Filesystem watcher for vault directory
+

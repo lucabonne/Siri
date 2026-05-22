@@ -2,6 +2,7 @@ import {
   Activity,
   Bot,
   Brain,
+  BookMarked,
   CalendarDays,
   Camera,
   CheckSquare,
@@ -48,6 +49,7 @@ export const missionSections: MissionSection[] = [
   { id: 'terminal', label: 'Terminal', icon: TerminalSquare },
   { id: 'research', label: 'Research', icon: FileSearch },
   { id: 'learning', label: 'Learning', icon: BookOpen },
+  { id: 'knowledge-vault', label: 'Knowledge Vault', icon: BookMarked },
   { id: 'settings', label: 'Settings', icon: Settings },
   { id: 'permissions', label: 'Permissions', icon: KeyRound },
 ];

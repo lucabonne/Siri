@@ -6,6 +6,7 @@ import {
   AppWindow,
   ArrowUpRight,
   Ban,
+  BookMarked,
   Brain,
   Camera,
   CheckCircle2,
@@ -15,6 +16,7 @@ import {
   Code2,
   Cpu,
   Eye,
+  FileDown,
   FolderGit2,
   Gauge,
   GitBranch,
@@ -72,6 +74,14 @@ import {
   stopVoicePttRecording,
   syncWorldMonitor,
   transcribeLatestVoiceRecording,
+  fetchKnowledgeNotes,
+  createKnowledgeNote,
+  deleteKnowledgeNote,
+  pinKnowledgeNote,
+  fetchVaultTags,
+  getDailyNote,
+  searchKnowledgeVault,
+  exportVault,
 } from '../../lib/api';
 import type {
   MemorySearchResult,
@@ -92,6 +102,11 @@ import type {
   StartupStatus,
   WorldMonitorStatus,
   WorldMonitorSyncStatus,
+} from '../../lib/api';
+import type {
+  KnowledgeNote,
+  KnowledgeNoteListItem,
+  VaultTag,
 } from '../../lib/api';
 import {
   approvalQueue,
@@ -2473,6 +2488,371 @@ function PermissionsSection() {
   );
 }
 
+// ---------------------------------------------------------------------------
+// Knowledge Vault Section
+// ---------------------------------------------------------------------------
+
+function NoteTypeBadge({ type }: { type: string }) {
+  const colors: Record<string, { bg: string; text: string }> = {
+    daily: { bg: 'color-mix(in srgb, var(--color-accent) 15%, transparent)', text: 'var(--color-accent)' },
+    project: { bg: 'color-mix(in srgb, var(--color-success) 15%, transparent)', text: 'var(--color-success)' },
+    research: { bg: 'color-mix(in srgb, var(--color-warning) 15%, transparent)', text: 'var(--color-warning)' },
+    note: { bg: 'var(--color-bg-secondary)', text: 'var(--color-text-secondary)' },
+  };
+  const c = colors[type] || colors.note;
+  return (
+    <span
+      className="inline-flex items-center rounded px-2 py-0.5 text-xs font-medium"
+      style={{ background: c.bg, color: c.text }}
+    >
+      {type}
+    </span>
+  );
+}
+
+function KnowledgeVaultSection() {
+  const [notes, setNotes] = useState<KnowledgeNoteListItem[]>([]);
+  const [tags, setTags] = useState<VaultTag[]>([]);
+  const [dailyNote, setDailyNote] = useState<KnowledgeNote | null>(null);
+  const [selectedTag, setSelectedTag] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<KnowledgeNoteListItem[] | null>(null);
+  const [live, setLive] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [exportResult, setExportResult] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [newTitle, setNewTitle] = useState('');
+  const [newType, setNewType] = useState<'note' | 'project' | 'research'>('note');
+
+  const load = async () => {
+    try {
+      const [noteList, tagList, daily] = await Promise.all([
+        fetchKnowledgeNotes({ limit: 40 }),
+        fetchVaultTags(),
+        getDailyNote().catch(() => null),
+      ]);
+      setNotes(noteList);
+      setTags(tagList);
+      setDailyNote(daily);
+      setLive(true);
+    } catch {
+      setLive(false);
+    }
+  };
+
+  useEffect(() => { load(); }, []);
+
+  const handleSearch = async (q: string) => {
+    setSearchQuery(q);
+    if (!q.trim()) { setSearchResults(null); return; }
+    try {
+      const results = await searchKnowledgeVault(q, 20);
+      setSearchResults(results);
+    } catch {
+      setSearchResults([]);
+    }
+  };
+
+  const handleTagFilter = async (tag: string | null) => {
+    setSelectedTag(tag);
+    setSearchResults(null);
+    setSearchQuery('');
+    if (!tag) { await load(); return; }
+    try {
+      const filtered = await fetchKnowledgeNotes({ tag, limit: 40 });
+      setNotes(filtered);
+    } catch {}
+  };
+
+  const handlePin = async (note: KnowledgeNoteListItem) => {
+    try {
+      await pinKnowledgeNote(note.id, !note.pinned);
+      await load();
+    } catch {}
+  };
+
+  const handleDelete = async (noteId: string) => {
+    try {
+      await deleteKnowledgeNote(noteId);
+      await load();
+    } catch {}
+  };
+
+  const handleCreate = async () => {
+    if (!newTitle.trim()) return;
+    setCreating(true);
+    try {
+      await createKnowledgeNote({ title: newTitle.trim(), note_type: newType });
+      setNewTitle('');
+      setCreating(false);
+      await load();
+    } catch {
+      setCreating(false);
+    }
+  };
+
+  const handleExport = async () => {
+    setExporting(true);
+    setExportResult(null);
+    try {
+      const result = await exportVault();
+      setExportResult(`Exported ${result.exported_count} notes → ${result.output_directory}`);
+    } catch (e: any) {
+      setExportResult(`Export failed: ${e.message}`);
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const visibleNotes = searchResults ?? notes;
+
+  return (
+    <div className="grid gap-4 xl:grid-cols-[1fr_280px]">
+      {/* Main panel */}
+      <div className="grid gap-4">
+        {/* Header row */}
+        <div
+          className="flex flex-wrap items-center justify-between gap-3 rounded-md border p-4"
+          style={{ borderColor: 'var(--color-border)', background: 'var(--color-surface)' }}
+        >
+          <div className="flex items-center gap-3">
+            <BookMarked size={20} style={{ color: 'var(--color-accent)' }} />
+            <div>
+              <div className="text-sm font-semibold" style={{ color: 'var(--color-text)' }}>
+                Knowledge Vault
+              </div>
+              <div className="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+                {live ? `${notes.length} notes · local only` : 'Waiting for backend…'}
+              </div>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              id="vault-export-btn"
+              type="button"
+              disabled={exporting}
+              onClick={handleExport}
+              className="inline-flex h-9 items-center gap-2 rounded-md border px-3 text-xs font-medium disabled:opacity-50"
+              style={{ borderColor: 'var(--color-border)', color: 'var(--color-text)', background: 'var(--color-bg-secondary)' }}
+            >
+              <FileDown size={14} />
+              {exporting ? 'Exporting…' : 'Export Vault'}
+            </button>
+          </div>
+        </div>
+
+        {exportResult && (
+          <div
+            className="rounded-md border px-4 py-3 text-xs"
+            style={{
+              borderColor: exportResult.startsWith('Export failed') ? 'color-mix(in srgb, var(--color-warning) 40%, transparent)' : 'color-mix(in srgb, var(--color-success) 40%, transparent)',
+              color: exportResult.startsWith('Export failed') ? 'var(--color-warning)' : 'var(--color-success)',
+              background: 'var(--color-bg-secondary)',
+            }}
+          >
+            {exportResult}
+          </div>
+        )}
+
+        {/* Create note */}
+        <ShellPanel title="New Note">
+          <div className="flex flex-wrap gap-2">
+            <input
+              id="vault-new-title"
+              type="text"
+              placeholder="Note title…"
+              value={newTitle}
+              onChange={(e) => setNewTitle(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') handleCreate(); }}
+              className="h-9 flex-1 rounded-md border bg-transparent px-3 text-sm outline-none"
+              style={{ borderColor: 'var(--color-border)', color: 'var(--color-text)' }}
+            />
+            <select
+              id="vault-new-type"
+              value={newType}
+              onChange={(e) => setNewType(e.target.value as 'note' | 'project' | 'research')}
+              className="h-9 rounded-md border bg-transparent px-2 text-sm"
+              style={{ borderColor: 'var(--color-border)', color: 'var(--color-text)', background: 'var(--color-bg-secondary)' }}
+            >
+              <option value="note">note</option>
+              <option value="project">project</option>
+              <option value="research">research</option>
+            </select>
+            <button
+              id="vault-create-btn"
+              type="button"
+              disabled={creating || !newTitle.trim()}
+              onClick={handleCreate}
+              className="inline-flex h-9 items-center gap-2 rounded-md border px-3 text-xs font-medium disabled:opacity-50"
+              style={{ borderColor: 'var(--color-accent)', color: 'var(--color-accent)', background: 'var(--color-accent-subtle)' }}
+            >
+              <Plus size={14} />
+              {creating ? 'Creating…' : 'Create'}
+            </button>
+          </div>
+        </ShellPanel>
+
+        {/* Search */}
+        <ShellPanel title="Notes" action={selectedTag ? `#${selectedTag}` : searchResults ? `${searchResults.length} results` : `${notes.length} total`}>
+          <div className="mb-3 flex items-center gap-2 rounded-md border px-3"
+            style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg-secondary)' }}
+          >
+            <Search size={14} style={{ color: 'var(--color-text-tertiary)' }} />
+            <input
+              id="vault-search"
+              type="text"
+              placeholder="Search notes…"
+              value={searchQuery}
+              onChange={(e) => handleSearch(e.target.value)}
+              className="h-9 flex-1 bg-transparent text-sm outline-none"
+              style={{ color: 'var(--color-text)' }}
+            />
+          </div>
+
+          <div className="grid gap-2">
+            {visibleNotes.length === 0 && (
+              <p className="py-4 text-center text-sm" style={{ color: 'var(--color-text-secondary)' }}>
+                {live ? 'No notes yet. Create your first note above.' : 'Backend unavailable — notes will appear here once connected.'}
+              </p>
+            )}
+            {visibleNotes.map((note) => (
+              <div
+                key={note.id}
+                className="flex items-start justify-between gap-3 rounded-md border p-3"
+                style={{ borderColor: note.pinned ? 'color-mix(in srgb, var(--color-accent) 35%, transparent)' : 'var(--color-border)', background: 'var(--color-bg-secondary)' }}
+              >
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    {note.pinned && <Pin size={12} style={{ color: 'var(--color-accent)' }} />}
+                    <span className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>{note.title}</span>
+                    <NoteTypeBadge type={note.note_type} />
+                  </div>
+                  <div className="mt-1 flex flex-wrap gap-1">
+                    {note.tags.slice(0, 4).map((tag) => (
+                      <button
+                        key={tag}
+                        type="button"
+                        onClick={() => handleTagFilter(tag)}
+                        className="rounded px-1.5 py-0.5 text-xs"
+                        style={{ color: 'var(--color-accent)', background: 'var(--color-accent-subtle)' }}
+                      >
+                        #{tag}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="mt-1 text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+                    {note.date || formatTime(note.created_at)}
+                  </div>
+                </div>
+                <div className="flex shrink-0 gap-1">
+                  <button
+                    type="button"
+                    onClick={() => handlePin(note)}
+                    title={note.pinned ? 'Unpin' : 'Pin'}
+                    className="rounded p-1 transition-colors"
+                    style={{ color: note.pinned ? 'var(--color-accent)' : 'var(--color-text-tertiary)' }}
+                  >
+                    <Pin size={13} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleDelete(note.id)}
+                    title="Delete"
+                    className="rounded p-1 transition-colors"
+                    style={{ color: 'var(--color-text-tertiary)' }}
+                  >
+                    <Trash2 size={13} />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </ShellPanel>
+      </div>
+
+      {/* Sidebar panels */}
+      <div className="grid gap-4 content-start">
+        {/* Daily note */}
+        <ShellPanel title="Daily Note" action={dailyNote?.date || 'today'}>
+          {dailyNote ? (
+            <div className="grid gap-2">
+              <div className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>
+                {dailyNote.title}
+              </div>
+              <p className="line-clamp-4 text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+                {dailyNote.content.replace(/^#[^\n]*\n?/, '').trim() || 'Empty daily note.'}
+              </p>
+              <div className="flex flex-wrap gap-1">
+                {dailyNote.tags.slice(0, 3).map((t) => (
+                  <span key={t} className="rounded px-1.5 py-0.5 text-xs" style={{ background: 'var(--color-accent-subtle)', color: 'var(--color-accent)' }}>#{t}</span>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <p className="text-xs" style={{ color: 'var(--color-text-secondary)' }}>No daily note yet.</p>
+          )}
+        </ShellPanel>
+
+        {/* Tags */}
+        <ShellPanel title="Tags" action={`${tags.length} tags`}>
+          {tags.length === 0 && (
+            <p className="text-xs" style={{ color: 'var(--color-text-secondary)' }}>No tags yet.</p>
+          )}
+          <div className="flex flex-wrap gap-2">
+            {selectedTag && (
+              <button
+                type="button"
+                onClick={() => handleTagFilter(null)}
+                className="rounded-full border px-2.5 py-1 text-xs font-medium"
+                style={{ borderColor: 'var(--color-accent)', color: 'var(--color-accent)', background: 'var(--color-accent-subtle)' }}
+              >
+                × clear
+              </button>
+            )}
+            {tags.slice(0, 20).map((tag) => (
+              <button
+                key={tag.name}
+                type="button"
+                onClick={() => handleTagFilter(tag.name)}
+                className="rounded-full border px-2.5 py-1 text-xs font-medium transition-colors"
+                style={{
+                  borderColor: selectedTag === tag.name ? 'var(--color-accent)' : 'var(--color-border)',
+                  color: selectedTag === tag.name ? 'var(--color-accent)' : 'var(--color-text-secondary)',
+                  background: selectedTag === tag.name ? 'var(--color-accent-subtle)' : 'var(--color-bg-secondary)',
+                }}
+              >
+                #{tag.name}
+                <span className="ml-1 opacity-60">{tag.count}</span>
+              </button>
+            ))}
+          </div>
+        </ShellPanel>
+
+        {/* Note type breakdown */}
+        <ShellPanel title="By Type">
+          <div className="grid gap-2">
+            {(['note', 'project', 'research', 'daily'] as const).map((type) => {
+              const count = notes.filter((n) => n.note_type === type).length;
+              return (
+                <button
+                  key={type}
+                  type="button"
+                  onClick={() => handleTagFilter(null)}
+                  className="flex items-center justify-between rounded-md border px-3 py-2 text-xs"
+                  style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg-secondary)' }}
+                >
+                  <NoteTypeBadge type={type} />
+                  <span style={{ color: 'var(--color-text-tertiary)' }}>{count}</span>
+                </button>
+              );
+            })}
+          </div>
+        </ShellPanel>
+      </div>
+    </div>
+  );
+}
+
 function ActiveSection({ section }: { section: MissionSectionId }) {
   if (section === 'today') return <TodaySection />;
   if (section === 'world-map') return <WorldMapSection />;
@@ -2489,6 +2869,7 @@ function ActiveSection({ section }: { section: MissionSectionId }) {
   if (section === 'terminal') return <TerminalSection />;
   if (section === 'research') return <ResearchSection />;
   if (section === 'learning') return <LearningPanel />;
+  if (section === 'knowledge-vault') return <KnowledgeVaultSection />;
   if (section === 'settings') return <SettingsSection />;
   if (section === 'permissions') return <PermissionsSection />;
   return <HomeSection />;

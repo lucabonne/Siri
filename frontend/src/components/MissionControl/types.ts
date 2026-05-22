@@ -17,6 +17,7 @@ export type MissionSectionId =
   | 'terminal'
   | 'research'
   | 'learning'
+  | 'knowledge-vault'
   | 'settings'
   | 'permissions';
 
