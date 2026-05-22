@@ -13,11 +13,12 @@ from pydantic import BaseModel
 from openjarvis.server.agent_workspace_routes import agent_workspace_router
 from openjarvis.server.coding_assistant_routes import coding_assistant_router
 from openjarvis.server.context_routes import context_router
+from openjarvis.server.knowledge_graph_routes import knowledge_graph_router
+from openjarvis.server.knowledge_vault_routes import knowledge_vault_router
 from openjarvis.server.mode_routes import mode_router
 from openjarvis.server.morning_briefing_routes import morning_briefing_router
 from openjarvis.server.repo_index_routes import repo_index_router
 from openjarvis.server.startup_routes import startup_router
-from openjarvis.server.knowledge_vault_routes import knowledge_vault_router
 from openjarvis.server.worldmonitor_routes import worldmonitor_router
 
 logger = logging.getLogger(__name__)
@@ -1206,6 +1207,7 @@ def include_all_routes(app) -> None:
     app.include_router(repo_index_router)
     app.include_router(coding_assistant_router)
     app.include_router(knowledge_vault_router)
+    app.include_router(knowledge_graph_router)
 
     # Agent Manager routes (if available)
     try:

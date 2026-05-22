@@ -2171,3 +2171,119 @@ export async function fetchVaultStatus(): Promise<VaultStatus> {
   return res.json();
 }
 
+// ---------------------------------------------------------------------------
+// Knowledge Graph
+// ---------------------------------------------------------------------------
+
+export interface KnowledgeGraphNode {
+  id: string;
+  node_type: string;
+  title: string;
+  text: string;
+  ref_id: string | null;
+  ref_table: string | null;
+  source: string;
+  metadata: Record<string, unknown>;
+  pinned_root: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface KnowledgeGraphEdge {
+  id: string;
+  source_id: string;
+  target_id: string;
+  relationship: string;
+  weight: number;
+  directed: boolean;
+  metadata: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface KnowledgeTimelineEvent {
+  id: string;
+  node_id: string | null;
+  project_id: string | null;
+  event_type: string;
+  title: string;
+  summary: string;
+  occurred_at: string;
+  metadata: Record<string, unknown>;
+  created_at: string;
+}
+
+export interface KnowledgeGraphStatus {
+  status: string;
+  node_count: number;
+  edge_count: number;
+  db_path: string;
+  local_only: boolean;
+  cloud_sync: boolean;
+}
+
+export interface KnowledgeGraphNeighborhood {
+  center: KnowledgeGraphNode | null;
+  nodes: KnowledgeGraphNode[];
+  edges: KnowledgeGraphEdge[];
+  timeline: KnowledgeTimelineEvent[];
+  roots: KnowledgeGraphNode[];
+  local_only: boolean;
+}
+
+export interface KnowledgeNeighborhoodSearchResult {
+  node: KnowledgeGraphNode;
+  score: number;
+  reasons: string[];
+  edges: KnowledgeGraphEdge[];
+}
+
+export async function fetchKnowledgeGraphStatus(): Promise<KnowledgeGraphStatus> {
+  const res = await fetch(`${getBase()}/v1/knowledge-graph/status`);
+  if (!res.ok) throw new Error(`Failed to fetch graph status: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchGraphRoots(limit = 25): Promise<KnowledgeGraphNode[]> {
+  const res = await fetch(`${getBase()}/v1/knowledge-graph/roots?limit=${limit}`);
+  if (!res.ok) throw new Error(`Failed to fetch graph roots: ${res.status}`);
+  const data = await res.json();
+  return data.roots || [];
+}
+
+export async function fetchKnowledgeTimeline(limit = 25): Promise<KnowledgeTimelineEvent[]> {
+  const res = await fetch(`${getBase()}/v1/knowledge-graph/timeline?limit=${limit}`);
+  if (!res.ok) throw new Error(`Failed to fetch graph timeline: ${res.status}`);
+  const data = await res.json();
+  return data.events || [];
+}
+
+export async function searchKnowledgeNeighborhood(
+  query: string,
+  options?: { start_node_id?: string; limit?: number; max_depth?: number },
+): Promise<KnowledgeNeighborhoodSearchResult[]> {
+  const params = new URLSearchParams();
+  params.set('q', query);
+  if (options?.start_node_id) params.set('start_node_id', options.start_node_id);
+  if (options?.limit !== undefined) params.set('limit', String(options.limit));
+  if (options?.max_depth !== undefined) params.set('max_depth', String(options.max_depth));
+  const res = await fetch(`${getBase()}/v1/knowledge-graph/neighborhood?${params.toString()}`);
+  if (!res.ok) throw new Error(`Failed to search graph neighborhood: ${res.status}`);
+  const data = await res.json();
+  return data.results || [];
+}
+
+export async function fetchGraphTraversal(
+  nodeId: string,
+  options?: { max_depth?: number; relationship?: string },
+): Promise<KnowledgeGraphNeighborhood> {
+  const params = new URLSearchParams();
+  if (options?.max_depth !== undefined) params.set('max_depth', String(options.max_depth));
+  if (options?.relationship) params.set('relationship', options.relationship);
+  const qs = params.toString();
+  const res = await fetch(
+    `${getBase()}/v1/knowledge-graph/nodes/${encodeURIComponent(nodeId)}/traverse${qs ? `?${qs}` : ''}`,
+  );
+  if (!res.ok) throw new Error(`Failed to traverse graph: ${res.status}`);
+  return res.json();
+}

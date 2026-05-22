@@ -650,3 +650,48 @@ The following were intentionally excluded from Phase 1:
 - Note version history / undo
 - Filesystem watcher for vault directory
 
+## Knowledge Graph Phase 1
+
+Phase 1 turns the Knowledge Vault into a connected local second brain while
+preserving the existing memory systems as independent sources of truth.
+
+- `src/openjarvis/knowledge_graph/` owns local graph nodes, edges,
+  relationship helpers, graph traversal, neighborhood search, project decision
+  tracking, timeline events, typed models, and the coordinating service.
+- The graph uses a dedicated SQLite database at
+  `~/.openjarvis/knowledge_graph.db`. There is no cloud graph, no external DB,
+  and no upload path.
+- Graph nodes can represent notes, memories, research reports, sources,
+  projects, decisions, timeline events, repo snapshots, code context, learning
+  signals, and concepts. Nodes keep optional references back to their original
+  local tables instead of replacing those systems.
+- Graph edges support note-to-note links, memory-to-note links,
+  research-to-source links, project decisions, implementation/dependency links,
+  and general related/reference relationships.
+- Project decisions are recorded as graph decision nodes, persisted decision
+  records, project relationships, and timeline events.
+- Timeline events are first-class local records and can be attached to nodes or
+  projects for Mission Control chronology.
+- Semantic neighborhood search is local-only: it combines SQLite FTS/LIKE
+  matching, deterministic token overlap, pinned-root boosts, and graph
+  proximity. It does not download embedding models.
+- Graph traversal performs bounded breadth-first walks over local edges and
+  returns connected nodes, edges, timeline records, and pinned graph roots.
+- Pinned graph roots mark durable entry points for the second brain without
+  changing Knowledge Vault pinned notes or structured memory pinned records.
+- Integration hooks read from Knowledge Vault, Memory, Research, Repo Index,
+  Coding Assistant, and Learning Layer services when supplied, but the graph
+  augments those records rather than writing back to them.
+- `/v1/knowledge-graph` exposes local APIs for status, nodes, edges, roots,
+  traversal, neighborhood search, note-note links, memory-note links,
+  research-source links, project decisions, and timeline events.
+- Mission Control's Knowledge Vault tab now includes a Graph panel with root
+  nodes, relationship viewer, timeline view, connected nodes, and a
+  neighborhood explorer.
+
+Deferred work remains intentionally untouched in this phase:
+
+- no cloud graph or hosted sync
+- no external graph database
+- no autonomous graph mutation from conversations
+- no replacement of existing memory, vault, research, or repo-index systems
