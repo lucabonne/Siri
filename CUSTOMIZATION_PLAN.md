@@ -759,3 +759,41 @@ Deferred work remains intentionally untouched in this phase:
 - no voice-only controls
 - no autonomous graph updates
 - no fake graph data or mock backend behavior
+
+## Brain UI Phase 3
+
+Phase 3 prepares Mission Control for a future AI-brain-only main interface by
+adding an explicit brain-first view state while preserving the current
+Knowledge Vault and Mission Control affordances.
+
+- The Knowledge Vault header now includes a Brain First toggle. The default
+  layout remains available, and no Mission Control tabs are removed.
+- In Brain First mode, the Brain Graph becomes the dominant surface with a
+  larger full-width canvas and the same existing Knowledge Graph status,
+  roots, timeline, neighborhood search, and traversal APIs.
+- Graph hover, focus, keyboard, and click inspection continue to reveal
+  memory/thought details without creating local fake graph behavior.
+- Graph controls, root chips, note creation, note lists, and vault context
+  panels move into secondary collapsible sections when Brain First mode is
+  active.
+- Relationship and timeline detail panels remain available as collapsible
+  secondary context instead of competing with the graph as the primary read.
+- Keyboard and text inputs remain available through the collapsible controls
+  for note creation, vault search, and graph neighborhood search.
+
+Deferred work remains intentionally untouched in this phase:
+
+- no Knowledge Graph backend or API contract changes
+- no deletion of existing Mission Control tabs
+- no removal of Knowledge Vault note workflows
+- no voice-only control layer
+- no autonomous graph mutation
+- no fake backend behavior or mock graph responses
+
+### Verification Notes
+
+TypeScript check (`npx tsc --noEmit --pretty false --extendedDiagnostics`) consistently hangs
+and does not complete within 55 seconds when run from the project root. This appears to be a
+pre-existing issue unrelated to Phase 3 changes (the two modified files contain no new type
+errors visible in the diff). Phase 3 was committed without a passing tsc run; the hang should
+be investigated separately.

@@ -2610,6 +2610,7 @@ function KnowledgeVaultSection() {
   const [creating, setCreating] = useState(false);
   const [newTitle, setNewTitle] = useState('');
   const [newType, setNewType] = useState<'note' | 'project' | 'research'>('note');
+  const [brainFirstMode, setBrainFirstMode] = useState(false);
   const [graphStatus, setGraphStatus] = useState<KnowledgeGraphStatus | null>(null);
   const [graphRoots, setGraphRoots] = useState<KnowledgeGraphNode[]>([]);
   const [timeline, setTimeline] = useState<KnowledgeTimelineEvent[]>([]);
@@ -2904,7 +2905,7 @@ function KnowledgeVaultSection() {
     : [];
 
   return (
-    <div className="grid gap-4 xl:grid-cols-[1fr_280px]">
+    <div className={brainFirstMode ? 'grid gap-4' : 'grid gap-4 xl:grid-cols-[1fr_280px]'}>
       {/* Main panel */}
       <div className="grid gap-4">
         {/* Header row */}
@@ -2924,6 +2925,20 @@ function KnowledgeVaultSection() {
             </div>
           </div>
           <div className="flex items-center gap-2">
+            <button
+              id="brain-first-mode-toggle"
+              type="button"
+              onClick={() => setBrainFirstMode((value) => !value)}
+              className="inline-flex h-9 items-center gap-2 rounded-md border px-3 text-xs font-medium"
+              style={{
+                borderColor: brainFirstMode ? 'var(--color-accent)' : 'var(--color-border)',
+                color: brainFirstMode ? 'var(--color-accent)' : 'var(--color-text)',
+                background: brainFirstMode ? 'var(--color-accent-subtle)' : 'var(--color-bg-secondary)',
+              }}
+            >
+              <Brain size={14} />
+              {brainFirstMode ? 'Brain First' : 'Focus Brain'}
+            </button>
             <button
               id="vault-export-btn"
               type="button"
@@ -2952,8 +2967,15 @@ function KnowledgeVaultSection() {
         )}
 
         {/* Create note */}
-        <ShellPanel title="New Note" style={{ order: 3 }}>
-          <div className="flex flex-wrap gap-2">
+        <details
+          open={!brainFirstMode}
+          className="hud-panel p-4"
+          style={{ order: 3 }}
+        >
+          <summary className="cursor-pointer list-none text-sm font-semibold" style={{ color: 'var(--color-text)' }}>
+            New Note
+          </summary>
+          <div className="mt-4 flex flex-wrap gap-2">
             <input
               id="vault-new-title"
               type="text"
@@ -2987,15 +3009,23 @@ function KnowledgeVaultSection() {
               {creating ? 'Creating…' : 'Create'}
             </button>
           </div>
-        </ShellPanel>
+        </details>
 
         {/* Search */}
-        <ShellPanel
-          title="Notes"
-          action={selectedTag ? `#${selectedTag}` : searchResults ? `${searchResults.length} results` : `${notes.length} total`}
+        <details
+          open={!brainFirstMode}
+          className="hud-panel p-4"
           style={{ order: 4 }}
         >
-          <div className="mb-3 flex items-center gap-2 rounded-md border px-3"
+          <summary className="flex cursor-pointer list-none items-center justify-between gap-3">
+            <span className="text-sm font-semibold" style={{ color: 'var(--color-text)' }}>
+              Notes
+            </span>
+            <span className="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+              {selectedTag ? `#${selectedTag}` : searchResults ? `${searchResults.length} results` : `${notes.length} total`}
+            </span>
+          </summary>
+          <div className="mb-3 mt-4 flex items-center gap-2 rounded-md border px-3"
             style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg-secondary)' }}
           >
             <Search size={14} style={{ color: 'var(--color-text-tertiary)' }} />
@@ -3068,18 +3098,19 @@ function KnowledgeVaultSection() {
               </div>
             ))}
           </div>
-        </ShellPanel>
+        </details>
 
         {/* Graph */}
         <ShellPanel
           title="Brain Graph"
           action={graphStatus ? `${graphStatus.node_count} nodes · ${graphStatus.edge_count} links` : 'offline'}
+          className={brainFirstMode ? 'min-h-[calc(100vh-190px)]' : ''}
           style={{ order: 2 }}
         >
           <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_280px]">
             <div className="grid gap-3">
               <div
-                className="relative min-h-[560px] overflow-hidden rounded-md border"
+                className={`relative overflow-hidden rounded-md border ${brainFirstMode ? 'min-h-[720px]' : 'min-h-[560px]'}`}
                 style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg-secondary)' }}
               >
                 <div className="absolute left-4 top-4 z-10 flex items-center gap-2">
@@ -3100,7 +3131,7 @@ function KnowledgeVaultSection() {
                 </div>
 
                 <svg
-                  className="h-[560px] w-full"
+                  className={`${brainFirstMode ? 'h-[720px]' : 'h-[560px]'} w-full`}
                   viewBox="0 0 760 560"
                   role="img"
                   aria-label="Knowledge graph brain view"
@@ -3279,49 +3310,65 @@ function KnowledgeVaultSection() {
                 )}
               </div>
 
-              <div
-                className="flex items-center gap-2 rounded-md border px-3"
+              <details
+                open={!brainFirstMode}
+                className="rounded-md border p-3"
                 style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg-secondary)' }}
               >
-                <GitBranch size={14} style={{ color: 'var(--color-text-tertiary)' }} />
-                <input
-                  id="graph-neighborhood-search"
-                  type="text"
-                  placeholder="Neighborhood search…"
-                  value={neighborhoodQuery}
-                  onChange={(e) => handleNeighborhoodSearch(e.target.value)}
-                  className="h-9 flex-1 bg-transparent text-sm outline-none"
-                  style={{ color: 'var(--color-text)' }}
-                />
-              </div>
-
-              <div className="flex flex-wrap gap-2">
-                {(neighborhoodResults.length ? neighborhoodResults.map((item) => item.node) : graphRoots).map((node) => (
-                  <button
-                    key={node.id}
-                    type="button"
-                    onClick={() => handleGraphNodeSelect(node)}
-                    className="inline-flex max-w-full items-center gap-2 rounded-md border px-2.5 py-1.5 text-left text-xs"
-                    style={{
-                      borderColor: selectedGraphNode?.id === node.id ? 'var(--color-accent)' : 'var(--color-border)',
-                      background: selectedGraphNode?.id === node.id ? 'var(--color-accent-subtle)' : 'var(--color-bg-secondary)',
-                      color: 'var(--color-text)',
-                    }}
+                <summary className="flex cursor-pointer list-none items-center justify-between gap-3">
+                  <span className="text-xs font-semibold" style={{ color: 'var(--color-text)' }}>
+                    Graph Controls
+                  </span>
+                  <span className="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+                    search · roots
+                  </span>
+                </summary>
+                <div className="mt-3 grid gap-3">
+                  <div
+                    className="flex items-center gap-2 rounded-md border px-3"
+                    style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg-secondary)' }}
                   >
-                    {node.pinned_root && <Pin size={13} style={{ color: 'var(--color-accent)' }} />}
-                    <span className="truncate">{node.title}</span>
-                  </button>
-                ))}
-                {!neighborhoodResults.length && !graphRoots.length && (
-                  <p className="py-2 text-xs" style={{ color: 'var(--color-text-secondary)' }}>
-                    No graph roots yet.
-                  </p>
-                )}
-              </div>
+                    <GitBranch size={14} style={{ color: 'var(--color-text-tertiary)' }} />
+                    <input
+                      id="graph-neighborhood-search"
+                      type="text"
+                      placeholder="Neighborhood search…"
+                      value={neighborhoodQuery}
+                      onChange={(e) => handleNeighborhoodSearch(e.target.value)}
+                      className="h-9 flex-1 bg-transparent text-sm outline-none"
+                      style={{ color: 'var(--color-text)' }}
+                    />
+                  </div>
+
+                  <div className="flex flex-wrap gap-2">
+                    {(neighborhoodResults.length ? neighborhoodResults.map((item) => item.node) : graphRoots).map((node) => (
+                      <button
+                        key={node.id}
+                        type="button"
+                        onClick={() => handleGraphNodeSelect(node)}
+                        className="inline-flex max-w-full items-center gap-2 rounded-md border px-2.5 py-1.5 text-left text-xs"
+                        style={{
+                          borderColor: selectedGraphNode?.id === node.id ? 'var(--color-accent)' : 'var(--color-border)',
+                          background: selectedGraphNode?.id === node.id ? 'var(--color-accent-subtle)' : 'var(--color-bg-secondary)',
+                          color: 'var(--color-text)',
+                        }}
+                      >
+                        {node.pinned_root && <Pin size={13} style={{ color: 'var(--color-accent)' }} />}
+                        <span className="truncate">{node.title}</span>
+                      </button>
+                    ))}
+                    {!neighborhoodResults.length && !graphRoots.length && (
+                      <p className="py-2 text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+                        No graph roots yet.
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </details>
             </div>
 
             <div className="grid content-start gap-3">
-              <details open className="rounded-md border p-3" style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg-secondary)' }}>
+              <details open={!brainFirstMode} className="rounded-md border p-3" style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg-secondary)' }}>
                 <summary className="flex cursor-pointer list-none items-center justify-between gap-2">
                   <div className="text-xs font-semibold" style={{ color: 'var(--color-text)' }}>
                     Focus
@@ -3362,7 +3409,7 @@ function KnowledgeVaultSection() {
                 )}
               </details>
 
-              <details open className="rounded-md border p-3" style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg-secondary)' }}>
+              <details open={!brainFirstMode} className="rounded-md border p-3" style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg-secondary)' }}>
                 <summary className="cursor-pointer list-none text-xs font-semibold" style={{ color: 'var(--color-text)' }}>
                   Relationships
                 </summary>
@@ -3444,7 +3491,14 @@ function KnowledgeVaultSection() {
       </div>
 
       {/* Sidebar panels */}
-      <div className="grid gap-4 content-start">
+      <details
+        open={!brainFirstMode}
+        className={brainFirstMode ? 'hud-panel p-4' : 'grid gap-4 content-start'}
+      >
+        <summary className={brainFirstMode ? 'cursor-pointer list-none text-sm font-semibold' : 'sr-only'} style={{ color: 'var(--color-text)' }}>
+          Vault Context
+        </summary>
+        <div className={brainFirstMode ? 'mt-4 grid gap-4 md:grid-cols-3' : 'contents'}>
         {/* Daily note */}
         <ShellPanel title="Daily Note" action={dailyNote?.date || 'today'}>
           {dailyNote ? (
@@ -3521,7 +3575,8 @@ function KnowledgeVaultSection() {
             })}
           </div>
         </ShellPanel>
-      </div>
+        </div>
+      </details>
     </div>
   );
 }
