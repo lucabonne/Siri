@@ -176,6 +176,7 @@ import type {
   PermissionEvent,
   StatusTone,
 } from './types';
+import { LearningPanel } from '../LearningPanel';
 
 const toneStyles: Record<StatusTone, { bg: string; text: string; border: string }> = {
   good: {
@@ -3963,6 +3964,7 @@ function ActiveSection({ section }: { section: MissionSectionId }) {
   if (section === 'terminal') return <TerminalSection />;
   if (section === 'workflows') return <WorkflowsSection />;
   if (section === 'research') return <ResearchSection />;
+  if (section === 'learning') return <LearningPanel />;
   if (section === 'release') return <ReleaseSection />;
   if (section === 'settings') return <SettingsSection />;
   if (section === 'personalization') return <PersonalizationSection />;

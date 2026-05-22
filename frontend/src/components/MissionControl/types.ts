@@ -21,6 +21,7 @@ export type MissionSectionId =
   | 'terminal'
   | 'workflows'
   | 'research'
+  | 'learning'
   | 'mcp'
   | 'release'
   | 'settings'
