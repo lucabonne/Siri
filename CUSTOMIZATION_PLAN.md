@@ -408,6 +408,27 @@ Deferred work remains intentionally untouched in this phase:
 - no external uploads
 - no changes to the WorldMonitor repo itself
 
+## Controlled Autonomy Phase 1
+
+Phase 1 adds an explicit, controlled Autonomy Layer that allows Siri to execute multi-step plans without becoming a free-running agent.
+
+- `src/openjarvis/autonomy/` owns goals, planner, execution engine, approvals, memory recording, typed models, and the coordinating autonomy service.
+- The planner breaks down user-created goals into explicit `PlanStep` sequences.
+- Execution steps are processed sequentially. Steps can be gated by an `ApprovalManager` for explicit user approval before execution.
+- The layer supports pausing, resuming, and stopping plans manually.
+- Memory integration records goal creation, plan generation, and execution milestones.
+- `/v1/autonomy` exposes the autonomy API for goals, plans, execution state, and approval resolution.
+- Mission Control includes an Autonomy panel for setting goals, generating plans, running/pausing/stopping execution, and resolving approvals.
+- Privacy Mode remains local-only. Autonomy actions cannot bypass permissions or execute without explicit user triggering.
+
+Deferred work remains intentionally untouched in this phase:
+
+- no background agent loops
+- no self-generated goals
+- no autonomous internet browsing
+- no self-improvement loops
+- no AGI behaviors
+
 ## Memory Architecture Phase 1
 
 Phase 1 adds the local-first memory foundation for Siri without enabling

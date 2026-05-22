@@ -12,6 +12,7 @@ from pydantic import BaseModel
 
 from openjarvis.personalization.service import router as personalization_router
 from openjarvis.server.agent_workspace_routes import agent_workspace_router
+from openjarvis.server.autonomy_routes import autonomy_router
 from openjarvis.server.coding_assistant_routes import coding_assistant_router
 from openjarvis.server.context_routes import context_router
 from openjarvis.server.desktop_routes import desktop_router
@@ -1543,6 +1544,7 @@ def include_all_routes(app) -> None:
     app.include_router(coding_assistant_router)
     app.include_router(workflow_router)
     app.include_router(personalization_router)
+    app.include_router(autonomy_router)
 
     # Agent Manager routes (if available)
     try:
@@ -1604,4 +1606,5 @@ __all__ = [
     "release_router",
     "research_router",
     "workflow_router",
+    "autonomy_router",
 ]

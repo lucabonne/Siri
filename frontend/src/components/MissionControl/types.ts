@@ -25,7 +25,8 @@ export type MissionSectionId =
   | 'release'
   | 'settings'
   | 'personalization'
-  | 'permissions';
+  | 'permissions'
+  | 'autonomy';
 
 export type MissionSection = {
   id: MissionSectionId;
