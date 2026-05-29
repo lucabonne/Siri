@@ -475,6 +475,7 @@ API gates.
 jarvis voice submit "open notes"                         # Preview only
 jarvis voice submit "open notes" --approve-dispatch      # Preview, then dispatch
 jarvis voice submit "run tests" --agent-id agent-123 --approve-dispatch
+jarvis voice record-local --duration 2                   # Local WAV only
 jarvis voice transcribe-file ./clip.wav                  # Transcript only
 jarvis voice status
 jarvis voice cancel
@@ -484,14 +485,23 @@ jarvis voice cancel
 |-------------------------|--------------------------------------------------|
 | `voice submit TEXT`     | POST to `/v1/voice/ptt/submit-transcript` and show the intent preview/session state |
 | `voice submit --approve-dispatch` | Explicitly approve and then POST to `/v1/voice/ptt/dispatch` |
+| `voice record-local --duration N` | Write a local WAV file and print its path; defaults to the dev silent recorder |
 | `voice transcribe-file AUDIO` | Transcribe an existing local audio file with a local adapter and print the transcript only |
 | `voice status`          | GET `/v1/voice/ptt/status`                       |
 | `voice cancel`          | POST `/v1/voice/ptt/cancel`                      |
 
-This command does not listen in the background, capture Fn hotkeys, record
-microphone audio, call a cloud speech API, automatically dispatch a transcript,
-or play TTS. Text input remains available; dispatch is skipped unless
-`--approve-dispatch` is present on `voice submit`.
+This command does not listen in the background, capture Fn hotkeys, call a cloud
+speech API, automatically transcribe a recording, automatically dispatch a
+transcript, or play TTS. `voice record-local` has an explicit `--duration` stop
+condition, writes only to a local file, and prints the path. Text input remains
+available; dispatch is skipped unless `--approve-dispatch` is present on
+`voice submit`.
+
+`voice record-local` defaults to `--recorder dev-silent` for safe development.
+On macOS, `--recorder macos` uses local command-line recording tools and may
+prompt for **Microphone** permission. A future Fn/hotkey listener will require
+macOS **Accessibility** permission, but this CLI does not install or run that
+listener.
 
 Local transcription adapters are expected to cover `whisper.cpp` and
 `faster-whisper`. A macOS dictation fallback is deferred and must be explicitly

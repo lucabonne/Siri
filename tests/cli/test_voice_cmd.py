@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import wave
 from pathlib import Path
 from typing import Any
 
@@ -53,6 +54,7 @@ def test_voice_command_help_lists_subcommands() -> None:
     assert result.exit_code == 0
     assert "submit" in result.output
     assert "transcribe-file" in result.output
+    assert "record-local" in result.output
     assert "cancel" in result.output
 
 
@@ -202,3 +204,44 @@ def test_voice_transcribe_file_prints_transcript_without_dispatch(
     assert "Voice file transcription" in result.output
     assert "open notes" in result.output
     assert "dispatch: skipped" in result.output
+
+
+def test_voice_record_local_requires_explicit_duration() -> None:
+    result = CliRunner().invoke(voice_cmd.voice, ["record-local"])
+
+    assert result.exit_code != 0
+    assert "Missing option '--duration'" in result.output
+
+
+def test_voice_record_local_writes_dev_file_without_dispatch(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    post_calls: list[tuple[str, dict[str, Any] | None]] = []
+
+    def fake_post(endpoint: str, payload: dict[str, Any] | None, **kwargs):
+        post_calls.append((endpoint, payload))
+        return {}
+
+    monkeypatch.setattr(voice_cmd, "_sleep", lambda seconds: None)
+    monkeypatch.setattr(voice_cmd, "_post_json", fake_post)
+
+    result = CliRunner().invoke(
+        voice_cmd.voice,
+        [
+            "record-local",
+            "--duration",
+            "0.1",
+            "--output-dir",
+            str(tmp_path),
+        ],
+    )
+
+    assert result.exit_code == 0
+    recorded_path = Path(result.output.strip())
+    assert recorded_path.exists()
+    assert recorded_path.parent == tmp_path
+    with wave.open(str(recorded_path), "rb") as wav:
+        assert wav.getnchannels() == 1
+        assert wav.getframerate() == 16000
+    assert post_calls == []

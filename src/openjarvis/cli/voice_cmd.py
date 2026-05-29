@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import os
+import time
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -12,6 +14,7 @@ import httpx
 
 from openjarvis.core.config import load_config
 from openjarvis.voice.models import TranscriptionUnavailableError
+from openjarvis.voice.recorder import LocalMacOSRecorder, Recorder, SilentWavRecorder
 from openjarvis.voice.transcription import (
     LOCAL_TRANSCRIPTION_ADAPTERS,
     SpeechBackendLocalTranscriptionAdapter,
@@ -140,6 +143,21 @@ def _format_dispatch(data: dict[str, Any]) -> None:
         click.echo(f"  reason: {data['reason']}")
     if data.get("error"):
         click.echo(f"  error: {data['error']}")
+
+
+def _sleep(seconds: float) -> None:
+    time.sleep(seconds)
+
+
+def _build_recorder(
+    recorder_kind: str,
+    *,
+    output_dir: Path | None,
+    input_device: str,
+) -> Recorder:
+    if recorder_kind == "macos":
+        return LocalMacOSRecorder(temp_dir=output_dir, input_device=input_device)
+    return SilentWavRecorder(temp_dir=output_dir)
 
 
 @click.group("voice")
@@ -272,6 +290,53 @@ def transcribe_file(
         click.echo(f"  language: {data['language']}")
     click.echo(f"  transcript: {data.get('text', '')}")
     click.echo("  dispatch: skipped (review, then use `jarvis voice submit ...`)")
+
+
+@voice.command("record-local")
+@click.option(
+    "--duration",
+    required=True,
+    type=click.FloatRange(min=0.1),
+    help="Recording duration in seconds; required stop condition.",
+)
+@click.option(
+    "--output-dir",
+    type=click.Path(file_okay=False, path_type=Path),
+    default=None,
+    help="Directory for the recorded WAV. Defaults to the system temp directory.",
+)
+@click.option(
+    "--recorder",
+    "recorder_kind",
+    type=click.Choice(["dev-silent", "macos"]),
+    default="dev-silent",
+    show_default=True,
+    help="Local recorder implementation.",
+)
+@click.option(
+    "--input-device",
+    default=":0",
+    show_default=True,
+    help="macOS avfoundation input device for --recorder macos.",
+)
+def record_local(
+    duration: float,
+    output_dir: Path | None,
+    recorder_kind: str,
+    input_device: str,
+) -> None:
+    """Record to a local WAV file only; never transcribe or dispatch."""
+    recorder = _build_recorder(
+        recorder_kind,
+        output_dir=output_dir,
+        input_device=input_device,
+    )
+    handle = recorder.start(uuid.uuid4().hex)
+    try:
+        _sleep(duration)
+    finally:
+        recorder.stop(handle)
+    click.echo(str(handle.path))
 
 
 @voice.command("cancel")

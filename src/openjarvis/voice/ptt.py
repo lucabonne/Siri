@@ -9,7 +9,7 @@ from openjarvis.voice.models import (
     VoiceRecordingError,
     VoiceSession,
 )
-from openjarvis.voice.recorder import LocalMacOSRecorder, Recorder
+from openjarvis.voice.recorder import LocalMacOSRecorder, Recorder, SilentWavRecorder
 from openjarvis.voice.service import VoicePushToTalkService
 from openjarvis.voice.transcription import (
     LocalTranscriptionAdapter,
@@ -31,4 +31,5 @@ __all__ = [
     "VoiceRecordingError",
     "VoiceSession",
     "SpeechBackendLocalTranscriptionAdapter",
+    "SilentWavRecorder",
 ]

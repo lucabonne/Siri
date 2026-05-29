@@ -27,6 +27,7 @@ class RecordingHandle:
     path: Path
     format: str = "wav"
     process: Any = None
+    started_at: float = 0.0
 
 
 @dataclass
@@ -114,9 +115,7 @@ class VoiceSession:
 
     def to_dict(self, *, expose_audio_path: bool | None = None) -> dict[str, Any]:
         expose = (
-            self.persisted_raw_audio
-            if expose_audio_path is None
-            else expose_audio_path
+            self.persisted_raw_audio if expose_audio_path is None else expose_audio_path
         )
         data = asdict(self)
         data["duration_seconds"] = self.duration
