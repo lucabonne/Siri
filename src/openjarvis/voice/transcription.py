@@ -11,18 +11,34 @@ from openjarvis.voice.models import TranscriptionUnavailableError
 
 LOCAL_TRANSCRIPTION_ADAPTERS = ("faster-whisper", "whisper.cpp")
 
+LOCAL_TRANSCRIPTION_SETUP_HINTS = {
+    "faster-whisper": (
+        "install the optional dependency with `uv sync --extra speech` and set "
+        "[speech].model to a supported faster-whisper model name or an existing "
+        "local CTranslate2 model directory"
+    ),
+    "whisper.cpp": (
+        "install whisper.cpp, ensure `whisper-cli` is on PATH or set "
+        "WHISPER_CPP_BINARY, and set WHISPER_CPP_MODEL to an existing ggml model file"
+    ),
+}
+
 EXPECTED_FUTURE_TRANSCRIPTION_ADAPTERS = (
     {
         "adapter_id": "whisper.cpp",
         "local_only": True,
-        "status": "planned",
-        "notes": "Local subprocess adapter for installed whisper.cpp binaries.",
+        "status": "optional",
+        "notes": (
+            "Local subprocess adapter for explicitly configured whisper.cpp binaries."
+        ),
     },
     {
         "adapter_id": "faster-whisper",
         "local_only": True,
-        "status": "planned",
-        "notes": "Local CTranslate2 adapter for faster-whisper models.",
+        "status": "optional",
+        "notes": (
+            "Local CTranslate2 adapter for explicitly selected faster-whisper models."
+        ),
     },
     {
         "adapter_id": "macos-dictation",
@@ -114,11 +130,18 @@ class SpeechBackendLocalTranscriptionAdapter:
         language: str | None = None,
     ) -> LocalTranscriptionResult:
         backend = self._resolve_backend()
-        result = backend.transcribe(
-            audio,
-            format=format,
-            language=language or self._config.speech.language or None,
-        )
+        try:
+            result = backend.transcribe(
+                audio,
+                format=format,
+                language=language or self._config.speech.language or None,
+            )
+        except TranscriptionUnavailableError:
+            raise
+        except Exception as exc:
+            raise TranscriptionUnavailableError(
+                self._setup_error(reason=str(exc))
+            ) from exc
         return self._normalize_result(result, backend_id=backend.backend_id)
 
     def transcribe_file(
@@ -153,16 +176,46 @@ class SpeechBackendLocalTranscriptionAdapter:
             )
 
         try:
-            from openjarvis.speech._discovery import _create_backend
-
-            resolved = _create_backend(self.adapter_id, self._config)
-            if resolved is not None and resolved.health():
+            resolved = self._create_local_backend()
+            if resolved.health():
                 return resolved
-        except Exception:
-            pass
+        except TranscriptionUnavailableError:
+            raise
+        except Exception as exc:
+            raise TranscriptionUnavailableError(
+                self._setup_error(reason=str(exc))
+            ) from exc
+        raise TranscriptionUnavailableError(self._setup_error())
+
+    def _create_local_backend(self):
+        if self.adapter_id == "faster-whisper":
+            model = self._config.speech.model
+            model_path = Path(model).expanduser()
+            if _looks_like_model_path(model) and not model_path.exists():
+                raise TranscriptionUnavailableError(
+                    f"faster-whisper model path does not exist: {model_path}"
+                )
+            from openjarvis.speech.faster_whisper import FasterWhisperBackend
+
+            return FasterWhisperBackend(
+                model_size=model,
+                device=self._config.speech.device,
+                compute_type=self._config.speech.compute_type,
+            )
+        if self.adapter_id == "whisper.cpp":
+            from openjarvis.speech.whisper_cpp import WhisperCppBackend
+
+            return WhisperCppBackend()
         raise TranscriptionUnavailableError(
-            f"transcription backend unavailable: configure {self.adapter_id} locally"
+            f"unsupported local transcription adapter: {self.adapter_id}"
         )
+
+    def _setup_error(self, *, reason: str = "") -> str:
+        hint = LOCAL_TRANSCRIPTION_SETUP_HINTS[self.adapter_id]
+        message = f"{self.adapter_id} transcription adapter unavailable; {hint}."
+        if reason:
+            message = f"{message} Reason: {reason}"
+        return message
 
     @staticmethod
     def _normalize_result(
@@ -191,11 +244,21 @@ class LocalVoiceTranscriber:
         backend: Any = None,
     ) -> None:
         self._config = config or JarvisConfig()
-        self._adapter = adapter or SpeechBackendLocalTranscriptionAdapter(
-            adapter_id="faster-whisper",
-            config=self._config,
-            backend=backend,
-        )
+        if adapter is not None:
+            self._adapter = adapter
+        elif backend is not None:
+            self._adapter = SpeechBackendLocalTranscriptionAdapter(
+                adapter_id=backend.backend_id,
+                config=self._config,
+                backend=backend,
+            )
+        elif self._config.speech.backend in LOCAL_TRANSCRIPTION_ADAPTERS:
+            self._adapter = SpeechBackendLocalTranscriptionAdapter(
+                adapter_id=self._config.speech.backend,
+                config=self._config,
+            )
+        else:
+            self._adapter = DisabledLocalTranscriptionAdapter()
 
     def available(self) -> bool:
         return self._adapter.available()
@@ -225,11 +288,72 @@ class LocalVoiceTranscriber:
         )
 
 
+class DisabledLocalTranscriptionAdapter:
+    """Adapter used when local transcription has not been explicitly enabled."""
+
+    adapter_id = "disabled"
+
+    def available(self) -> bool:
+        return False
+
+    def transcribe(
+        self,
+        audio: bytes,
+        *,
+        format: str = "wav",
+        language: str | None = None,
+    ) -> LocalTranscriptionResult:
+        raise TranscriptionUnavailableError(local_transcription_disabled_message())
+
+    def transcribe_file(
+        self,
+        audio_path: str | Path,
+        *,
+        language: str | None = None,
+    ) -> LocalTranscriptionResult:
+        raise TranscriptionUnavailableError(local_transcription_disabled_message())
+
+
+def resolve_local_transcription_adapter_id(
+    *,
+    requested_adapter: str | None,
+    config: JarvisConfig,
+) -> str:
+    """Resolve an explicitly selected or configured local transcription adapter."""
+    if requested_adapter:
+        if requested_adapter not in LOCAL_TRANSCRIPTION_ADAPTERS:
+            raise ValueError(
+                f"unsupported local transcription adapter: {requested_adapter}"
+            )
+        return requested_adapter
+    if config.speech.backend in LOCAL_TRANSCRIPTION_ADAPTERS:
+        return config.speech.backend
+    raise TranscriptionUnavailableError(local_transcription_disabled_message())
+
+
+def local_transcription_disabled_message() -> str:
+    adapters = ", ".join(LOCAL_TRANSCRIPTION_ADAPTERS)
+    return (
+        "local voice transcription is disabled; select an adapter with "
+        f"`--adapter` or set [speech].backend to one of: {adapters}"
+    )
+
+
+def _looks_like_model_path(model: str) -> bool:
+    return (
+        "/" in model or "\\" in model or model.startswith(".") or model.startswith("~")
+    )
+
+
 __all__ = [
     "EXPECTED_FUTURE_TRANSCRIPTION_ADAPTERS",
     "LOCAL_TRANSCRIPTION_ADAPTERS",
     "LocalTranscriptionAdapter",
     "LocalTranscriptionResult",
     "LocalVoiceTranscriber",
+    "DisabledLocalTranscriptionAdapter",
+    "LOCAL_TRANSCRIPTION_SETUP_HINTS",
     "SpeechBackendLocalTranscriptionAdapter",
+    "local_transcription_disabled_message",
+    "resolve_local_transcription_adapter_id",
 ]

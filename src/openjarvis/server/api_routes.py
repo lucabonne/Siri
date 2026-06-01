@@ -1015,9 +1015,16 @@ def _get_voice_ptt_service(request: Request):
     if approval_queue is None:
         approval_queue = ApprovalQueue()
         request.app.state.approval_queue = approval_queue
+    from openjarvis.voice.transcription import LOCAL_TRANSCRIPTION_ADAPTERS
+
+    speech_backend = (
+        getattr(request.app.state, "speech_backend", None)
+        if config.speech.backend in LOCAL_TRANSCRIPTION_ADAPTERS
+        else None
+    )
     service = VoicePushToTalkService(
         config=config,
-        speech_backend=getattr(request.app.state, "speech_backend", None),
+        speech_backend=speech_backend,
         permission_middleware=permission_middleware,
         approval_queue=approval_queue,
         mode_registry=mode_registry,
@@ -1152,7 +1159,8 @@ async def dispatch_voice_transcript(req: VoiceDispatchRequest, request: Request)
     FSM transitions (only when entering from awaiting_approval):
       awaiting_approval -> dispatching -> completed -> idle  (on tool success)
       awaiting_approval -> dispatching -> completed -> idle  (graceful non-dispatch)
-      awaiting_approval -> dispatching -> failed  (on tool error or result.success=False)
+      awaiting_approval -> dispatching -> failed
+        (on tool error or result.success=False)
 
     Dispatches via AgentSendTool -> POST /v1/agents/{agent_id}/message.
     Returns dispatched=False with a reason when no agent is addressable.

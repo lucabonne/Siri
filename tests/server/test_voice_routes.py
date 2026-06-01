@@ -350,7 +350,7 @@ def test_voice_transcription_unavailable_response(tmp_path: Path) -> None:
     assert response.status_code == 200
     data = response.json()
     assert data["status"] == "transcription_backend_unavailable"
-    assert "faster-whisper" in data["reason"]
+    assert "transcription backend unavailable" in data["reason"]
 
 
 def test_submit_transcript_transitions_fsm_state(client: TestClient) -> None:

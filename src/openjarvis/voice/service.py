@@ -157,14 +157,11 @@ class VoicePushToTalkService:
                 format=session.format,
                 language=language,
             )
-        except TranscriptionUnavailableError:
+        except TranscriptionUnavailableError as exc:
             session.status = "transcription_unavailable"
             return {
                 "status": "transcription_backend_unavailable",
-                "reason": (
-                    "transcription backend unavailable: install faster-whisper "
-                    "for local voice transcription"
-                ),
+                "reason": str(exc),
                 "session": session.to_dict(),
                 "passive_only": True,
                 "dispatched_to_agent": False,
@@ -174,9 +171,7 @@ class VoicePushToTalkService:
         session.backend = result.backend
         session.status = "preview_ready"
         session.intent_preview = self.preview_intent(result.text)
-        self._state.clear_audio_if_needed(
-            persist_raw_audio=session.persisted_raw_audio
-        )
+        self._state.clear_audio_if_needed(persist_raw_audio=session.persisted_raw_audio)
         self._persist_minimal_memory(session)
         return {
             "status": "preview_ready",
@@ -205,8 +200,7 @@ class VoicePushToTalkService:
             intent = "question"
             planned_actions.append("route to active agent if user submits")
         if any(
-            token in lower
-            for token in ("run ", "delete ", "send ", "open ", "commit ")
+            token in lower for token in ("run ", "delete ", "send ", "open ", "commit ")
         ):
             intent = "action_request"
             planned_actions.append("request explicit approval before execution")

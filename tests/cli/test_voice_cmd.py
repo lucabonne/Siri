@@ -196,7 +196,14 @@ def test_voice_transcribe_file_prints_transcript_without_dispatch(
 
     result = CliRunner().invoke(
         voice_cmd.voice,
-        ["transcribe-file", str(audio_path), "--language", "en"],
+        [
+            "transcribe-file",
+            str(audio_path),
+            "--adapter",
+            "faster-whisper",
+            "--language",
+            "en",
+        ],
     )
 
     assert result.exit_code == 0
@@ -253,6 +260,43 @@ def test_voice_capture_preview_requires_explicit_duration() -> None:
 
     assert result.exit_code != 0
     assert "Missing option '--duration'" in result.output
+
+
+def test_voice_capture_preview_requires_adapter_before_recording(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    recorder_calls: list[str] = []
+
+    monkeypatch.setattr(
+        voice_cmd,
+        "load_config",
+        lambda: type(
+            "Config",
+            (),
+            {"speech": type("Speech", (), {"backend": "auto"})()},
+        )(),
+    )
+    monkeypatch.setattr(
+        voice_cmd,
+        "_build_recorder",
+        lambda *args, **kwargs: recorder_calls.append("record") or None,
+    )
+
+    result = CliRunner().invoke(
+        voice_cmd.voice,
+        [
+            "capture-preview",
+            "--duration",
+            "0.1",
+            "--output-dir",
+            str(tmp_path),
+        ],
+    )
+
+    assert result.exit_code != 0
+    assert "local voice transcription is disabled" in result.output
+    assert recorder_calls == []
 
 
 def test_voice_capture_preview_records_transcribes_and_previews_without_dispatch(
@@ -312,6 +356,8 @@ def test_voice_capture_preview_records_transcribes_and_previews_without_dispatch
             "0.1",
             "--output-dir",
             str(tmp_path),
+            "--adapter",
+            "faster-whisper",
             "--language",
             "en",
         ],
@@ -335,3 +381,33 @@ def test_voice_capture_preview_records_transcribes_and_previews_without_dispatch
     assert "stage: transcribing local WAV" in result.output
     assert "stage: submitting transcript preview" in result.output
     assert "dispatch: skipped" in result.output
+
+
+def test_voice_transcribe_file_requires_explicit_or_configured_adapter(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    audio_path = tmp_path / "clip.wav"
+    audio_path.write_bytes(b"fake wav")
+    post_calls: list[tuple[str, dict[str, Any] | None]] = []
+
+    def fake_post(endpoint: str, payload: dict[str, Any] | None, **kwargs):
+        post_calls.append((endpoint, payload))
+        return {}
+
+    monkeypatch.setattr(voice_cmd, "_post_json", fake_post)
+    monkeypatch.setattr(
+        voice_cmd,
+        "load_config",
+        lambda: type(
+            "Config",
+            (),
+            {"speech": type("Speech", (), {"backend": "auto"})()},
+        )(),
+    )
+
+    result = CliRunner().invoke(voice_cmd.voice, ["transcribe-file", str(audio_path)])
+
+    assert result.exit_code != 0
+    assert "local voice transcription is disabled" in result.output
+    assert post_calls == []

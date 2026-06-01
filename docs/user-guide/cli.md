@@ -476,8 +476,8 @@ jarvis voice submit "open notes"                         # Preview only
 jarvis voice submit "open notes" --approve-dispatch      # Preview, then dispatch
 jarvis voice submit "run tests" --agent-id agent-123 --approve-dispatch
 jarvis voice record-local --duration 2                   # Local WAV only
-jarvis voice transcribe-file ./clip.wav                  # Transcript only
-jarvis voice capture-preview --duration 2                # Record, transcribe, preview
+jarvis voice transcribe-file ./clip.wav --adapter faster-whisper
+jarvis voice capture-preview --duration 2 --adapter faster-whisper
 jarvis voice status
 jarvis voice cancel
 ```
@@ -506,9 +506,34 @@ prompt for **Microphone** permission. A future Fn/hotkey listener will require
 macOS **Accessibility** permission, but this CLI does not install or run that
 listener.
 
-Local transcription adapters are expected to cover `whisper.cpp` and
-`faster-whisper`. A macOS dictation fallback is deferred and must be explicitly
-enabled in a later phase before it can be used.
+Local transcription is disabled unless you explicitly select a local adapter
+with `--adapter` or set `[speech].backend` to a local adapter in
+`~/.openjarvis/config.toml`. The current local adapter choices are
+`faster-whisper` and `whisper.cpp`; cloud speech backends are not used by
+`jarvis voice transcribe-file` or `jarvis voice capture-preview`.
+
+For `faster-whisper`, install the optional dependency with:
+
+```bash
+uv sync --extra speech
+```
+
+Then either keep `[speech].model = "base"` to let faster-whisper resolve a
+supported model name, or set it to an existing local CTranslate2 model directory.
+If you configure a local model path that does not exist, the CLI returns a clear
+error before transcription.
+
+For `whisper.cpp`, install a `whisper-cli` compatible binary and either put it on
+`PATH` or set `WHISPER_CPP_BINARY`. Set `WHISPER_CPP_MODEL` to an existing local
+ggml model file. Missing binaries or model files are reported as configuration
+errors.
+
+Privacy behavior is unchanged: audio is read from the file you provide or from
+the explicit fixed-duration recorder only, transcription runs through the
+selected local adapter, raw recordings are not persisted unless
+`[speech].persist_raw_audio = true`, and dispatch still requires the separate
+`jarvis voice submit --approve-dispatch` path. TTS, voice-only mode, and Fn
+hotkey listening remain deferred.
 
 ---
 

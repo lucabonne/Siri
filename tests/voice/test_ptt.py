@@ -162,7 +162,7 @@ def test_transcription_fallback_returns_unavailable_status(tmp_path: Path) -> No
     result = service.transcribe_latest()
 
     assert result["status"] == "transcription_backend_unavailable"
-    assert "faster-whisper" in result["reason"]
+    assert "transcription backend unavailable" in result["reason"]
     assert result["dispatched_to_agent"] is False
 
 

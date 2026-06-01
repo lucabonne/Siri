@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 
+from openjarvis.core.config import JarvisConfig
 from openjarvis.speech._stubs import Segment, TranscriptionResult
 from openjarvis.voice.models import TranscriptionUnavailableError
 from openjarvis.voice.transcription import (
@@ -11,6 +12,7 @@ from openjarvis.voice.transcription import (
     LOCAL_TRANSCRIPTION_ADAPTERS,
     LocalVoiceTranscriber,
     SpeechBackendLocalTranscriptionAdapter,
+    resolve_local_transcription_adapter_id,
 )
 
 
@@ -82,6 +84,49 @@ def test_local_voice_transcriber_uses_adapter() -> None:
 
     assert result.text == "hello from file"
     assert backend.calls == [(b"fake wav", "wav", "en")]
+
+
+def test_local_voice_transcriber_is_disabled_without_explicit_adapter() -> None:
+    transcriber = LocalVoiceTranscriber(config=JarvisConfig())
+
+    assert transcriber.available() is False
+    with pytest.raises(TranscriptionUnavailableError, match="disabled"):
+        transcriber.transcribe(b"fake wav")
+
+
+def test_configured_local_adapter_is_resolved() -> None:
+    config = JarvisConfig()
+    config.speech.backend = "faster-whisper"
+
+    assert (
+        resolve_local_transcription_adapter_id(
+            requested_adapter=None,
+            config=config,
+        )
+        == "faster-whisper"
+    )
+    assert (
+        resolve_local_transcription_adapter_id(
+            requested_adapter="whisper.cpp",
+            config=JarvisConfig(),
+        )
+        == "whisper.cpp"
+    )
+
+
+def test_faster_whisper_missing_local_model_path_is_clear() -> None:
+    config = JarvisConfig()
+    config.speech.model = "/missing/openjarvis/faster-whisper-model"
+    adapter = SpeechBackendLocalTranscriptionAdapter(
+        adapter_id="faster-whisper",
+        config=config,
+    )
+
+    with pytest.raises(
+        TranscriptionUnavailableError,
+        match="model path does not exist",
+    ):
+        adapter.transcribe(b"audio")
 
 
 def test_expected_future_adapters_are_documented() -> None:

@@ -18,6 +18,7 @@ from openjarvis.voice.recorder import LocalMacOSRecorder, Recorder, SilentWavRec
 from openjarvis.voice.transcription import (
     LOCAL_TRANSCRIPTION_ADAPTERS,
     SpeechBackendLocalTranscriptionAdapter,
+    resolve_local_transcription_adapter_id,
 )
 
 
@@ -160,16 +161,33 @@ def _build_recorder(
     return SilentWavRecorder(temp_dir=output_dir)
 
 
+def _build_transcriber(
+    adapter: str | None,
+) -> tuple[str, SpeechBackendLocalTranscriptionAdapter]:
+    config = load_config()
+    try:
+        adapter_id = resolve_local_transcription_adapter_id(
+            requested_adapter=adapter,
+            config=config,
+        )
+    except (ValueError, TranscriptionUnavailableError) as exc:
+        raise click.ClickException(str(exc)) from exc
+    return (
+        adapter_id,
+        SpeechBackendLocalTranscriptionAdapter(
+            adapter_id=adapter_id,
+            config=config,
+        ),
+    )
+
+
 def _transcribe_audio_file(
     audio_file: Path,
     *,
-    adapter: str,
+    adapter: str | None,
     language: str | None,
 ) -> dict[str, Any]:
-    transcriber = SpeechBackendLocalTranscriptionAdapter(
-        adapter_id=adapter,
-        config=load_config(),
-    )
+    _, transcriber = _build_transcriber(adapter)
     try:
         result = transcriber.transcribe_file(audio_file, language=language)
     except (OSError, TranscriptionUnavailableError) as exc:
@@ -272,15 +290,17 @@ def submit(
 @click.option(
     "--adapter",
     type=click.Choice(LOCAL_TRANSCRIPTION_ADAPTERS),
-    default="faster-whisper",
-    show_default=True,
-    help="Local transcription adapter to use.",
+    default=None,
+    help=(
+        "Local transcription adapter to use. If omitted, [speech].backend must "
+        "be explicitly set to a local adapter."
+    ),
 )
 @click.option("--language", default=None, help="Optional language code hint.")
 @click.option("--json", "as_json", is_flag=True, help="Print raw JSON response.")
 def transcribe_file(
     audio_file: Path,
-    adapter: str,
+    adapter: str | None,
     language: str | None,
     as_json: bool,
 ) -> None:
@@ -377,9 +397,11 @@ def record_local(
 @click.option(
     "--adapter",
     type=click.Choice(LOCAL_TRANSCRIPTION_ADAPTERS),
-    default="faster-whisper",
-    show_default=True,
-    help="Local transcription adapter to use.",
+    default=None,
+    help=(
+        "Local transcription adapter to use. If omitted, [speech].backend must "
+        "be explicitly set to a local adapter."
+    ),
 )
 @click.option("--language", default=None, help="Optional language code hint.")
 @click.option(
@@ -411,7 +433,7 @@ def capture_preview(
     output_dir: Path | None,
     recorder_kind: str,
     input_device: str,
-    adapter: str,
+    adapter: str | None,
     language: str | None,
     session_id: str,
     base_url: str | None,
@@ -420,6 +442,7 @@ def capture_preview(
     as_json: bool,
 ) -> None:
     """Record, transcribe, and submit a preview; never dispatch automatically."""
+    adapter_id, transcriber = _build_transcriber(adapter)
     recorder = _build_recorder(
         recorder_kind,
         output_dir=output_dir,
@@ -441,13 +464,13 @@ def capture_preview(
 
     if not as_json:
         click.echo(f"    path: {handle.path}")
-        click.echo(f"  stage: transcribing local WAV (adapter={adapter})")
+        click.echo(f"  stage: transcribing local WAV (adapter={adapter_id})")
 
-    transcription = _transcribe_audio_file(
-        handle.path,
-        adapter=adapter,
-        language=language,
-    )
+    try:
+        transcription = transcriber.transcribe_file(handle.path, language=language)
+    except (OSError, TranscriptionUnavailableError) as exc:
+        raise click.ClickException(str(exc)) from exc
+    transcription = transcription.to_dict()
     transcript = str(transcription.get("text") or "")
 
     if not as_json:
