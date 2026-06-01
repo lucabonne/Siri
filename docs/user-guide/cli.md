@@ -477,6 +477,7 @@ jarvis voice submit "open notes" --approve-dispatch      # Preview, then dispatc
 jarvis voice submit "run tests" --agent-id agent-123 --approve-dispatch
 jarvis voice record-local --duration 2                   # Local WAV only
 jarvis voice transcribe-file ./clip.wav                  # Transcript only
+jarvis voice capture-preview --duration 2                # Record, transcribe, preview
 jarvis voice status
 jarvis voice cancel
 ```
@@ -487,15 +488,17 @@ jarvis voice cancel
 | `voice submit --approve-dispatch` | Explicitly approve and then POST to `/v1/voice/ptt/dispatch` |
 | `voice record-local --duration N` | Write a local WAV file and print its path; defaults to the dev silent recorder |
 | `voice transcribe-file AUDIO` | Transcribe an existing local audio file with a local adapter and print the transcript only |
+| `voice capture-preview --duration N` | Record a local WAV, transcribe it locally, POST the transcript to `/v1/voice/ptt/submit-transcript`, and print the preview only |
 | `voice status`          | GET `/v1/voice/ptt/status`                       |
 | `voice cancel`          | POST `/v1/voice/ptt/cancel`                      |
 
 This command does not listen in the background, capture Fn hotkeys, call a cloud
-speech API, automatically transcribe a recording, automatically dispatch a
-transcript, or play TTS. `voice record-local` has an explicit `--duration` stop
-condition, writes only to a local file, and prints the path. Text input remains
-available; dispatch is skipped unless `--approve-dispatch` is present on
-`voice submit`.
+speech API, automatically dispatch a transcript, or play TTS. `voice
+record-local` and `voice capture-preview` both have an explicit `--duration`
+stop condition. `voice capture-preview` manually chains local recording, local
+transcription, and the existing preview endpoint, then stops before dispatch.
+Text input remains available; dispatch is skipped unless `--approve-dispatch`
+is present on `voice submit`.
 
 `voice record-local` defaults to `--recorder dev-silent` for safe development.
 On macOS, `--recorder macos` uses local command-line recording tools and may

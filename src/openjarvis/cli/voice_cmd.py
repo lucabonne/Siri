@@ -160,6 +160,23 @@ def _build_recorder(
     return SilentWavRecorder(temp_dir=output_dir)
 
 
+def _transcribe_audio_file(
+    audio_file: Path,
+    *,
+    adapter: str,
+    language: str | None,
+) -> dict[str, Any]:
+    transcriber = SpeechBackendLocalTranscriptionAdapter(
+        adapter_id=adapter,
+        config=load_config(),
+    )
+    try:
+        result = transcriber.transcribe_file(audio_file, language=language)
+    except (OSError, TranscriptionUnavailableError) as exc:
+        raise click.ClickException(str(exc)) from exc
+    return result.to_dict()
+
+
 @click.group("voice")
 def voice() -> None:
     """Local typed/mock voice flow over /v1/voice/ptt."""
@@ -268,16 +285,7 @@ def transcribe_file(
     as_json: bool,
 ) -> None:
     """Transcribe a local audio file; never dispatch automatically."""
-    transcriber = SpeechBackendLocalTranscriptionAdapter(
-        adapter_id=adapter,
-        config=load_config(),
-    )
-    try:
-        result = transcriber.transcribe_file(audio_file, language=language)
-    except (OSError, TranscriptionUnavailableError) as exc:
-        raise click.ClickException(str(exc)) from exc
-
-    data = result.to_dict()
+    data = _transcribe_audio_file(audio_file, adapter=adapter, language=language)
     data["dispatch_skipped"] = True
     data["dispatch_reason"] = "file transcription does not dispatch"
     if as_json:
@@ -337,6 +345,143 @@ def record_local(
     finally:
         recorder.stop(handle)
     click.echo(str(handle.path))
+
+
+@voice.command("capture-preview")
+@click.option(
+    "--duration",
+    required=True,
+    type=click.FloatRange(min=0.1),
+    help="Recording duration in seconds; required stop condition.",
+)
+@click.option(
+    "--output-dir",
+    type=click.Path(file_okay=False, path_type=Path),
+    default=None,
+    help="Directory for the recorded WAV. Defaults to the system temp directory.",
+)
+@click.option(
+    "--recorder",
+    "recorder_kind",
+    type=click.Choice(["dev-silent", "macos"]),
+    default="dev-silent",
+    show_default=True,
+    help="Local recorder implementation.",
+)
+@click.option(
+    "--input-device",
+    default=":0",
+    show_default=True,
+    help="macOS avfoundation input device for --recorder macos.",
+)
+@click.option(
+    "--adapter",
+    type=click.Choice(LOCAL_TRANSCRIPTION_ADAPTERS),
+    default="faster-whisper",
+    show_default=True,
+    help="Local transcription adapter to use.",
+)
+@click.option("--language", default=None, help="Optional language code hint.")
+@click.option(
+    "--session-id",
+    default="",
+    help="Optional client-side session id for the preview request.",
+)
+@click.option(
+    "--base-url",
+    envvar="OPENJARVIS_BASE_URL",
+    default=None,
+    help="OpenJarvis API base URL. Defaults to configured local server.",
+)
+@click.option(
+    "--api-key",
+    envvar="OPENJARVIS_API_KEY",
+    default=None,
+    help="API key for an authenticated local server.",
+)
+@click.option(
+    "--timeout",
+    default=10.0,
+    show_default=True,
+    help="HTTP timeout seconds.",
+)
+@click.option("--json", "as_json", is_flag=True, help="Print raw JSON response.")
+def capture_preview(
+    duration: float,
+    output_dir: Path | None,
+    recorder_kind: str,
+    input_device: str,
+    adapter: str,
+    language: str | None,
+    session_id: str,
+    base_url: str | None,
+    api_key: str | None,
+    timeout: float,
+    as_json: bool,
+) -> None:
+    """Record, transcribe, and submit a preview; never dispatch automatically."""
+    recorder = _build_recorder(
+        recorder_kind,
+        output_dir=output_dir,
+        input_device=input_device,
+    )
+
+    if not as_json:
+        click.echo("Voice capture preview")
+        click.echo(
+            f"  stage: recording local WAV "
+            f"(recorder={recorder_kind}, duration={duration:g}s)"
+        )
+
+    handle = recorder.start(uuid.uuid4().hex)
+    try:
+        _sleep(duration)
+    finally:
+        recorder.stop(handle)
+
+    if not as_json:
+        click.echo(f"    path: {handle.path}")
+        click.echo(f"  stage: transcribing local WAV (adapter={adapter})")
+
+    transcription = _transcribe_audio_file(
+        handle.path,
+        adapter=adapter,
+        language=language,
+    )
+    transcript = str(transcription.get("text") or "")
+
+    if not as_json:
+        if transcription.get("language"):
+            click.echo(f"    language: {transcription['language']}")
+        click.echo(f"    transcript: {transcript}")
+        click.echo("  stage: submitting transcript preview")
+
+    preview = _post_json(
+        "/v1/voice/ptt/submit-transcript",
+        {"transcript": transcript, "session_id": session_id},
+        base_url=_base_url(base_url),
+        api_key=_api_key(api_key),
+        timeout=timeout,
+    )
+
+    if as_json:
+        _emit_json(
+            {
+                "recording": {
+                    "path": str(handle.path),
+                    "recorder": recorder_kind,
+                    "duration": duration,
+                },
+                "transcription": transcription,
+                "preview": preview,
+                "dispatch_skipped": True,
+                "dispatch_reason": "capture-preview does not dispatch",
+            }
+        )
+        return
+
+    _format_preview(preview)
+    click.echo("  dispatch: skipped (use `jarvis voice submit --approve-dispatch`)")
 
 
 @voice.command("cancel")

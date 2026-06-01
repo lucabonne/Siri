@@ -1,5 +1,72 @@
 # Customization Plan
 
+## Voice Control Phase 7
+
+Phase 7 adds a safe manual local pipeline command that chains the existing
+recording, transcription, and preview boundaries without adding any automatic
+dispatch path.
+
+- `jarvis voice capture-preview --duration N` records a local WAV using the
+  existing recorder boundary, with the same explicit duration stop condition as
+  `record-local`.
+- The command transcribes the recorded WAV through the existing local
+  transcription adapter boundary.
+- It submits the resulting transcript to
+  `/v1/voice/ptt/submit-transcript` and prints the returned intent/session
+  preview.
+- It does not call `/v1/voice/ptt/dispatch`. Dispatch remains available only
+  through the separate explicit approval path on `jarvis voice submit
+  --approve-dispatch`, which sends `approved=true`.
+- CLI output names each stage: recording, transcribing, and submitting the
+  preview.
+
+Deferred work remains intentionally untouched in this phase:
+
+- no always-on listening
+- no Fn hotkey capture
+- no approval bypass
+- no new Whisper/faster-whisper adapter implementation beyond the existing
+  local transcription boundary
+- no TTS response playback
+- no voice-only mode; text input remains available
+
+## Voice Control Phase 6
+
+Phase 6 adds the first safe local recorder boundary for future push-to-talk
+microphone recording while keeping the user-facing flow explicit, local, and
+non-dispatching by default.
+
+- `openjarvis.voice.recorder.Recorder` defines the explicit local recorder
+  contract used by the voice service and CLI.
+- Recorder implementations only capture between a direct `start()` call and a
+  direct `stop()` call. Always-on listening, wake-word activation, and Fn/hotkey
+  capture are intentionally outside this boundary.
+- `SilentWavRecorder` provides a safe development recorder that writes a local
+  silent WAV only after an explicit stop condition.
+- `jarvis voice record-local --duration N` records to a local WAV file and
+  prints the path. The required `--duration` option is the stop condition.
+- `record-local` does not transcribe the recording, submit a transcript, call
+  `/v1/voice/ptt/dispatch`, or dispatch to an agent.
+- The existing `jarvis voice submit`, `transcribe-file`, `status`, and `cancel`
+  commands remain available, with dispatch still gated behind
+  `--approve-dispatch` and `approved=true`.
+
+Required future macOS permissions:
+
+- **Microphone** permission for explicitly requested local microphone recording.
+- **Accessibility** permission for a later Fn/hotkey listener.
+
+Deferred work remains intentionally untouched in this phase:
+
+- no always-on listening
+- no Fn hotkey capture
+- no automatic transcription from recording
+- no automatic dispatch or approval bypass
+- no new Whisper/faster-whisper integration beyond the existing deferred
+  adapter boundary
+- no TTS response playback
+- no voice-only mode; text input remains available
+
 ## Voice Control Phase 5
 
 Phase 5 adds the first local transcription adapter boundary while keeping the

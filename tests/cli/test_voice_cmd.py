@@ -55,6 +55,7 @@ def test_voice_command_help_lists_subcommands() -> None:
     assert "submit" in result.output
     assert "transcribe-file" in result.output
     assert "record-local" in result.output
+    assert "capture-preview" in result.output
     assert "cancel" in result.output
 
 
@@ -245,3 +246,92 @@ def test_voice_record_local_writes_dev_file_without_dispatch(
         assert wav.getnchannels() == 1
         assert wav.getframerate() == 16000
     assert post_calls == []
+
+
+def test_voice_capture_preview_requires_explicit_duration() -> None:
+    result = CliRunner().invoke(voice_cmd.voice, ["capture-preview"])
+
+    assert result.exit_code != 0
+    assert "Missing option '--duration'" in result.output
+
+
+def test_voice_capture_preview_records_transcribes_and_previews_without_dispatch(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    post_calls: list[tuple[str, dict[str, Any] | None]] = []
+    adapter_calls: list[tuple[Path, str | None]] = []
+
+    class FakeResult:
+        text = "open notes"
+        language = "en"
+        confidence = 0.91
+        duration_seconds = 1.25
+        backend = "faster-whisper"
+        segments: list[Any] = []
+
+        def to_dict(self):
+            return {
+                "text": self.text,
+                "language": self.language,
+                "confidence": self.confidence,
+                "duration_seconds": self.duration_seconds,
+                "backend": self.backend,
+                "segments": self.segments,
+            }
+
+    class FakeAdapter:
+        def __init__(self, *, adapter_id, config):
+            assert adapter_id == "faster-whisper"
+            assert config == "config"
+
+        def transcribe_file(self, path, *, language=None):
+            adapter_calls.append((path, language))
+            return FakeResult()
+
+    def fake_post(endpoint: str, payload: dict[str, Any] | None, **kwargs):
+        post_calls.append((endpoint, payload))
+        return _preview_response()
+
+    monkeypatch.setattr(voice_cmd, "_sleep", lambda seconds: None)
+    monkeypatch.setattr(voice_cmd, "load_config", lambda: "config")
+    monkeypatch.setattr(
+        voice_cmd,
+        "SpeechBackendLocalTranscriptionAdapter",
+        FakeAdapter,
+    )
+    monkeypatch.setattr(voice_cmd, "_post_json", fake_post)
+    monkeypatch.setattr(voice_cmd, "_base_url", lambda override: "http://test")
+    monkeypatch.setattr(voice_cmd, "_api_key", lambda override: "")
+
+    result = CliRunner().invoke(
+        voice_cmd.voice,
+        [
+            "capture-preview",
+            "--duration",
+            "0.1",
+            "--output-dir",
+            str(tmp_path),
+            "--language",
+            "en",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert len(adapter_calls) == 1
+    recorded_path, language = adapter_calls[0]
+    assert recorded_path.exists()
+    assert recorded_path.parent == tmp_path
+    assert language == "en"
+    assert post_calls == [
+        (
+            "/v1/voice/ptt/submit-transcript",
+            {"transcript": "open notes", "session_id": ""},
+        )
+    ]
+    assert "/dispatch" not in result.output
+    assert "Voice capture preview" in result.output
+    assert "stage: recording local WAV" in result.output
+    assert "stage: transcribing local WAV" in result.output
+    assert "stage: submitting transcript preview" in result.output
+    assert "dispatch: skipped" in result.output
