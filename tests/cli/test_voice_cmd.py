@@ -48,6 +48,25 @@ def _preview_response() -> dict[str, Any]:
     }
 
 
+class _FakeTranscriptionResult:
+    text = "open notes"
+    language = "en"
+    confidence = 0.91
+    duration_seconds = 1.25
+    backend = "faster-whisper"
+    segments: list[Any] = []
+
+    def to_dict(self):
+        return {
+            "text": self.text,
+            "language": self.language,
+            "confidence": self.confidence,
+            "duration_seconds": self.duration_seconds,
+            "backend": self.backend,
+            "segments": self.segments,
+        }
+
+
 def test_voice_command_help_lists_subcommands() -> None:
     result = CliRunner().invoke(voice_cmd.voice, ["--help"])
 
@@ -57,6 +76,7 @@ def test_voice_command_help_lists_subcommands() -> None:
     assert "speak" in result.output
     assert "record-local" in result.output
     assert "capture-preview" in result.output
+    assert "run-local" in result.output
     assert "cancel" in result.output
 
 
@@ -452,3 +472,275 @@ def test_voice_transcribe_file_requires_explicit_or_configured_adapter(
     assert result.exit_code != 0
     assert "local voice transcription is disabled" in result.output
     assert post_calls == []
+
+
+def test_voice_run_local_previews_without_dispatch_or_speech(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    post_calls: list[tuple[str, dict[str, Any] | None]] = []
+    adapter_calls: list[tuple[Path, str | None]] = []
+    speech_calls: list[str] = []
+
+    class FakeAdapter:
+        def __init__(self, *, adapter_id, config):
+            assert adapter_id == "faster-whisper"
+            assert config == "config"
+
+        def transcribe_file(self, path, *, language=None):
+            adapter_calls.append((path, language))
+            return _FakeTranscriptionResult()
+
+    def fake_post(endpoint: str, payload: dict[str, Any] | None, **kwargs):
+        post_calls.append((endpoint, payload))
+        return _preview_response()
+
+    monkeypatch.setattr(voice_cmd, "_sleep", lambda seconds: None)
+    monkeypatch.setattr(voice_cmd, "load_config", lambda: "config")
+    monkeypatch.setattr(
+        voice_cmd,
+        "SpeechBackendLocalTranscriptionAdapter",
+        FakeAdapter,
+    )
+    monkeypatch.setattr(voice_cmd, "_post_json", fake_post)
+    monkeypatch.setattr(voice_cmd, "_base_url", lambda override: "http://test")
+    monkeypatch.setattr(voice_cmd, "_api_key", lambda override: "")
+    monkeypatch.setattr(
+        voice_cmd,
+        "_build_speech_output",
+        lambda *args, **kwargs: speech_calls.append("build"),
+    )
+
+    result = CliRunner().invoke(
+        voice_cmd.voice,
+        [
+            "run-local",
+            "--duration",
+            "0.1",
+            "--output-dir",
+            str(tmp_path),
+            "--adapter",
+            "faster-whisper",
+            "--language",
+            "en",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert len(adapter_calls) == 1
+    recorded_path, language = adapter_calls[0]
+    assert recorded_path.exists()
+    assert recorded_path.parent == tmp_path
+    assert language == "en"
+    assert post_calls == [
+        (
+            "/v1/voice/ptt/submit-transcript",
+            {"transcript": "open notes", "session_id": ""},
+        )
+    ]
+    assert speech_calls == []
+    assert "Voice local run" in result.output
+    assert "stage: recording local WAV" in result.output
+    assert "stage: transcribing local WAV" in result.output
+    assert "stage: submitting transcript preview" in result.output
+    assert "dispatch: skipped" in result.output
+    assert "speech: skipped" in result.output
+
+
+def test_voice_run_local_dispatches_only_with_approval_flag(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    post_calls: list[tuple[str, dict[str, Any] | None]] = []
+
+    class FakeAdapter:
+        def __init__(self, *, adapter_id, config):
+            assert adapter_id == "faster-whisper"
+
+        def transcribe_file(self, path, *, language=None):
+            return _FakeTranscriptionResult()
+
+    def fake_post(endpoint: str, payload: dict[str, Any] | None, **kwargs):
+        post_calls.append((endpoint, payload))
+        if endpoint.endswith("/submit-transcript"):
+            return _preview_response()
+        return {
+            "dispatched": True,
+            "status": "completed",
+            "fsm_state": "idle",
+            "agent_id": "agent-1",
+            "content": "done",
+        }
+
+    monkeypatch.setattr(voice_cmd, "_sleep", lambda seconds: None)
+    monkeypatch.setattr(voice_cmd, "load_config", lambda: "config")
+    monkeypatch.setattr(
+        voice_cmd,
+        "SpeechBackendLocalTranscriptionAdapter",
+        FakeAdapter,
+    )
+    monkeypatch.setattr(voice_cmd, "_post_json", fake_post)
+    monkeypatch.setattr(voice_cmd, "_base_url", lambda override: "http://test")
+    monkeypatch.setattr(voice_cmd, "_api_key", lambda override: "")
+
+    result = CliRunner().invoke(
+        voice_cmd.voice,
+        [
+            "run-local",
+            "--duration",
+            "0.1",
+            "--output-dir",
+            str(tmp_path),
+            "--adapter",
+            "faster-whisper",
+            "--agent-id",
+            "agent-1",
+            "--approve-dispatch",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert post_calls == [
+        (
+            "/v1/voice/ptt/submit-transcript",
+            {"transcript": "open notes", "session_id": ""},
+        ),
+        (
+            "/v1/voice/ptt/dispatch",
+            {"transcript": "open notes", "agent_id": "agent-1", "approved": True},
+        ),
+    ]
+    assert "stage: dispatching approved transcript" in result.output
+    assert "Voice dispatch result" in result.output
+    assert "speech: skipped" in result.output
+
+
+def test_voice_run_local_speak_result_requires_dispatch_approval() -> None:
+    result = CliRunner().invoke(
+        voice_cmd.voice,
+        ["run-local", "--duration", "0.1", "--speak-result"],
+    )
+
+    assert result.exit_code != 0
+    assert "--speak-result requires --approve-dispatch" in result.output
+
+
+def test_voice_run_local_speaks_only_with_explicit_flag(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    speak_calls: list[str] = []
+
+    class FakeAdapter:
+        def __init__(self, *, adapter_id, config):
+            assert adapter_id == "faster-whisper"
+
+        def transcribe_file(self, path, *, language=None):
+            return _FakeTranscriptionResult()
+
+    class FakeSpeechOutput:
+        def speak(self, text: str) -> None:
+            speak_calls.append(text)
+
+    def fake_post(endpoint: str, payload: dict[str, Any] | None, **kwargs):
+        if endpoint.endswith("/submit-transcript"):
+            return _preview_response()
+        return {
+            "dispatched": True,
+            "status": "completed",
+            "fsm_state": "idle",
+            "agent_id": "agent-1",
+            "content": "done",
+        }
+
+    def fake_build_speech_output(adapter_id: str, *, voice_name: str, rate: int | None):
+        assert adapter_id == "macos-say"
+        assert voice_name == "Alex"
+        assert rate == 180
+        return FakeSpeechOutput()
+
+    monkeypatch.setattr(voice_cmd, "_sleep", lambda seconds: None)
+    monkeypatch.setattr(voice_cmd, "load_config", lambda: "config")
+    monkeypatch.setattr(
+        voice_cmd,
+        "SpeechBackendLocalTranscriptionAdapter",
+        FakeAdapter,
+    )
+    monkeypatch.setattr(voice_cmd, "_post_json", fake_post)
+    monkeypatch.setattr(voice_cmd, "_base_url", lambda override: "http://test")
+    monkeypatch.setattr(voice_cmd, "_api_key", lambda override: "")
+    monkeypatch.setattr(voice_cmd, "_build_speech_output", fake_build_speech_output)
+
+    result = CliRunner().invoke(
+        voice_cmd.voice,
+        [
+            "run-local",
+            "--duration",
+            "0.1",
+            "--output-dir",
+            str(tmp_path),
+            "--adapter",
+            "faster-whisper",
+            "--agent-id",
+            "agent-1",
+            "--approve-dispatch",
+            "--speak-result",
+            "--voice",
+            "Alex",
+            "--rate",
+            "180",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert speak_calls == ["done"]
+    assert "speech: spoken" in result.output
+
+
+def test_voice_run_local_recorder_dependency_failure_is_clear(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    class FakeAdapter:
+        def __init__(self, *, adapter_id, config):
+            assert adapter_id == "faster-whisper"
+
+        def transcribe_file(self, path, *, language=None):
+            raise AssertionError("should not transcribe when recording fails")
+
+    class BrokenRecorder:
+        def start(self, recording_id: str):
+            raise voice_cmd.VoiceRecordingError("install ffmpeg or sox")
+
+        def stop(self, handle) -> None:
+            raise AssertionError("should not stop without a handle")
+
+    monkeypatch.setattr(voice_cmd, "load_config", lambda: "config")
+    monkeypatch.setattr(
+        voice_cmd,
+        "SpeechBackendLocalTranscriptionAdapter",
+        FakeAdapter,
+    )
+    monkeypatch.setattr(
+        voice_cmd,
+        "_build_recorder",
+        lambda *args, **kwargs: BrokenRecorder(),
+    )
+    monkeypatch.setattr(voice_cmd, "_base_url", lambda override: "http://test")
+    monkeypatch.setattr(voice_cmd, "_api_key", lambda override: "")
+
+    result = CliRunner().invoke(
+        voice_cmd.voice,
+        [
+            "run-local",
+            "--duration",
+            "0.1",
+            "--output-dir",
+            str(tmp_path),
+            "--adapter",
+            "faster-whisper",
+        ],
+    )
+
+    assert result.exit_code != 0
+    assert "install ffmpeg or sox" in result.output

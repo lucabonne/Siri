@@ -478,6 +478,9 @@ jarvis voice submit "run tests" --agent-id agent-123 --approve-dispatch
 jarvis voice record-local --duration 2                   # Local WAV only
 jarvis voice transcribe-file ./clip.wav --adapter faster-whisper
 jarvis voice capture-preview --duration 2 --adapter faster-whisper
+jarvis voice run-local --duration 2 --adapter faster-whisper
+jarvis voice run-local --duration 2 --adapter faster-whisper --approve-dispatch
+jarvis voice run-local --duration 2 --adapter faster-whisper --approve-dispatch --speak-result
 jarvis voice speak "preview complete"                    # Explicit local TTS only
 jarvis voice status
 jarvis voice cancel
@@ -490,18 +493,28 @@ jarvis voice cancel
 | `voice record-local --duration N` | Write a local WAV file and print its path; defaults to the dev silent recorder |
 | `voice transcribe-file AUDIO` | Transcribe an existing local audio file with a local adapter and print the transcript only |
 | `voice capture-preview --duration N` | Record a local WAV, transcribe it locally, POST the transcript to `/v1/voice/ptt/submit-transcript`, and print the preview only |
+| `voice run-local --duration N` | Record, transcribe, submit preview, and print session state; dispatch and TTS require separate opt-in flags |
 | `voice speak TEXT`     | Speak text through an explicit local speech-output adapter; defaults to macOS `say` when available |
 | `voice status`          | GET `/v1/voice/ptt/status`                       |
 | `voice cancel`          | POST `/v1/voice/ptt/cancel`                      |
 
 This command does not listen in the background, capture Fn hotkeys, call a cloud
 speech API, automatically dispatch a transcript, or automatically play TTS for
-results. `voice speak` is the only speech-output command and runs only when you
-call it directly. `voice record-local` and `voice capture-preview` both have an
-explicit `--duration` stop condition. `voice capture-preview` manually chains
-local recording, local transcription, and the existing preview endpoint, then
-stops before dispatch. Text input remains available; dispatch is skipped unless
-`--approve-dispatch` is present on `voice submit`.
+results. Speech output runs only through explicit commands/flags such as
+`voice speak` or `voice run-local --speak-result`. `voice record-local` and
+`voice capture-preview` both have an explicit `--duration` stop condition.
+`voice capture-preview` manually chains local recording, local transcription,
+and the existing preview endpoint, then stops before dispatch. Text input
+remains available; dispatch is skipped unless `--approve-dispatch` is present on
+`voice submit` or `voice run-local`.
+
+`voice run-local --duration N` is the explicit manual end-to-end local pipeline:
+it records a local WAV, transcribes with the selected/configured local adapter,
+submits the transcript to `/v1/voice/ptt/submit-transcript`, and prints the
+preview/session state. By default it stops there. It calls `/dispatch` only when
+`--approve-dispatch` is present, and it speaks the dispatch result only when
+`--speak-result` is also present. Passing `--speak-result` without
+`--approve-dispatch` is rejected so speech playback cannot imply dispatch.
 
 `voice record-local` defaults to `--recorder dev-silent` for safe development.
 On macOS, `--recorder macos` uses local command-line recording tools and may
@@ -514,6 +527,7 @@ with `--adapter` or set `[speech].backend` to a local adapter in
 `~/.openjarvis/config.toml`. The current local adapter choices are
 `faster-whisper` and `whisper.cpp`; cloud speech backends are not used by
 `jarvis voice transcribe-file` or `jarvis voice capture-preview`.
+The same local adapter requirement applies to `jarvis voice run-local`.
 
 For `faster-whisper`, install the optional dependency with:
 
@@ -535,12 +549,14 @@ Privacy behavior is unchanged: audio is read from the file you provide or from
 the explicit fixed-duration recorder only, transcription runs through the
 selected local adapter, raw recordings are not persisted unless
 `[speech].persist_raw_audio = true`, and dispatch still requires the separate
-`jarvis voice submit --approve-dispatch` path. `voice speak` sends only the
-literal text you provide to the selected local adapter. The current speech-output
-adapter is `macos-say`, which uses the local macOS `say` command when available;
-Piper, Coqui, and other local TTS adapters remain deferred. Voice-only mode, Fn
-hotkey listening, and automatic speech playback of dispatch results remain
-deferred.
+`jarvis voice submit --approve-dispatch` path or
+`voice run-local --approve-dispatch`. `voice speak` sends only the literal text
+you provide to the selected local adapter; `voice run-local --speak-result`
+speaks only the explicit dispatch result. The current speech-output adapter is
+`macos-say`, which uses the local macOS `say` command when available; Piper,
+Coqui, and other local TTS adapters remain deferred. Voice-only mode, Fn hotkey
+listening, always-on listening, and automatic speech playback of dispatch
+results remain deferred.
 
 ---
 

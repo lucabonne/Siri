@@ -1,5 +1,41 @@
 # Customization Plan
 
+## Voice Control Phase 10
+
+Phase 10 adds an explicit manual local end-to-end voice pipeline command while
+keeping every execution and playback step opt-in.
+
+- `jarvis voice run-local --duration N` records a local WAV with an explicit
+  duration stop condition, transcribes it with an explicitly selected or
+  configured local adapter, submits the transcript to
+  `/v1/voice/ptt/submit-transcript`, and prints the preview/session state.
+- By default `run-local` stops after preview. It does not call
+  `/v1/voice/ptt/dispatch`, does not approve anything, and does not speak a
+  response.
+- `--approve-dispatch` is required before `run-local` calls the existing
+  dispatch endpoint, and the request still sends `approved=true` through the
+  server-side approval gate.
+- `--speak-result` is required before `run-local` speaks any dispatch result,
+  and the CLI rejects `--speak-result` unless `--approve-dispatch` is also
+  present.
+- Missing recorder, transcription, and speech-output dependencies surface clear
+  CLI errors from the existing local adapter boundaries.
+- Tests mock recording, transcription, API calls, and speech output, so they do
+  not require a microphone, model download, or audible playback.
+- Documentation now covers the manual pipeline, local adapter requirement,
+  macOS microphone permission for `run-local --recorder macos`, and explicit
+  speech output through `--speak-result`.
+
+Deferred work remains intentionally untouched in this phase:
+
+- no always-on listening
+- no Fn hotkey capture
+- no approval bypass
+- no automatic dispatch by default
+- no automatic speech playback without `--speak-result`
+- no Piper, Coqui, or other local TTS adapters yet
+- no voice-only mode; text input remains available
+
 ## Voice Control Phase 9
 
 Phase 9 adds the first optional local speech-output boundary while keeping voice

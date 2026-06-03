@@ -13,7 +13,7 @@ import click
 import httpx
 
 from openjarvis.core.config import load_config
-from openjarvis.voice.models import TranscriptionUnavailableError
+from openjarvis.voice.models import TranscriptionUnavailableError, VoiceRecordingError
 from openjarvis.voice.recorder import LocalMacOSRecorder, Recorder, SilentWavRecorder
 from openjarvis.voice.speech_output import (
     LOCAL_SPEECH_OUTPUT_ADAPTERS,
@@ -201,6 +201,35 @@ def _transcribe_audio_file(
     return result.to_dict()
 
 
+def _record_local_audio(
+    *,
+    duration: float,
+    output_dir: Path | None,
+    recorder_kind: str,
+    input_device: str,
+) -> Any:
+    recorder = _build_recorder(
+        recorder_kind,
+        output_dir=output_dir,
+        input_device=input_device,
+    )
+    try:
+        handle = recorder.start(uuid.uuid4().hex)
+    except (OSError, VoiceRecordingError) as exc:
+        raise click.ClickException(str(exc)) from exc
+    stop_error: OSError | VoiceRecordingError | None = None
+    try:
+        _sleep(duration)
+    finally:
+        try:
+            recorder.stop(handle)
+        except (OSError, VoiceRecordingError) as exc:
+            stop_error = exc
+    if stop_error is not None:
+        raise click.ClickException(str(stop_error)) from stop_error
+    return handle
+
+
 def _build_speech_output(
     adapter_id: str,
     *,
@@ -211,6 +240,22 @@ def _build_speech_output(
         return build_local_speech_output(adapter_id, voice=voice_name, rate=rate)
     except ValueError as exc:
         raise click.ClickException(str(exc)) from exc
+
+
+def _dispatch_speech_text(data: dict[str, Any]) -> str:
+    content = data.get("content")
+    if isinstance(content, str) and content.strip():
+        return content.strip()
+    if content is not None:
+        return json.dumps(content, sort_keys=True)
+    if data.get("reason"):
+        return str(data["reason"])
+    error = data.get("error")
+    if isinstance(error, dict) and error.get("message"):
+        return str(error["message"])
+    if data.get("status"):
+        return str(data["status"])
+    raise click.ClickException("dispatch result did not include speakable content")
 
 
 @click.group("voice")
@@ -566,6 +611,228 @@ def capture_preview(
 
     _format_preview(preview)
     click.echo("  dispatch: skipped (use `jarvis voice submit --approve-dispatch`)")
+
+
+@voice.command("run-local")
+@click.option(
+    "--duration",
+    required=True,
+    type=click.FloatRange(min=0.1),
+    help="Recording duration in seconds; required stop condition.",
+)
+@click.option(
+    "--output-dir",
+    type=click.Path(file_okay=False, path_type=Path),
+    default=None,
+    help="Directory for the recorded WAV. Defaults to the system temp directory.",
+)
+@click.option(
+    "--recorder",
+    "recorder_kind",
+    type=click.Choice(["dev-silent", "macos"]),
+    default="dev-silent",
+    show_default=True,
+    help="Local recorder implementation.",
+)
+@click.option(
+    "--input-device",
+    default=":0",
+    show_default=True,
+    help="macOS avfoundation input device for --recorder macos.",
+)
+@click.option(
+    "--adapter",
+    type=click.Choice(LOCAL_TRANSCRIPTION_ADAPTERS),
+    default=None,
+    help=(
+        "Local transcription adapter to use. If omitted, [speech].backend must "
+        "be explicitly set to a local adapter."
+    ),
+)
+@click.option("--language", default=None, help="Optional language code hint.")
+@click.option(
+    "--session-id",
+    default="",
+    help="Optional client-side session id for the preview request.",
+)
+@click.option("--agent-id", default="", help="Agent id to dispatch to after approval.")
+@click.option(
+    "--approve-dispatch",
+    is_flag=True,
+    default=False,
+    help="Explicitly approve and call /dispatch after preview.",
+)
+@click.option(
+    "--speak-result",
+    is_flag=True,
+    default=False,
+    help="Speak the dispatch result through an explicit local TTS adapter.",
+)
+@click.option(
+    "--speech-adapter",
+    type=click.Choice(LOCAL_SPEECH_OUTPUT_ADAPTERS),
+    default="macos-say",
+    show_default=True,
+    help="Explicit local speech-output adapter for --speak-result.",
+)
+@click.option(
+    "--voice",
+    "voice_name",
+    default="",
+    help="Optional macOS say voice name for --speak-result.",
+)
+@click.option(
+    "--rate",
+    type=click.IntRange(min=80, max=500),
+    default=None,
+    help="Optional macOS say speaking rate for --speak-result.",
+)
+@click.option(
+    "--base-url",
+    envvar="OPENJARVIS_BASE_URL",
+    default=None,
+    help="OpenJarvis API base URL. Defaults to configured local server.",
+)
+@click.option(
+    "--api-key",
+    envvar="OPENJARVIS_API_KEY",
+    default=None,
+    help="API key for an authenticated local server.",
+)
+@click.option(
+    "--timeout",
+    default=10.0,
+    show_default=True,
+    help="HTTP timeout seconds.",
+)
+@click.option("--json", "as_json", is_flag=True, help="Print raw JSON response.")
+def run_local(
+    duration: float,
+    output_dir: Path | None,
+    recorder_kind: str,
+    input_device: str,
+    adapter: str | None,
+    language: str | None,
+    session_id: str,
+    agent_id: str,
+    approve_dispatch: bool,
+    speak_result: bool,
+    speech_adapter: str,
+    voice_name: str,
+    rate: int | None,
+    base_url: str | None,
+    api_key: str | None,
+    timeout: float,
+    as_json: bool,
+) -> None:
+    """Run the explicit local voice pipeline; dispatch/TTS are opt-in."""
+    if speak_result and not approve_dispatch:
+        raise click.UsageError("--speak-result requires --approve-dispatch")
+
+    adapter_id, transcriber = _build_transcriber(adapter)
+    resolved_base = _base_url(base_url)
+    resolved_key = _api_key(api_key)
+
+    if not as_json:
+        click.echo("Voice local run")
+        click.echo(
+            f"  stage: recording local WAV "
+            f"(recorder={recorder_kind}, duration={duration:g}s)"
+        )
+
+    handle = _record_local_audio(
+        duration=duration,
+        output_dir=output_dir,
+        recorder_kind=recorder_kind,
+        input_device=input_device,
+    )
+
+    if not as_json:
+        click.echo(f"    path: {handle.path}")
+        click.echo(f"  stage: transcribing local WAV (adapter={adapter_id})")
+
+    try:
+        transcription = transcriber.transcribe_file(handle.path, language=language)
+    except (OSError, TranscriptionUnavailableError) as exc:
+        raise click.ClickException(str(exc)) from exc
+    transcription_data = transcription.to_dict()
+    transcript = str(transcription_data.get("text") or "")
+
+    if not as_json:
+        if transcription_data.get("language"):
+            click.echo(f"    language: {transcription_data['language']}")
+        click.echo(f"    transcript: {transcript}")
+        click.echo("  stage: submitting transcript preview")
+
+    preview = _post_json(
+        "/v1/voice/ptt/submit-transcript",
+        {"transcript": transcript, "session_id": session_id},
+        base_url=resolved_base,
+        api_key=resolved_key,
+        timeout=timeout,
+    )
+
+    dispatch: dict[str, Any] | None = None
+    speech: dict[str, Any] | None = None
+    if approve_dispatch:
+        if not as_json:
+            _format_preview(preview)
+            click.echo("  stage: dispatching approved transcript")
+        dispatch = _post_json(
+            "/v1/voice/ptt/dispatch",
+            {"transcript": transcript, "agent_id": agent_id, "approved": True},
+            base_url=resolved_base,
+            api_key=resolved_key,
+            timeout=timeout,
+        )
+        if speak_result:
+            speech_text = _dispatch_speech_text(dispatch)
+            output = _build_speech_output(
+                speech_adapter,
+                voice_name=voice_name,
+                rate=rate,
+            )
+            try:
+                output.speak(speech_text)
+            except (OSError, SpeechOutputUnavailableError, ValueError) as exc:
+                raise click.ClickException(str(exc)) from exc
+            speech = {"adapter": speech_adapter, "spoken": True}
+    elif not as_json:
+        _format_preview(preview)
+
+    if as_json:
+        output_data: dict[str, Any] = {
+            "recording": {
+                "path": str(handle.path),
+                "recorder": recorder_kind,
+                "duration": duration,
+            },
+            "transcription": transcription_data,
+            "preview": preview,
+        }
+        if dispatch is None:
+            output_data["dispatch_skipped"] = True
+            output_data["dispatch_reason"] = "missing --approve-dispatch"
+        else:
+            output_data["dispatch"] = dispatch
+        if speech is None:
+            output_data["speech_skipped"] = True
+            output_data["speech_reason"] = "missing --speak-result"
+        else:
+            output_data["speech"] = speech
+        _emit_json(output_data)
+        return
+
+    if dispatch is None:
+        click.echo("  dispatch: skipped (pass --approve-dispatch to run)")
+        click.echo("  speech: skipped (pass --speak-result after dispatch)")
+        return
+
+    _format_dispatch(dispatch)
+    if speech is None:
+        click.echo("  speech: skipped (pass --speak-result to speak dispatch result)")
+    else:
+        click.echo(f"  speech: spoken (adapter={speech_adapter})")
 
 
 @voice.command("cancel")
