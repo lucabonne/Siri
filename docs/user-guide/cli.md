@@ -519,6 +519,30 @@ preview/session state. By default it stops there. It calls `/dispatch` only when
 `--speak-result` is also present. Passing `--speak-result` without
 `--approve-dispatch` is rejected so speech playback cannot imply dispatch.
 
+Safe local defaults can be set in `~/.openjarvis/config.toml`:
+
+```toml
+[voice_control]
+transcription_adapter = "faster-whisper"   # or "whisper.cpp"; empty disables it
+model_path = "base"                        # model name or existing local path
+default_record_duration = 2.0              # 0 keeps --duration required
+default_api_base_url = "http://127.0.0.1:8000"
+speech_output_adapter = "macos-say"        # used only by speak/--speak-result
+speech_voice = "Alex"
+speech_rate = 180
+hotkey_bridge_format = "command"           # command, hammerspoon, or json
+hotkey_bridge_jarvis_bin = "jarvis"
+hotkey_bridge_recorder = "macos"
+hotkey_bridge_input_device = ":0"
+hotkey_bridge_session_id = ""
+```
+
+CLI flags and `OPENJARVIS_BASE_URL` override these config values. This section
+does not enable listening, global/Fn hotkey capture, approval bypass,
+auto-dispatch, or automatic speech playback. Dispatch still requires
+`--approve-dispatch`; speech still requires `voice speak` or
+`voice run-local --speak-result`.
+
 `voice hotkey-bridge` is a print-only boundary for future macOS Fn or
 push-to-talk integration. It formats a `jarvis voice run-local ...` command, or
 a disabled Hammerspoon example with `enable_openjarvis_voice_hotkey = false`.
@@ -535,10 +559,11 @@ helper will require macOS **Accessibility** permission, but this CLI does not
 install, enable, or run that helper. Voice-only mode remains deferred.
 
 Local transcription is disabled unless you explicitly select a local adapter
-with `--adapter` or set `[speech].backend` to a local adapter in
-`~/.openjarvis/config.toml`. The current local adapter choices are
-`faster-whisper` and `whisper.cpp`; cloud speech backends are not used by
-`jarvis voice transcribe-file` or `jarvis voice capture-preview`.
+with `--adapter`, set `[voice_control].transcription_adapter`, or set
+`[speech].backend` to a local adapter in `~/.openjarvis/config.toml`. The
+current local adapter choices are `faster-whisper` and `whisper.cpp`; cloud
+speech backends are not used by `jarvis voice transcribe-file` or
+`jarvis voice capture-preview`.
 The same local adapter requirement applies to `jarvis voice run-local`.
 
 For `faster-whisper`, install the optional dependency with:
@@ -547,10 +572,11 @@ For `faster-whisper`, install the optional dependency with:
 uv sync --extra speech
 ```
 
-Then either keep `[speech].model = "base"` to let faster-whisper resolve a
-supported model name, or set it to an existing local CTranslate2 model directory.
-If you configure a local model path that does not exist, the CLI returns a clear
-error before transcription.
+Then either keep `[speech].model = "base"` or set
+`[voice_control].model_path = "base"` to let faster-whisper resolve a supported
+model name. You can also set either field to an existing local CTranslate2 model
+directory. If you configure a local model path that does not exist, the CLI
+returns a clear error before transcription.
 
 For `whisper.cpp`, install a `whisper-cli` compatible binary and either put it on
 `PATH` or set `WHISPER_CPP_BINARY`. Set `WHISPER_CPP_MODEL` to an existing local

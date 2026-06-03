@@ -6,6 +6,7 @@ import importlib.util
 import json
 import wave
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 from click.testing import CliRunner
@@ -28,6 +29,35 @@ def _load_voice_cmd_module():
 
 
 voice_cmd = _load_voice_cmd_module()
+
+
+def _safe_config(**voice_overrides: Any) -> SimpleNamespace:
+    voice_defaults = {
+        "transcription_adapter": "",
+        "model_path": "",
+        "default_record_duration": 0.0,
+        "default_api_base_url": "",
+        "speech_output_adapter": "",
+        "speech_voice": "",
+        "speech_rate": 0,
+        "hotkey_bridge_format": "command",
+        "hotkey_bridge_jarvis_bin": "jarvis",
+        "hotkey_bridge_recorder": "macos",
+        "hotkey_bridge_input_device": ":0",
+        "hotkey_bridge_session_id": "",
+    }
+    voice_defaults.update(voice_overrides)
+    return SimpleNamespace(
+        server=SimpleNamespace(host="0.0.0.0", port=8000),
+        speech=SimpleNamespace(
+            backend="auto",
+            model="base",
+            language="",
+            device="auto",
+            compute_type="float16",
+        ),
+        voice_control=SimpleNamespace(**voice_defaults),
+    )
 
 
 def _preview_response() -> dict[str, Any]:
@@ -87,6 +117,7 @@ def test_voice_hotkey_bridge_prints_disabled_run_local_command(monkeypatch) -> N
         raise AssertionError("hotkey bridge must not call the API")
 
     monkeypatch.setattr(voice_cmd, "_post_json", fake_post)
+    monkeypatch.setattr(voice_cmd, "load_config", lambda: _safe_config())
 
     result = CliRunner().invoke(
         voice_cmd.voice,
@@ -116,7 +147,9 @@ def test_voice_hotkey_bridge_prints_disabled_run_local_command(monkeypatch) -> N
     assert "speech: skipped" in result.output
 
 
-def test_voice_hotkey_bridge_json_reports_safe_defaults() -> None:
+def test_voice_hotkey_bridge_json_reports_safe_defaults(monkeypatch) -> None:
+    monkeypatch.setattr(voice_cmd, "load_config", lambda: _safe_config())
+
     result = CliRunner().invoke(voice_cmd.voice, ["hotkey-bridge", "--format", "json"])
 
     assert result.exit_code == 0
@@ -131,7 +164,9 @@ def test_voice_hotkey_bridge_json_reports_safe_defaults() -> None:
     assert "--speak-result" not in data["argv"]
 
 
-def test_voice_hotkey_bridge_hammerspoon_snippet_is_disabled() -> None:
+def test_voice_hotkey_bridge_hammerspoon_snippet_is_disabled(monkeypatch) -> None:
+    monkeypatch.setattr(voice_cmd, "load_config", lambda: _safe_config())
+
     result = CliRunner().invoke(
         voice_cmd.voice,
         ["hotkey-bridge", "--format", "hammerspoon", "--adapter", "faster-whisper"],
@@ -143,6 +178,102 @@ def test_voice_hotkey_bridge_hammerspoon_snippet_is_disabled() -> None:
     assert "jarvis voice run-local" in result.output
     assert "--adapter faster-whisper" in result.output
     assert "--approve-dispatch" not in result.output
+
+
+def test_voice_hotkey_bridge_uses_configured_preview_defaults(monkeypatch) -> None:
+    monkeypatch.setattr(
+        voice_cmd,
+        "load_config",
+        lambda: _safe_config(
+            transcription_adapter="whisper.cpp",
+            default_record_duration=1.25,
+            default_api_base_url="http://configured:9000",
+            hotkey_bridge_format="json",
+            hotkey_bridge_jarvis_bin="/opt/bin/jarvis",
+            hotkey_bridge_recorder="dev-silent",
+            hotkey_bridge_input_device=":2",
+            hotkey_bridge_session_id="voice-session",
+        ),
+    )
+
+    result = CliRunner().invoke(voice_cmd.voice, ["hotkey-bridge"])
+
+    assert result.exit_code == 0
+    data = json.loads(result.output)
+    assert data["enabled"] is False
+    assert data["listener_started"] is False
+    assert data["dispatch_enabled"] is False
+    assert data["speech_enabled"] is False
+    assert data["argv"] == [
+        "/opt/bin/jarvis",
+        "voice",
+        "run-local",
+        "--duration",
+        "1.25",
+        "--recorder",
+        "dev-silent",
+        "--input-device",
+        ":2",
+        "--adapter",
+        "whisper.cpp",
+        "--base-url",
+        "http://configured:9000",
+        "--session-id",
+        "voice-session",
+    ]
+    assert "--approve-dispatch" not in data["argv"]
+    assert "--speak-result" not in data["argv"]
+
+
+def test_voice_hotkey_bridge_cli_flags_override_config(monkeypatch) -> None:
+    monkeypatch.setattr(
+        voice_cmd,
+        "load_config",
+        lambda: _safe_config(
+            transcription_adapter="whisper.cpp",
+            default_record_duration=9.0,
+            default_api_base_url="http://configured:9000",
+            hotkey_bridge_format="json",
+            hotkey_bridge_jarvis_bin="/opt/bin/jarvis",
+            hotkey_bridge_recorder="dev-silent",
+        ),
+    )
+
+    result = CliRunner().invoke(
+        voice_cmd.voice,
+        [
+            "hotkey-bridge",
+            "--format",
+            "json",
+            "--duration",
+            "1.5",
+            "--adapter",
+            "faster-whisper",
+            "--base-url",
+            "http://cli:8000",
+            "--jarvis-bin",
+            "jarvis-cli",
+            "--recorder",
+            "macos",
+        ],
+    )
+
+    assert result.exit_code == 0
+    data = json.loads(result.output)
+    assert data["argv"][:9] == [
+        "jarvis-cli",
+        "voice",
+        "run-local",
+        "--duration",
+        "1.5",
+        "--recorder",
+        "macos",
+        "--input-device",
+        ":0",
+    ]
+    assert "--adapter" in data["argv"]
+    assert "faster-whisper" in data["argv"]
+    assert "http://cli:8000" in data["argv"]
 
 
 def test_voice_submit_previews_without_dispatch(monkeypatch) -> None:
@@ -320,10 +451,21 @@ def test_voice_speak_uses_local_adapter_without_dispatch(monkeypatch) -> None:
 
     monkeypatch.setattr(voice_cmd, "_post_json", fake_post)
     monkeypatch.setattr(voice_cmd, "_build_speech_output", fake_build_speech_output)
+    monkeypatch.setattr(voice_cmd, "load_config", lambda: _safe_config())
 
     result = CliRunner().invoke(
         voice_cmd.voice,
-        ["speak", "hello", "there", "--voice", "Alex", "--rate", "180"],
+        [
+            "speak",
+            "hello",
+            "there",
+            "--adapter",
+            "macos-say",
+            "--voice",
+            "Alex",
+            "--rate",
+            "180",
+        ],
     )
 
     assert result.exit_code == 0
@@ -340,11 +482,70 @@ def test_voice_speak_requires_text() -> None:
     assert "text must not be empty" in result.output
 
 
-def test_voice_record_local_requires_explicit_duration() -> None:
+def test_voice_speak_uses_configured_adapter_only_when_invoked(monkeypatch) -> None:
+    speak_calls: list[tuple[str, str, int | None, str]] = []
+
+    class FakeSpeechOutput:
+        def speak(self, text: str) -> None:
+            speak_calls.append(("speak", "Alex", 180, text))
+
+    def fake_build_speech_output(adapter_id: str, *, voice_name: str, rate: int | None):
+        assert adapter_id == "macos-say"
+        assert voice_name == "Alex"
+        assert rate == 180
+        return FakeSpeechOutput()
+
+    monkeypatch.setattr(
+        voice_cmd,
+        "load_config",
+        lambda: _safe_config(
+            speech_output_adapter="macos-say",
+            speech_voice="Alex",
+            speech_rate=180,
+        ),
+    )
+    monkeypatch.setattr(voice_cmd, "_build_speech_output", fake_build_speech_output)
+
+    result = CliRunner().invoke(voice_cmd.voice, ["speak", "hello"])
+
+    assert result.exit_code == 0
+    assert speak_calls == [("speak", "Alex", 180, "hello")]
+    assert "dispatch: skipped" in result.output
+
+
+def test_voice_record_local_requires_explicit_duration(monkeypatch) -> None:
+    monkeypatch.setattr(voice_cmd, "load_config", lambda: _safe_config())
+
     result = CliRunner().invoke(voice_cmd.voice, ["record-local"])
 
     assert result.exit_code != 0
     assert "Missing option '--duration'" in result.output
+
+
+def test_voice_record_local_uses_configured_duration(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    sleep_calls: list[float] = []
+
+    monkeypatch.setattr(
+        voice_cmd,
+        "load_config",
+        lambda: _safe_config(default_record_duration=0.1),
+    )
+    monkeypatch.setattr(
+        voice_cmd, "_sleep", lambda seconds: sleep_calls.append(seconds)
+    )
+
+    result = CliRunner().invoke(
+        voice_cmd.voice,
+        ["record-local", "--output-dir", str(tmp_path)],
+    )
+
+    assert result.exit_code == 0
+    recorded_path = Path(result.output.strip())
+    assert recorded_path.exists()
+    assert sleep_calls == [0.1]
 
 
 def test_voice_record_local_writes_dev_file_without_dispatch(
@@ -359,6 +560,7 @@ def test_voice_record_local_writes_dev_file_without_dispatch(
 
     monkeypatch.setattr(voice_cmd, "_sleep", lambda seconds: None)
     monkeypatch.setattr(voice_cmd, "_post_json", fake_post)
+    monkeypatch.setattr(voice_cmd, "load_config", lambda: _safe_config())
 
     result = CliRunner().invoke(
         voice_cmd.voice,
@@ -381,7 +583,9 @@ def test_voice_record_local_writes_dev_file_without_dispatch(
     assert post_calls == []
 
 
-def test_voice_capture_preview_requires_explicit_duration() -> None:
+def test_voice_capture_preview_requires_explicit_duration(monkeypatch) -> None:
+    monkeypatch.setattr(voice_cmd, "load_config", lambda: _safe_config())
+
     result = CliRunner().invoke(voice_cmd.voice, ["capture-preview"])
 
     assert result.exit_code != 0
@@ -610,6 +814,161 @@ def test_voice_run_local_previews_without_dispatch_or_speech(
     assert "stage: submitting transcript preview" in result.output
     assert "dispatch: skipped" in result.output
     assert "speech: skipped" in result.output
+
+
+def test_voice_run_local_uses_configured_safe_defaults(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    post_calls: list[tuple[str, dict[str, Any] | None, str]] = []
+    adapter_calls: list[tuple[str, Path, str | None]] = []
+    sleep_calls: list[float] = []
+    speech_calls: list[str] = []
+
+    class FakeAdapter:
+        def __init__(self, *, adapter_id, config):
+            assert adapter_id == "faster-whisper"
+            assert config.speech.model == "base"
+            self.adapter_id = adapter_id
+
+        def transcribe_file(self, path, *, language=None):
+            adapter_calls.append((self.adapter_id, path, language))
+            return _FakeTranscriptionResult()
+
+    def fake_post(endpoint: str, payload: dict[str, Any] | None, **kwargs):
+        post_calls.append((endpoint, payload, kwargs["base_url"]))
+        return _preview_response()
+
+    monkeypatch.setattr(
+        voice_cmd,
+        "load_config",
+        lambda: _safe_config(
+            transcription_adapter="faster-whisper",
+            default_record_duration=0.1,
+            default_api_base_url="http://configured:9000",
+        ),
+    )
+    monkeypatch.setattr(
+        voice_cmd,
+        "SpeechBackendLocalTranscriptionAdapter",
+        FakeAdapter,
+    )
+    monkeypatch.setattr(
+        voice_cmd, "_sleep", lambda seconds: sleep_calls.append(seconds)
+    )
+    monkeypatch.setattr(voice_cmd, "_post_json", fake_post)
+    monkeypatch.setattr(
+        voice_cmd,
+        "_build_speech_output",
+        lambda *args, **kwargs: speech_calls.append("build"),
+    )
+    monkeypatch.setattr(voice_cmd, "_api_key", lambda override: "")
+
+    result = CliRunner().invoke(
+        voice_cmd.voice,
+        ["run-local", "--output-dir", str(tmp_path)],
+    )
+
+    assert result.exit_code == 0
+    assert sleep_calls == [0.1]
+    assert len(adapter_calls) == 1
+    adapter_id, recorded_path, language = adapter_calls[0]
+    assert adapter_id == "faster-whisper"
+    assert recorded_path.exists()
+    assert language is None
+    assert post_calls == [
+        (
+            "/v1/voice/ptt/submit-transcript",
+            {"transcript": "open notes", "session_id": ""},
+            "http://configured:9000",
+        )
+    ]
+    assert speech_calls == []
+    assert "dispatch: skipped" in result.output
+    assert "speech: skipped" in result.output
+
+
+def test_voice_run_local_cli_flags_override_config(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    post_calls: list[tuple[str, str]] = []
+    adapter_ids: list[str] = []
+    sleep_calls: list[float] = []
+
+    class FakeAdapter:
+        def __init__(self, *, adapter_id, config):
+            adapter_ids.append(adapter_id)
+
+        def transcribe_file(self, path, *, language=None):
+            return _FakeTranscriptionResult()
+
+    def fake_post(endpoint: str, payload: dict[str, Any] | None, **kwargs):
+        post_calls.append((endpoint, kwargs["base_url"]))
+        return _preview_response()
+
+    monkeypatch.setattr(
+        voice_cmd,
+        "load_config",
+        lambda: _safe_config(
+            transcription_adapter="whisper.cpp",
+            default_record_duration=9.0,
+            default_api_base_url="http://configured:9000",
+        ),
+    )
+    monkeypatch.setattr(
+        voice_cmd,
+        "SpeechBackendLocalTranscriptionAdapter",
+        FakeAdapter,
+    )
+    monkeypatch.setattr(
+        voice_cmd, "_sleep", lambda seconds: sleep_calls.append(seconds)
+    )
+    monkeypatch.setattr(voice_cmd, "_post_json", fake_post)
+    monkeypatch.setattr(voice_cmd, "_api_key", lambda override: "")
+
+    result = CliRunner().invoke(
+        voice_cmd.voice,
+        [
+            "run-local",
+            "--duration",
+            "0.1",
+            "--output-dir",
+            str(tmp_path),
+            "--adapter",
+            "faster-whisper",
+            "--base-url",
+            "http://cli:8000",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert adapter_ids == ["faster-whisper"]
+    assert sleep_calls == [0.1]
+    assert post_calls == [("/v1/voice/ptt/submit-transcript", "http://cli:8000")]
+
+
+def test_voice_configured_missing_model_path_fails_clearly(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    audio_path = tmp_path / "clip.wav"
+    audio_path.write_bytes(b"fake wav")
+    missing_model = tmp_path / "missing-model"
+
+    monkeypatch.setattr(
+        voice_cmd,
+        "load_config",
+        lambda: _safe_config(
+            transcription_adapter="faster-whisper",
+            model_path=str(missing_model),
+        ),
+    )
+
+    result = CliRunner().invoke(voice_cmd.voice, ["transcribe-file", str(audio_path)])
+
+    assert result.exit_code != 0
+    assert f"faster-whisper model path does not exist: {missing_model}" in result.output
 
 
 def test_voice_run_local_dispatches_only_with_approval_flag(

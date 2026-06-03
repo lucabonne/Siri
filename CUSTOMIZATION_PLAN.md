@@ -1,5 +1,40 @@
 # Customization Plan
 
+## Voice Control Phase 12
+
+Phase 12 adds an explicit local configuration layer for safe voice-control
+defaults without enabling any risky runtime behavior by default.
+
+- `VoiceControlConfig` adds `[voice_control]` support for local transcription
+  adapter selection, model path/name override, fixed record duration, default
+  API base URL, optional speech-output adapter defaults, and hotkey bridge
+  command preview settings.
+- `jarvis voice` commands now resolve safe defaults from config only when the
+  command is explicitly invoked. CLI flags and `OPENJARVIS_BASE_URL` take
+  precedence over config values.
+- Configured transcription adapters remain limited to local adapters
+  (`faster-whisper` and `whisper.cpp`). Missing configured model paths fail with
+  clear CLI errors before transcription.
+- `jarvis voice hotkey-bridge` may use config to format its printed command or
+  JSON/Hammerspoon preview, but it still reports disabled listener state and
+  does not start global key capture.
+- Config can choose defaults for explicit speech commands, but it does not make
+  the CLI speak automatically; `voice speak` or `run-local --speak-result` are
+  still required.
+- Dispatch remains approval-gated. Config does not cause automatic dispatch;
+  `--approve-dispatch` is still required and the dispatch request still sends
+  `approved=true`.
+
+Deferred work remains intentionally untouched in this phase:
+
+- no always-on listening
+- no enabled Fn hotkey capture
+- no approval bypass
+- no automatic dispatch by default
+- no automatic speech playback by default
+- no live Hammerspoon or Swift helper installation
+- no voice-only mode; text input remains available
+
 ## Voice Control Phase 11
 
 Phase 11 adds the first disabled macOS hotkey/Fn bridge boundary without adding

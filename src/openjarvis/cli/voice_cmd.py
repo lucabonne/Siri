@@ -6,6 +6,7 @@ import json
 import os
 import time
 import uuid
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -34,6 +35,11 @@ def _base_url(override: str | None) -> str:
         return override.rstrip("/")
 
     config = load_config()
+    voice_control = getattr(config, "voice_control", None)
+    configured_base = getattr(voice_control, "default_api_base_url", "")
+    if configured_base:
+        return str(configured_base).rstrip("/")
+
     host = config.server.host
     if host in {"0.0.0.0", "::", ""}:
         host = "127.0.0.1"
@@ -168,13 +174,108 @@ def _build_recorder(
     return SilentWavRecorder(temp_dir=output_dir)
 
 
+def _voice_control_config(config: Any) -> Any:
+    return getattr(config, "voice_control", None)
+
+
+def _configured_transcription_adapter(
+    adapter: str | None,
+    *,
+    config: Any,
+) -> str | None:
+    if adapter:
+        return adapter
+    voice_control = _voice_control_config(config)
+    configured = getattr(voice_control, "transcription_adapter", "")
+    return str(configured) if configured else None
+
+
+def _effective_voice_config(config: Any) -> Any:
+    voice_control = _voice_control_config(config)
+    model_path = getattr(voice_control, "model_path", "")
+    if not model_path:
+        return config
+
+    try:
+        speech = replace(config.speech, model=str(model_path))
+        return replace(config, speech=speech)
+    except (AttributeError, TypeError, ValueError):
+        if hasattr(config, "speech"):
+            setattr(config.speech, "model", str(model_path))
+        return config
+
+
+def _record_duration(duration: float | None) -> float:
+    if duration is not None:
+        return duration
+
+    config = load_config()
+    voice_control = _voice_control_config(config)
+    raw_configured = getattr(voice_control, "default_record_duration", 0.0) or 0.0
+    try:
+        configured = float(raw_configured)
+    except (TypeError, ValueError) as exc:
+        raise click.ClickException(
+            "[voice_control].default_record_duration must be a positive number"
+        ) from exc
+    if configured > 0:
+        return configured
+    raise click.UsageError(
+        "Missing option '--duration'. Set --duration or "
+        "[voice_control].default_record_duration."
+    )
+
+
+def _speech_output_adapter(adapter: str | None) -> str:
+    if adapter:
+        return adapter
+
+    config = load_config()
+    voice_control = _voice_control_config(config)
+    configured = getattr(voice_control, "speech_output_adapter", "")
+    if configured:
+        if configured not in LOCAL_SPEECH_OUTPUT_ADAPTERS:
+            raise click.ClickException(
+                f"unsupported local speech-output adapter: {configured}"
+            )
+        return str(configured)
+    return "macos-say"
+
+
+def _speech_voice(voice_name: str | None) -> str:
+    if voice_name:
+        return voice_name
+    voice_control = _voice_control_config(load_config())
+    return str(getattr(voice_control, "speech_voice", "") or "")
+
+
+def _speech_rate(rate: int | None) -> int | None:
+    if rate is not None:
+        return rate
+    voice_control = _voice_control_config(load_config())
+    raw_configured = getattr(voice_control, "speech_rate", 0) or 0
+    try:
+        configured = int(raw_configured)
+    except (TypeError, ValueError) as exc:
+        raise click.ClickException(
+            "[voice_control].speech_rate must be a positive integer"
+        ) from exc
+    return configured if configured > 0 else None
+
+
+def _hotkey_bridge_defaults() -> Any:
+    return _voice_control_config(load_config())
+
+
 def _build_transcriber(
     adapter: str | None,
 ) -> tuple[str, SpeechBackendLocalTranscriptionAdapter]:
-    config = load_config()
+    raw_config = load_config()
+    config = _effective_voice_config(raw_config)
+    requested_adapter = _configured_transcription_adapter(adapter, config=raw_config)
     try:
         adapter_id = resolve_local_transcription_adapter_id(
-            requested_adapter=adapter,
+            requested_adapter=requested_adapter,
             config=config,
         )
     except (ValueError, TranscriptionUnavailableError) as exc:
@@ -269,29 +370,28 @@ def voice() -> None:
     "--format",
     "output_format",
     type=click.Choice(["command", "hammerspoon", "json"]),
-    default="command",
-    show_default=True,
+    default=None,
     help="Bridge output to print; never starts a listener.",
 )
 @click.option(
     "--duration",
     type=click.FloatRange(min=0.1),
-    default=2.0,
-    show_default=True,
-    help="Duration to include in the printed run-local command.",
+    default=None,
+    help=(
+        "Duration to include in the printed run-local command. Defaults to "
+        "[voice_control].default_record_duration or 2.0."
+    ),
 )
 @click.option(
     "--recorder",
     "recorder_kind",
     type=click.Choice(["dev-silent", "macos"]),
-    default="macos",
-    show_default=True,
+    default=None,
     help="Recorder to include in the printed run-local command.",
 )
 @click.option(
     "--input-device",
-    default=":0",
-    show_default=True,
+    default=None,
     help="macOS avfoundation input device for --recorder macos.",
 )
 @click.option(
@@ -317,35 +417,72 @@ def voice() -> None:
 )
 @click.option(
     "--jarvis-bin",
-    default="jarvis",
-    show_default=True,
+    default=None,
     help="Executable name/path to include in the printed command.",
 )
 def hotkey_bridge(
-    output_format: str,
-    duration: float,
-    recorder_kind: str,
-    input_device: str,
+    output_format: str | None,
+    duration: float | None,
+    recorder_kind: str | None,
+    input_device: str | None,
     adapter: str | None,
     language: str | None,
     base_url: str | None,
     session_id: str,
-    jarvis_bin: str,
+    jarvis_bin: str | None,
 ) -> None:
     """Print a disabled macOS hotkey bridge command/example only."""
+    defaults = _hotkey_bridge_defaults()
+    if duration is not None:
+        bridge_duration = duration
+    else:
+        raw_duration = getattr(defaults, "default_record_duration", 0.0) or 0.0
+        try:
+            bridge_duration = float(raw_duration) or 2.0
+        except (TypeError, ValueError) as exc:
+            raise click.ClickException(
+                "[voice_control].default_record_duration must be a positive number"
+            ) from exc
+    bridge_format = output_format or getattr(
+        defaults,
+        "hotkey_bridge_format",
+        "command",
+    )
+    if bridge_format not in {"command", "hammerspoon", "json"}:
+        raise click.ClickException(f"unsupported hotkey bridge format: {bridge_format}")
+    bridge_recorder = recorder_kind or getattr(
+        defaults,
+        "hotkey_bridge_recorder",
+        "macos",
+    )
+    if bridge_recorder not in {"dev-silent", "macos"}:
+        raise click.ClickException(
+            f"unsupported hotkey bridge recorder: {bridge_recorder}"
+        )
+    resolved_adapter = adapter or getattr(defaults, "transcription_adapter", "") or None
+    if resolved_adapter and resolved_adapter not in LOCAL_TRANSCRIPTION_ADAPTERS:
+        raise click.ClickException(
+            f"unsupported local transcription adapter: {resolved_adapter}"
+        )
+    resolved_base = base_url or getattr(defaults, "default_api_base_url", "") or None
+    resolved_session = (
+        session_id or getattr(defaults, "hotkey_bridge_session_id", "") or None
+    )
     bridge = MacOSHotkeyBridgeCommand(
-        jarvis_bin=jarvis_bin,
-        duration=duration,
-        recorder=recorder_kind,
-        input_device=input_device,
-        adapter=adapter,
+        jarvis_bin=jarvis_bin
+        or getattr(defaults, "hotkey_bridge_jarvis_bin", "jarvis"),
+        duration=bridge_duration,
+        recorder=bridge_recorder,
+        input_device=input_device
+        or getattr(defaults, "hotkey_bridge_input_device", ":0"),
+        adapter=resolved_adapter,
         language=language,
-        base_url=base_url,
-        session_id=session_id or None,
+        base_url=resolved_base,
+        session_id=resolved_session,
     )
     command = bridge.shell_command()
 
-    if output_format == "json":
+    if bridge_format == "json":
         _emit_json(
             {
                 "enabled": False,
@@ -359,7 +496,7 @@ def hotkey_bridge(
         )
         return
 
-    if output_format == "hammerspoon":
+    if bridge_format == "hammerspoon":
         click.echo(bridge.hammerspoon_snippet().rstrip())
         return
 
@@ -495,14 +632,13 @@ def transcribe_file(
 @click.option(
     "--adapter",
     type=click.Choice(LOCAL_SPEECH_OUTPUT_ADAPTERS),
-    default="macos-say",
-    show_default=True,
+    default=None,
     help="Explicit local speech-output adapter.",
 )
 @click.option(
     "--voice",
     "voice_name",
-    default="",
+    default=None,
     help="Optional macOS say voice name.",
 )
 @click.option(
@@ -513,8 +649,8 @@ def transcribe_file(
 )
 def speak(
     text: tuple[str, ...],
-    adapter: str,
-    voice_name: str,
+    adapter: str | None,
+    voice_name: str | None,
     rate: int | None,
 ) -> None:
     """Speak text locally only when explicitly requested."""
@@ -522,23 +658,33 @@ def speak(
     if not speech_text:
         raise click.UsageError("text must not be empty")
 
-    output = _build_speech_output(adapter, voice_name=voice_name, rate=rate)
+    resolved_adapter = _speech_output_adapter(adapter)
+    resolved_voice = _speech_voice(voice_name)
+    resolved_rate = _speech_rate(rate)
+    output = _build_speech_output(
+        resolved_adapter,
+        voice_name=resolved_voice,
+        rate=resolved_rate,
+    )
     try:
         output.speak(speech_text)
     except (OSError, SpeechOutputUnavailableError, ValueError) as exc:
         raise click.ClickException(str(exc)) from exc
 
     click.echo("Voice speech output")
-    click.echo(f"  adapter: {adapter}")
+    click.echo(f"  adapter: {resolved_adapter}")
     click.echo("  dispatch: skipped")
 
 
 @voice.command("record-local")
 @click.option(
     "--duration",
-    required=True,
     type=click.FloatRange(min=0.1),
-    help="Recording duration in seconds; required stop condition.",
+    default=None,
+    help=(
+        "Recording duration in seconds; required unless "
+        "[voice_control].default_record_duration is set."
+    ),
 )
 @click.option(
     "--output-dir",
@@ -561,12 +707,13 @@ def speak(
     help="macOS avfoundation input device for --recorder macos.",
 )
 def record_local(
-    duration: float,
+    duration: float | None,
     output_dir: Path | None,
     recorder_kind: str,
     input_device: str,
 ) -> None:
     """Record to a local WAV file only; never transcribe or dispatch."""
+    resolved_duration = _record_duration(duration)
     recorder = _build_recorder(
         recorder_kind,
         output_dir=output_dir,
@@ -574,7 +721,7 @@ def record_local(
     )
     handle = recorder.start(uuid.uuid4().hex)
     try:
-        _sleep(duration)
+        _sleep(resolved_duration)
     finally:
         recorder.stop(handle)
     click.echo(str(handle.path))
@@ -583,9 +730,12 @@ def record_local(
 @voice.command("capture-preview")
 @click.option(
     "--duration",
-    required=True,
     type=click.FloatRange(min=0.1),
-    help="Recording duration in seconds; required stop condition.",
+    default=None,
+    help=(
+        "Recording duration in seconds; required unless "
+        "[voice_control].default_record_duration is set."
+    ),
 )
 @click.option(
     "--output-dir",
@@ -642,7 +792,7 @@ def record_local(
 )
 @click.option("--json", "as_json", is_flag=True, help="Print raw JSON response.")
 def capture_preview(
-    duration: float,
+    duration: float | None,
     output_dir: Path | None,
     recorder_kind: str,
     input_device: str,
@@ -655,6 +805,7 @@ def capture_preview(
     as_json: bool,
 ) -> None:
     """Record, transcribe, and submit a preview; never dispatch automatically."""
+    resolved_duration = _record_duration(duration)
     adapter_id, transcriber = _build_transcriber(adapter)
     recorder = _build_recorder(
         recorder_kind,
@@ -666,12 +817,12 @@ def capture_preview(
         click.echo("Voice capture preview")
         click.echo(
             f"  stage: recording local WAV "
-            f"(recorder={recorder_kind}, duration={duration:g}s)"
+            f"(recorder={recorder_kind}, duration={resolved_duration:g}s)"
         )
 
     handle = recorder.start(uuid.uuid4().hex)
     try:
-        _sleep(duration)
+        _sleep(resolved_duration)
     finally:
         recorder.stop(handle)
 
@@ -706,7 +857,7 @@ def capture_preview(
                 "recording": {
                     "path": str(handle.path),
                     "recorder": recorder_kind,
-                    "duration": duration,
+                    "duration": resolved_duration,
                 },
                 "transcription": transcription,
                 "preview": preview,
@@ -723,9 +874,12 @@ def capture_preview(
 @voice.command("run-local")
 @click.option(
     "--duration",
-    required=True,
     type=click.FloatRange(min=0.1),
-    help="Recording duration in seconds; required stop condition.",
+    default=None,
+    help=(
+        "Recording duration in seconds; required unless "
+        "[voice_control].default_record_duration is set."
+    ),
 )
 @click.option(
     "--output-dir",
@@ -778,14 +932,13 @@ def capture_preview(
 @click.option(
     "--speech-adapter",
     type=click.Choice(LOCAL_SPEECH_OUTPUT_ADAPTERS),
-    default="macos-say",
-    show_default=True,
+    default=None,
     help="Explicit local speech-output adapter for --speak-result.",
 )
 @click.option(
     "--voice",
     "voice_name",
-    default="",
+    default=None,
     help="Optional macOS say voice name for --speak-result.",
 )
 @click.option(
@@ -814,7 +967,7 @@ def capture_preview(
 )
 @click.option("--json", "as_json", is_flag=True, help="Print raw JSON response.")
 def run_local(
-    duration: float,
+    duration: float | None,
     output_dir: Path | None,
     recorder_kind: str,
     input_device: str,
@@ -824,8 +977,8 @@ def run_local(
     agent_id: str,
     approve_dispatch: bool,
     speak_result: bool,
-    speech_adapter: str,
-    voice_name: str,
+    speech_adapter: str | None,
+    voice_name: str | None,
     rate: int | None,
     base_url: str | None,
     api_key: str | None,
@@ -836,6 +989,7 @@ def run_local(
     if speak_result and not approve_dispatch:
         raise click.UsageError("--speak-result requires --approve-dispatch")
 
+    resolved_duration = _record_duration(duration)
     adapter_id, transcriber = _build_transcriber(adapter)
     resolved_base = _base_url(base_url)
     resolved_key = _api_key(api_key)
@@ -844,11 +998,11 @@ def run_local(
         click.echo("Voice local run")
         click.echo(
             f"  stage: recording local WAV "
-            f"(recorder={recorder_kind}, duration={duration:g}s)"
+            f"(recorder={recorder_kind}, duration={resolved_duration:g}s)"
         )
 
     handle = _record_local_audio(
-        duration=duration,
+        duration=resolved_duration,
         output_dir=output_dir,
         recorder_kind=recorder_kind,
         input_device=input_device,
@@ -894,16 +1048,17 @@ def run_local(
         )
         if speak_result:
             speech_text = _dispatch_speech_text(dispatch)
+            resolved_speech_adapter = _speech_output_adapter(speech_adapter)
             output = _build_speech_output(
-                speech_adapter,
-                voice_name=voice_name,
-                rate=rate,
+                resolved_speech_adapter,
+                voice_name=_speech_voice(voice_name),
+                rate=_speech_rate(rate),
             )
             try:
                 output.speak(speech_text)
             except (OSError, SpeechOutputUnavailableError, ValueError) as exc:
                 raise click.ClickException(str(exc)) from exc
-            speech = {"adapter": speech_adapter, "spoken": True}
+            speech = {"adapter": resolved_speech_adapter, "spoken": True}
     elif not as_json:
         _format_preview(preview)
 
@@ -912,7 +1067,7 @@ def run_local(
             "recording": {
                 "path": str(handle.path),
                 "recorder": recorder_kind,
-                "duration": duration,
+                "duration": resolved_duration,
             },
             "transcription": transcription_data,
             "preview": preview,
@@ -939,7 +1094,7 @@ def run_local(
     if speech is None:
         click.echo("  speech: skipped (pass --speak-result to speak dispatch result)")
     else:
-        click.echo(f"  speech: spoken (adapter={speech_adapter})")
+        click.echo(f"  speech: spoken (adapter={speech['adapter']})")
 
 
 @voice.command("cancel")

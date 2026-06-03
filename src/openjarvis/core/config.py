@@ -1294,6 +1294,24 @@ class SpeechConfig:
 
 
 @dataclass(slots=True)
+class VoiceControlConfig:
+    """Safe local defaults for explicit ``jarvis voice`` commands."""
+
+    transcription_adapter: str = ""  # faster-whisper, whisper.cpp; empty = disabled
+    model_path: str = ""  # Optional local transcription model path/name override
+    default_record_duration: float = 0.0  # 0 = require --duration
+    default_api_base_url: str = ""
+    speech_output_adapter: str = ""  # Optional adapter for explicit speak flags
+    speech_voice: str = ""
+    speech_rate: int = 0  # 0 = adapter default
+    hotkey_bridge_format: str = "command"  # command, hammerspoon, json
+    hotkey_bridge_jarvis_bin: str = "jarvis"
+    hotkey_bridge_recorder: str = "macos"
+    hotkey_bridge_input_device: str = ":0"
+    hotkey_bridge_session_id: str = ""
+
+
+@dataclass(slots=True)
 class OptimizeConfig:
     """Configuration optimization settings."""
 
@@ -1439,6 +1457,7 @@ class JarvisConfig:
     a2a: A2AConfig = field(default_factory=A2AConfig)
     operators: OperatorsConfig = field(default_factory=OperatorsConfig)
     speech: SpeechConfig = field(default_factory=SpeechConfig)
+    voice_control: VoiceControlConfig = field(default_factory=VoiceControlConfig)
     optimize: OptimizeConfig = field(default_factory=OptimizeConfig)
     agent_manager: AgentManagerConfig = field(default_factory=AgentManagerConfig)
     memory_files: MemoryFilesConfig = field(default_factory=MemoryFilesConfig)
@@ -1698,6 +1717,7 @@ def load_config(path: Optional[Path] = None) -> JarvisConfig:
             "a2a",
             "operators",
             "speech",
+            "voice_control",
             "optimize",
             "agent_manager",
             "digest",
@@ -1961,6 +1981,23 @@ persist_raw_audio = false
 max_recording_seconds = 120
 macos_input_device = ":0" # ffmpeg avfoundation input, e.g. ":0"
 
+[voice_control]
+# Safe defaults for explicit `jarvis voice` commands only.
+# These do not enable listening, hotkeys, auto-dispatch, approval bypass, or
+# automatic speech playback.
+transcription_adapter = ""       # faster-whisper or whisper.cpp; empty = disabled
+model_path = ""                  # optional local model path/name override
+default_record_duration = 0.0    # 0 means --duration is still required
+default_api_base_url = ""        # e.g. "http://127.0.0.1:8000"
+speech_output_adapter = ""       # macos-say; used only by explicit speak flags
+speech_voice = ""
+speech_rate = 0
+hotkey_bridge_format = "command" # command, hammerspoon, json
+hotkey_bridge_jarvis_bin = "jarvis"
+hotkey_bridge_recorder = "macos"
+hotkey_bridge_input_device = ":0"
+hotkey_bridge_session_id = ""
+
 [security]
 enabled = true
 mode = "warn"
@@ -2044,6 +2081,7 @@ __all__ = [
     "SignalChannelConfig",
     "SlackChannelConfig",
     "SpeechConfig",
+    "VoiceControlConfig",
     "StorageConfig",
     "TeamsChannelConfig",
     "TelegramChannelConfig",

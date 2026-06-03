@@ -16,6 +16,7 @@ from openjarvis.core.config import (
     SandboxConfig,
     SchedulerConfig,
     SecurityConfig,
+    VoiceControlConfig,
     WhatsAppBaileysChannelConfig,
     generate_default_toml,
     load_config,
@@ -29,6 +30,11 @@ class TestDefaults:
         assert cfg.engine.default == "ollama"
         assert cfg.memory.default_backend == "sqlite"
         assert cfg.telemetry.enabled is True
+        assert isinstance(cfg.voice_control, VoiceControlConfig)
+        assert cfg.voice_control.transcription_adapter == ""
+        assert cfg.voice_control.default_record_duration == 0.0
+        assert cfg.voice_control.default_api_base_url == ""
+        assert cfg.voice_control.speech_output_adapter == ""
 
     def test_engine_config_defaults(self) -> None:
         ec = EngineConfig()
@@ -92,6 +98,43 @@ class TestTomlLoading:
         cfg = load_config(toml_file)
         assert cfg.engine.default == "vllm"
         assert cfg.memory.default_backend == "faiss"
+
+    def test_loads_voice_control_safe_defaults(self, tmp_path: Path) -> None:
+        toml_file = tmp_path / "config.toml"
+        toml_file.write_text(
+            "\n".join(
+                [
+                    "[voice_control]",
+                    'transcription_adapter = "faster-whisper"',
+                    'model_path = "/models/fw-base"',
+                    "default_record_duration = 1.5",
+                    'default_api_base_url = "http://127.0.0.1:9000"',
+                    'speech_output_adapter = "macos-say"',
+                    'speech_voice = "Alex"',
+                    "speech_rate = 180",
+                    'hotkey_bridge_format = "json"',
+                    'hotkey_bridge_jarvis_bin = "/opt/bin/jarvis"',
+                    'hotkey_bridge_recorder = "dev-silent"',
+                    'hotkey_bridge_input_device = ":1"',
+                    'hotkey_bridge_session_id = "session-1"',
+                ]
+            )
+        )
+
+        cfg = load_config(toml_file)
+
+        assert cfg.voice_control.transcription_adapter == "faster-whisper"
+        assert cfg.voice_control.model_path == "/models/fw-base"
+        assert cfg.voice_control.default_record_duration == 1.5
+        assert cfg.voice_control.default_api_base_url == "http://127.0.0.1:9000"
+        assert cfg.voice_control.speech_output_adapter == "macos-say"
+        assert cfg.voice_control.speech_voice == "Alex"
+        assert cfg.voice_control.speech_rate == 180
+        assert cfg.voice_control.hotkey_bridge_format == "json"
+        assert cfg.voice_control.hotkey_bridge_jarvis_bin == "/opt/bin/jarvis"
+        assert cfg.voice_control.hotkey_bridge_recorder == "dev-silent"
+        assert cfg.voice_control.hotkey_bridge_input_device == ":1"
+        assert cfg.voice_control.hotkey_bridge_session_id == "session-1"
 
 
 class TestGenerateToml:
@@ -517,6 +560,7 @@ class TestWhatsAppBaileysChannelConfig:
 
 def test_mining_config_absent_means_none(tmp_path):
     from openjarvis.core.config import load_config
+
     cfg_path = tmp_path / "config.toml"
     cfg_path.write_text("")  # empty config
     cfg = load_config(cfg_path)
