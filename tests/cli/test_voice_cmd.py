@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import wave
 from pathlib import Path
 from typing import Any
@@ -77,7 +78,71 @@ def test_voice_command_help_lists_subcommands() -> None:
     assert "record-local" in result.output
     assert "capture-preview" in result.output
     assert "run-local" in result.output
+    assert "hotkey-bridge" in result.output
     assert "cancel" in result.output
+
+
+def test_voice_hotkey_bridge_prints_disabled_run_local_command(monkeypatch) -> None:
+    def fake_post(*args, **kwargs):
+        raise AssertionError("hotkey bridge must not call the API")
+
+    monkeypatch.setattr(voice_cmd, "_post_json", fake_post)
+
+    result = CliRunner().invoke(
+        voice_cmd.voice,
+        [
+            "hotkey-bridge",
+            "--duration",
+            "1.5",
+            "--adapter",
+            "faster-whisper",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "macOS hotkey bridge (disabled)" in result.output
+    command_line = next(
+        line
+        for line in result.output.splitlines()
+        if line.strip().startswith("command:")
+    )
+    assert "jarvis voice run-local --duration 1.5" in command_line
+    assert "--recorder macos" in command_line
+    assert "--adapter faster-whisper" in command_line
+    assert "--approve-dispatch" not in command_line
+    assert "--speak-result" not in command_line
+    assert "no global key capture is started" in result.output
+    assert "dispatch: skipped" in result.output
+    assert "speech: skipped" in result.output
+
+
+def test_voice_hotkey_bridge_json_reports_safe_defaults() -> None:
+    result = CliRunner().invoke(voice_cmd.voice, ["hotkey-bridge", "--format", "json"])
+
+    assert result.exit_code == 0
+    data = json.loads(result.output)
+    assert data["enabled"] is False
+    assert data["listener_started"] is False
+    assert data["global_key_capture"] is False
+    assert data["dispatch_enabled"] is False
+    assert data["speech_enabled"] is False
+    assert "/v1/voice/ptt/dispatch" not in data["command"]
+    assert "--approve-dispatch" not in data["argv"]
+    assert "--speak-result" not in data["argv"]
+
+
+def test_voice_hotkey_bridge_hammerspoon_snippet_is_disabled() -> None:
+    result = CliRunner().invoke(
+        voice_cmd.voice,
+        ["hotkey-bridge", "--format", "hammerspoon", "--adapter", "faster-whisper"],
+    )
+
+    assert result.exit_code == 0
+    assert "local enable_openjarvis_voice_hotkey = false" in result.output
+    assert "hs.hotkey.bind" in result.output
+    assert "jarvis voice run-local" in result.output
+    assert "--adapter faster-whisper" in result.output
+    assert "--approve-dispatch" not in result.output
 
 
 def test_voice_submit_previews_without_dispatch(monkeypatch) -> None:

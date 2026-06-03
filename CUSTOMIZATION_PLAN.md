@@ -1,5 +1,36 @@
 # Customization Plan
 
+## Voice Control Phase 11
+
+Phase 11 adds the first disabled macOS hotkey/Fn bridge boundary without adding
+real global key capture.
+
+- `openjarvis.hotkeys.macos_bridge.MacOSHotkeyBridgeCommand` formats the safe
+  external helper command around the existing `jarvis voice run-local` path.
+- `openjarvis.hotkeys.macos_bridge.DisabledMacOSHotkeyBridge` documents the
+  adapter boundary and refuses to start capture, keeping hotkey listening
+  disabled by default.
+- `jarvis voice hotkey-bridge` prints the bridge command only. It can also print
+  a disabled Hammerspoon example with `enable_openjarvis_voice_hotkey = false`.
+- The printed bridge command uses `jarvis voice run-local` and intentionally
+  omits `--approve-dispatch` and `--speak-result`, so dispatch approval and
+  speech output remain explicit opt-ins.
+- The command does not install Hammerspoon, start a Swift helper, capture Fn,
+  listen globally, record audio, call the API, dispatch, approve, or speak.
+- Documentation covers required macOS **Accessibility** permission for future
+  global hotkey helpers and **Microphone** permission for explicit local
+  recording with `--recorder macos`.
+
+Deferred work remains intentionally untouched in this phase:
+
+- no always-on listening
+- no enabled Fn hotkey capture
+- no approval bypass
+- no automatic dispatch by default
+- no automatic speech playback without `--speak-result`
+- no live Hammerspoon or Swift helper installation
+- no voice-only mode; text input remains available
+
 ## Voice Control Phase 10
 
 Phase 10 adds an explicit manual local end-to-end voice pipeline command while

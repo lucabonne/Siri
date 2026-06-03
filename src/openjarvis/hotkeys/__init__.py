@@ -3,6 +3,8 @@
 Phase 1 — interface only. Actual macOS Fn / CGEvent listener is deferred.
 Phase 4 adds ``jarvis voice submit`` as the typed/mock transcript bridge that
 future Hammerspoon/Fn automation can call after it obtains a transcript.
+Phase 11 adds a disabled macOS bridge formatter that can show the
+``jarvis voice run-local`` command an explicitly enabled helper may call later.
 
 Intended flow when implemented:
     Fn key down  → FnKeyPushToTalkListener.on_press()
@@ -19,15 +21,21 @@ Typed/mock bridge available before recorder work:
 
 Deferred work:
 - CGEventTap / pynput listener for macOS Fn key (requires Accessibility permission)
+- Hammerspoon/Swift helper enablement for real hotkey capture
 - Hotkey configuration (user-settable key combo)
 - Cross-platform support
 - Permission prompting on first launch
-- Real microphone recorder, Whisper/faster-whisper, and TTS wiring
+- Voice-only mode
 """
 
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+
+from openjarvis.hotkeys.macos_bridge import (
+    DisabledMacOSHotkeyBridge,
+    MacOSHotkeyBridgeCommand,
+)
 
 
 class HotkeyListener(ABC):
@@ -73,4 +81,9 @@ class FnKeyPushToTalkListener(HotkeyListener):
         pass
 
 
-__all__ = ["FnKeyPushToTalkListener", "HotkeyListener"]
+__all__ = [
+    "DisabledMacOSHotkeyBridge",
+    "FnKeyPushToTalkListener",
+    "HotkeyListener",
+    "MacOSHotkeyBridgeCommand",
+]

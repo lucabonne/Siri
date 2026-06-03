@@ -13,6 +13,7 @@ import click
 import httpx
 
 from openjarvis.core.config import load_config
+from openjarvis.hotkeys.macos_bridge import MacOSHotkeyBridgeCommand
 from openjarvis.voice.models import TranscriptionUnavailableError, VoiceRecordingError
 from openjarvis.voice.recorder import LocalMacOSRecorder, Recorder, SilentWavRecorder
 from openjarvis.voice.speech_output import (
@@ -261,6 +262,112 @@ def _dispatch_speech_text(data: dict[str, Any]) -> str:
 @click.group("voice")
 def voice() -> None:
     """Local typed/mock voice flow over /v1/voice/ptt."""
+
+
+@voice.command("hotkey-bridge")
+@click.option(
+    "--format",
+    "output_format",
+    type=click.Choice(["command", "hammerspoon", "json"]),
+    default="command",
+    show_default=True,
+    help="Bridge output to print; never starts a listener.",
+)
+@click.option(
+    "--duration",
+    type=click.FloatRange(min=0.1),
+    default=2.0,
+    show_default=True,
+    help="Duration to include in the printed run-local command.",
+)
+@click.option(
+    "--recorder",
+    "recorder_kind",
+    type=click.Choice(["dev-silent", "macos"]),
+    default="macos",
+    show_default=True,
+    help="Recorder to include in the printed run-local command.",
+)
+@click.option(
+    "--input-device",
+    default=":0",
+    show_default=True,
+    help="macOS avfoundation input device for --recorder macos.",
+)
+@click.option(
+    "--adapter",
+    type=click.Choice(LOCAL_TRANSCRIPTION_ADAPTERS),
+    default=None,
+    help=(
+        "Local transcription adapter to include. If omitted, run-local still "
+        "requires [speech].backend to be explicitly configured later."
+    ),
+)
+@click.option("--language", default=None, help="Optional language code hint.")
+@click.option(
+    "--base-url",
+    envvar="OPENJARVIS_BASE_URL",
+    default=None,
+    help="OpenJarvis API base URL to include in the printed command.",
+)
+@click.option(
+    "--session-id",
+    default="",
+    help="Optional client-side session id to include in the printed command.",
+)
+@click.option(
+    "--jarvis-bin",
+    default="jarvis",
+    show_default=True,
+    help="Executable name/path to include in the printed command.",
+)
+def hotkey_bridge(
+    output_format: str,
+    duration: float,
+    recorder_kind: str,
+    input_device: str,
+    adapter: str | None,
+    language: str | None,
+    base_url: str | None,
+    session_id: str,
+    jarvis_bin: str,
+) -> None:
+    """Print a disabled macOS hotkey bridge command/example only."""
+    bridge = MacOSHotkeyBridgeCommand(
+        jarvis_bin=jarvis_bin,
+        duration=duration,
+        recorder=recorder_kind,
+        input_device=input_device,
+        adapter=adapter,
+        language=language,
+        base_url=base_url,
+        session_id=session_id or None,
+    )
+    command = bridge.shell_command()
+
+    if output_format == "json":
+        _emit_json(
+            {
+                "enabled": False,
+                "listener_started": False,
+                "global_key_capture": False,
+                "dispatch_enabled": False,
+                "speech_enabled": False,
+                "command": command,
+                "argv": bridge.argv(),
+            }
+        )
+        return
+
+    if output_format == "hammerspoon":
+        click.echo(bridge.hammerspoon_snippet().rstrip())
+        return
+
+    click.echo("macOS hotkey bridge (disabled)")
+    click.echo(f"  command: {command}")
+    click.echo("  listener: disabled; no global key capture is started")
+    click.echo("  dispatch: skipped; command omits --approve-dispatch")
+    click.echo("  speech: skipped; command omits --speak-result")
 
 
 @voice.command("submit")
