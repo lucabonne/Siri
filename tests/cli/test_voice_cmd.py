@@ -54,6 +54,7 @@ def test_voice_command_help_lists_subcommands() -> None:
     assert result.exit_code == 0
     assert "submit" in result.output
     assert "transcribe-file" in result.output
+    assert "speak" in result.output
     assert "record-local" in result.output
     assert "capture-preview" in result.output
     assert "cancel" in result.output
@@ -212,6 +213,46 @@ def test_voice_transcribe_file_prints_transcript_without_dispatch(
     assert "Voice file transcription" in result.output
     assert "open notes" in result.output
     assert "dispatch: skipped" in result.output
+
+
+def test_voice_speak_uses_local_adapter_without_dispatch(monkeypatch) -> None:
+    post_calls: list[tuple[str, dict[str, Any] | None]] = []
+    speak_calls: list[str] = []
+
+    class FakeSpeechOutput:
+        def speak(self, text: str) -> None:
+            speak_calls.append(text)
+
+    def fake_post(endpoint: str, payload: dict[str, Any] | None, **kwargs):
+        post_calls.append((endpoint, payload))
+        return {}
+
+    def fake_build_speech_output(adapter_id: str, *, voice_name: str, rate: int | None):
+        assert adapter_id == "macos-say"
+        assert voice_name == "Alex"
+        assert rate == 180
+        return FakeSpeechOutput()
+
+    monkeypatch.setattr(voice_cmd, "_post_json", fake_post)
+    monkeypatch.setattr(voice_cmd, "_build_speech_output", fake_build_speech_output)
+
+    result = CliRunner().invoke(
+        voice_cmd.voice,
+        ["speak", "hello", "there", "--voice", "Alex", "--rate", "180"],
+    )
+
+    assert result.exit_code == 0
+    assert speak_calls == ["hello there"]
+    assert post_calls == []
+    assert "Voice speech output" in result.output
+    assert "dispatch: skipped" in result.output
+
+
+def test_voice_speak_requires_text() -> None:
+    result = CliRunner().invoke(voice_cmd.voice, ["speak", ""])
+
+    assert result.exit_code != 0
+    assert "text must not be empty" in result.output
 
 
 def test_voice_record_local_requires_explicit_duration() -> None:

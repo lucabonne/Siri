@@ -16,6 +16,11 @@ from openjarvis.voice.session_fsm import (
     VoiceSessionFSMError,
     VoiceSessionState,
 )
+from openjarvis.voice.speech_output import (
+    LocalSpeechOutput,
+    MacOSSaySpeechOutput,
+    SpeechOutputUnavailableError,
+)
 from openjarvis.voice.transcription import (
     LocalTranscriptionAdapter,
     LocalVoiceTranscriber,
@@ -24,9 +29,12 @@ from openjarvis.voice.transcription import (
 
 __all__ = [
     "LocalMacOSRecorder",
+    "LocalSpeechOutput",
     "LocalTranscriptionAdapter",
     "LocalVoiceTranscriber",
+    "MacOSSaySpeechOutput",
     "RecordingHandle",
+    "SpeechOutputUnavailableError",
     "TranscriptionUnavailableError",
     "VoiceIntentPreview",
     "VoicePermissionDecision",

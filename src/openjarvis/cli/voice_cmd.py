@@ -15,6 +15,12 @@ import httpx
 from openjarvis.core.config import load_config
 from openjarvis.voice.models import TranscriptionUnavailableError
 from openjarvis.voice.recorder import LocalMacOSRecorder, Recorder, SilentWavRecorder
+from openjarvis.voice.speech_output import (
+    LOCAL_SPEECH_OUTPUT_ADAPTERS,
+    LocalSpeechOutput,
+    SpeechOutputUnavailableError,
+    build_local_speech_output,
+)
 from openjarvis.voice.transcription import (
     LOCAL_TRANSCRIPTION_ADAPTERS,
     SpeechBackendLocalTranscriptionAdapter,
@@ -195,6 +201,18 @@ def _transcribe_audio_file(
     return result.to_dict()
 
 
+def _build_speech_output(
+    adapter_id: str,
+    *,
+    voice_name: str,
+    rate: int | None,
+) -> LocalSpeechOutput:
+    try:
+        return build_local_speech_output(adapter_id, voice=voice_name, rate=rate)
+    except ValueError as exc:
+        raise click.ClickException(str(exc)) from exc
+
+
 @click.group("voice")
 def voice() -> None:
     """Local typed/mock voice flow over /v1/voice/ptt."""
@@ -318,6 +336,49 @@ def transcribe_file(
         click.echo(f"  language: {data['language']}")
     click.echo(f"  transcript: {data.get('text', '')}")
     click.echo("  dispatch: skipped (review, then use `jarvis voice submit ...`)")
+
+
+@voice.command("speak")
+@click.argument("text", nargs=-1, required=True)
+@click.option(
+    "--adapter",
+    type=click.Choice(LOCAL_SPEECH_OUTPUT_ADAPTERS),
+    default="macos-say",
+    show_default=True,
+    help="Explicit local speech-output adapter.",
+)
+@click.option(
+    "--voice",
+    "voice_name",
+    default="",
+    help="Optional macOS say voice name.",
+)
+@click.option(
+    "--rate",
+    type=click.IntRange(min=80, max=500),
+    default=None,
+    help="Optional macOS say speaking rate.",
+)
+def speak(
+    text: tuple[str, ...],
+    adapter: str,
+    voice_name: str,
+    rate: int | None,
+) -> None:
+    """Speak text locally only when explicitly requested."""
+    speech_text = " ".join(text).strip()
+    if not speech_text:
+        raise click.UsageError("text must not be empty")
+
+    output = _build_speech_output(adapter, voice_name=voice_name, rate=rate)
+    try:
+        output.speak(speech_text)
+    except (OSError, SpeechOutputUnavailableError, ValueError) as exc:
+        raise click.ClickException(str(exc)) from exc
+
+    click.echo("Voice speech output")
+    click.echo(f"  adapter: {adapter}")
+    click.echo("  dispatch: skipped")
 
 
 @voice.command("record-local")

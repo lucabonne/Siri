@@ -1,5 +1,71 @@
 # Customization Plan
 
+## Voice Control Phase 9
+
+Phase 9 adds the first optional local speech-output boundary while keeping voice
+input, dispatch, and approval behavior unchanged.
+
+- `openjarvis.voice.speech_output.LocalSpeechOutput` defines the explicit local
+  speech-output contract for future voice adapters.
+- `MacOSSaySpeechOutput` provides an opt-in macOS adapter backed by the local
+  `say` command when available.
+- `jarvis voice speak "text"` speaks only the literal text supplied on the
+  command line and does not call the OpenJarvis API, submit transcripts, dispatch
+  actions, or speak any dispatch result automatically.
+- The macOS `say` adapter sends spoken text through subprocess stdin so user
+  text is not interpreted as command-line flags.
+- Tests mock the speech-output adapter and subprocess boundary, so test runs do
+  not require audio output.
+- Documentation now covers explicit local speech output, macOS `say` behavior,
+  privacy boundaries, and deferred Piper/Coqui/other local TTS adapters.
+
+Deferred work remains intentionally untouched in this phase:
+
+- no always-on listening
+- no Fn hotkey capture
+- no approval bypass
+- no automatic dispatch
+- no automatic speech playback of dispatch results
+- no Piper, Coqui, or other local TTS adapters yet
+- no voice-only mode; text input remains available
+
+## Voice Control Phase 8
+
+Phase 8 adds the first real optional local transcription adapter choices while
+keeping voice input explicit, local, and non-dispatching by default.
+
+- `jarvis voice transcribe-file <audio> --adapter faster-whisper` can
+  transcribe an existing local audio file through the optional faster-whisper
+  adapter and prints the transcript only.
+- `jarvis voice transcribe-file <audio> --adapter whisper.cpp` can use a local
+  whisper.cpp binary and model when explicitly configured.
+- `jarvis voice capture-preview --duration N --adapter <adapter>` records for
+  the explicit duration, transcribes through the selected local adapter, submits
+  the transcript to `/v1/voice/ptt/submit-transcript`, and prints the preview
+  only.
+- Local transcription is disabled unless an adapter is selected with
+  `--adapter` or `[speech].backend` is explicitly set to a supported local
+  adapter.
+- Missing optional dependencies, binaries, or model files return clear
+  configuration errors instead of silently falling back.
+- The server-side push-to-talk service no longer inherits an auto-discovered
+  speech backend for voice transcription unless a local backend was explicitly
+  configured.
+- Dispatch remains separate: transcripts must still go through
+  `jarvis voice submit --approve-dispatch` or the explicit `/dispatch` approval
+  path with `approved=true`.
+- Documentation now covers faster-whisper setup, whisper.cpp binary/model
+  expectations, local-only privacy behavior, and the unchanged approval gate.
+
+Deferred work remains intentionally untouched in this phase:
+
+- no always-on listening
+- no Fn hotkey capture
+- no approval bypass
+- no automatic dispatch from transcription or preview
+- no TTS response playback
+- no voice-only mode; text input remains available
+
 ## Voice Control Phase 7
 
 Phase 7 adds a safe manual local pipeline command that chains the existing

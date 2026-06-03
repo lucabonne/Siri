@@ -24,6 +24,7 @@ xcode-select --install
 ## Voice permissions
 
 - Local microphone recording, when explicitly requested with `jarvis voice record-local --recorder macos` or `jarvis voice capture-preview --recorder macos`, requires macOS **Microphone** permission.
+- Local speech output, when explicitly requested with `jarvis voice speak "text"`, uses the macOS `say` command if available. It does not enable automatic response playback.
 - Future Fn/hotkey push-to-talk listeners will require macOS **Accessibility** permission. OpenJarvis does not enable Fn capture or always-on listening in the current voice CLI.
 
 ## See also
