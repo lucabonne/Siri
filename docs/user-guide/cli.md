@@ -481,6 +481,7 @@ jarvis voice capture-preview --duration 2 --adapter faster-whisper
 jarvis voice run-local --duration 2 --adapter faster-whisper
 jarvis voice run-local --duration 2 --adapter faster-whisper --approve-dispatch
 jarvis voice run-local --duration 2 --adapter faster-whisper --approve-dispatch --speak-result
+jarvis voice doctor                                     # Safe local setup diagnostics
 jarvis voice hotkey-bridge --adapter faster-whisper      # Print bridge command only
 jarvis voice hotkey-bridge --format hammerspoon          # Print disabled helper example
 jarvis voice speak "preview complete"                    # Explicit local TTS only
@@ -496,6 +497,7 @@ jarvis voice cancel
 | `voice transcribe-file AUDIO` | Transcribe an existing local audio file with a local adapter and print the transcript only |
 | `voice capture-preview --duration N` | Record a local WAV, transcribe it locally, POST the transcript to `/v1/voice/ptt/submit-transcript`, and print the preview only |
 | `voice run-local --duration N` | Record, transcribe, submit preview, and print session state; dispatch and TTS require separate opt-in flags |
+| `voice doctor`        | Inspect configured voice defaults and local dependency paths without recording, dispatching, speaking, or starting hotkeys |
 | `voice hotkey-bridge` | Print the disabled macOS hotkey bridge command/example that an external helper can call later |
 | `voice speak TEXT`     | Speak text through an explicit local speech-output adapter; defaults to macOS `say` when available |
 | `voice status`          | GET `/v1/voice/ptt/status`                       |
@@ -542,6 +544,13 @@ does not enable listening, global/Fn hotkey capture, approval bypass,
 auto-dispatch, or automatic speech playback. Dispatch still requires
 `--approve-dispatch`; speech still requires `voice speak` or
 `voice run-local --speak-result`.
+
+`voice doctor` is read-only. It reports the effective API base URL, configured
+local transcription adapter, model path existence when a local path is required,
+default record duration, configured speech-output adapter, macOS `say`
+availability when relevant, print-only/disabled hotkey bridge state, and whether
+explicit voice approval is still required. It does not request microphone
+access, download models, call dispatch, speak text, or start a hotkey listener.
 
 `voice hotkey-bridge` is a print-only boundary for future macOS Fn or
 push-to-talk integration. It formats a `jarvis voice run-local ...` command, or

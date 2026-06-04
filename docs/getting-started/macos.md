@@ -25,6 +25,7 @@ xcode-select --install
 
 - Local microphone recording, when explicitly requested with `jarvis voice record-local --recorder macos`, `jarvis voice capture-preview --recorder macos`, or `jarvis voice run-local --recorder macos`, requires macOS **Microphone** permission.
 - Local speech output, when explicitly requested with `jarvis voice speak "text"` or `jarvis voice run-local --speak-result`, uses the macOS `say` command if available. It does not enable automatic response playback.
+- `jarvis voice doctor` reports local voice configuration and dependency availability, including macOS `say` when relevant, without requesting **Microphone** permission, downloading models, dispatching, speaking, or starting hotkeys.
 - `jarvis voice hotkey-bridge` only prints the preview-only `jarvis voice run-local` command or a disabled Hammerspoon example that an external helper can call later. It does not start a global listener, capture Fn, record audio, dispatch, approve, or speak.
 - `[voice_control]` in `~/.openjarvis/config.toml` can provide safe defaults for explicit voice commands, such as local transcription adapter, model path, fixed record duration, API base URL, speech-output adapter, and hotkey bridge command preview settings. CLI flags still override config values.
 - Future Hammerspoon or Swift Fn/push-to-talk helpers will require macOS **Accessibility** permission for global hotkey capture. Any helper that invokes `jarvis voice run-local --recorder macos` will also require **Microphone** permission.

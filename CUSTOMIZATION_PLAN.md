@@ -1,5 +1,29 @@
 # Customization Plan
 
+## Voice Control Phase 13
+
+Phase 13 adds a safe read-only diagnostics command for local voice setup.
+
+- `jarvis voice doctor` reports the effective API base URL, configured local
+  transcription adapter, required model path existence, default record duration,
+  configured speech-output adapter, macOS `say` availability when relevant,
+  print-only/disabled hotkey bridge state, and explicit approval requirement.
+- The diagnostics path only inspects config, environment, paths, and executable
+  availability. It does not request microphone access, download models, call
+  dispatch, speak, or start hotkeys.
+- Tests cover available and missing local dependency cases with mocks so the
+  command remains side-effect free.
+
+Deferred work remains intentionally untouched in this phase:
+
+- no always-on listening
+- no enabled Fn hotkey capture
+- no approval bypass
+- no automatic dispatch by default
+- no automatic speech playback by default
+- no live Hammerspoon or Swift helper installation
+- no voice-only mode; text input remains available
+
 ## Voice Control Phase 12
 
 Phase 12 adds an explicit local configuration layer for safe voice-control

@@ -55,6 +55,7 @@ def _safe_config(**voice_overrides: Any) -> SimpleNamespace:
             language="",
             device="auto",
             compute_type="float16",
+            require_explicit_voice_approval=True,
         ),
         voice_control=SimpleNamespace(**voice_defaults),
     )
@@ -108,8 +109,100 @@ def test_voice_command_help_lists_subcommands() -> None:
     assert "record-local" in result.output
     assert "capture-preview" in result.output
     assert "run-local" in result.output
+    assert "doctor" in result.output
     assert "hotkey-bridge" in result.output
     assert "cancel" in result.output
+
+
+def test_voice_doctor_json_reports_available_configured_setup(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    model_path = tmp_path / "fw-model"
+    model_path.mkdir()
+
+    def fail_api(*args, **kwargs):
+        raise AssertionError("voice doctor must not call the API")
+
+    monkeypatch.setattr(voice_cmd, "_post_json", fail_api)
+    monkeypatch.setattr(voice_cmd, "_get_json", fail_api)
+    monkeypatch.setattr(voice_cmd.sys, "platform", "darwin")
+    monkeypatch.setattr(voice_cmd.shutil, "which", lambda name: "/usr/bin/say")
+    monkeypatch.setattr(
+        voice_cmd,
+        "load_config",
+        lambda: _safe_config(
+            transcription_adapter="faster-whisper",
+            model_path=str(model_path),
+            default_record_duration=2.5,
+            default_api_base_url="http://configured:9000/",
+            speech_output_adapter="macos-say",
+            hotkey_bridge_format="json",
+        ),
+    )
+
+    result = CliRunner().invoke(voice_cmd.voice, ["doctor", "--json"])
+
+    assert result.exit_code == 0
+    data = json.loads(result.output)
+    assert data["api_base_url"] == {
+        "value": "http://configured:9000",
+        "source": "[voice_control].default_api_base_url",
+    }
+    assert data["transcription_adapter"]["effective"] == "faster-whisper"
+    assert data["transcription_adapter"]["supported"] is True
+    assert data["model_path"]["value"] == str(model_path)
+    assert data["model_path"]["required"] is True
+    assert data["model_path"]["exists"] is True
+    assert data["record_duration"]["effective_default_seconds"] == 2.5
+    assert data["record_duration"]["duration_flag_required"] is False
+    assert data["speech_output"]["effective"] == "macos-say"
+    assert data["macos_say"]["available"] is True
+    assert data["hotkey_bridge"]["print_only"] is True
+    assert data["hotkey_bridge"]["enabled"] is False
+    assert data["approval"]["required"] is True
+    assert data["safety"] == {
+        "microphone_access_required": False,
+        "model_download_required": False,
+        "dispatch_called": False,
+        "speech_called": False,
+        "hotkeys_started": False,
+        "approval_bypassed": False,
+    }
+
+
+def test_voice_doctor_reports_missing_dependencies_without_side_effects(
+    monkeypatch,
+) -> None:
+    def fail_api(*args, **kwargs):
+        raise AssertionError("voice doctor must not call the API")
+
+    monkeypatch.delenv("WHISPER_CPP_MODEL", raising=False)
+    monkeypatch.setattr(voice_cmd, "_post_json", fail_api)
+    monkeypatch.setattr(voice_cmd, "_get_json", fail_api)
+    monkeypatch.setattr(voice_cmd.sys, "platform", "linux")
+    monkeypatch.setattr(voice_cmd.shutil, "which", lambda name: None)
+    monkeypatch.setattr(
+        voice_cmd,
+        "load_config",
+        lambda: _safe_config(transcription_adapter="whisper.cpp"),
+    )
+
+    result = CliRunner().invoke(voice_cmd.voice, ["doctor"])
+
+    assert result.exit_code == 0
+    assert "Voice doctor" in result.output
+    assert "api_base_url: http://127.0.0.1:8000" in result.output
+    assert "transcription_adapter: whisper.cpp" in result.output
+    assert "model_path: -" in result.output
+    assert "required=True, exists=False" in result.output
+    assert "record_duration: requires --duration" in result.output
+    assert "macos_say_available: False" in result.output
+    assert "hotkey_bridge: print_only=True, enabled=False" in result.output
+    assert "approval_required: True" in result.output
+    assert "no microphone, downloads, dispatch, speech, or hotkeys started" in (
+        result.output
+    )
 
 
 def test_voice_hotkey_bridge_prints_disabled_run_local_command(monkeypatch) -> None:

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
+import sys
 import time
 import uuid
 from dataclasses import replace
@@ -360,9 +362,193 @@ def _dispatch_speech_text(data: dict[str, Any]) -> str:
     raise click.ClickException("dispatch result did not include speakable content")
 
 
+def _configured_api_base_url(config: Any) -> dict[str, str]:
+    voice_control = _voice_control_config(config)
+    configured_base = getattr(voice_control, "default_api_base_url", "")
+    if configured_base:
+        return {
+            "value": str(configured_base).rstrip("/"),
+            "source": "[voice_control].default_api_base_url",
+        }
+
+    host = config.server.host
+    if host in {"0.0.0.0", "::", ""}:
+        host = "127.0.0.1"
+    return {
+        "value": f"http://{host}:{config.server.port}",
+        "source": "[server].host/[server].port",
+    }
+
+
+def _looks_like_path(value: str) -> bool:
+    return (
+        "/" in value or "\\" in value or value.startswith(".") or value.startswith("~")
+    )
+
+
+def _voice_doctor_model_path(config: Any, adapter_id: str) -> dict[str, Any]:
+    voice_control = _voice_control_config(config)
+    configured_model = str(getattr(voice_control, "model_path", "") or "")
+    if configured_model:
+        path_required = _looks_like_path(configured_model)
+        path_exists = (
+            Path(configured_model).expanduser().exists() if path_required else None
+        )
+        return {
+            "value": configured_model,
+            "source": "[voice_control].model_path",
+            "required": path_required,
+            "exists": path_exists,
+        }
+
+    if adapter_id == "whisper.cpp":
+        whisper_model = os.environ.get("WHISPER_CPP_MODEL", "")
+        return {
+            "value": whisper_model,
+            "source": "WHISPER_CPP_MODEL" if whisper_model else "",
+            "required": True,
+            "exists": Path(whisper_model).expanduser().exists()
+            if whisper_model
+            else False,
+        }
+
+    return {
+        "value": str(getattr(config.speech, "model", "") or ""),
+        "source": "[speech].model",
+        "required": False,
+        "exists": None,
+    }
+
+
+def _voice_doctor_data() -> dict[str, Any]:
+    config = load_config()
+    voice_control = _voice_control_config(config)
+
+    configured_adapter = str(getattr(voice_control, "transcription_adapter", "") or "")
+    speech_backend = str(getattr(config.speech, "backend", "") or "")
+    if configured_adapter:
+        effective_adapter = configured_adapter
+        adapter_source = "[voice_control].transcription_adapter"
+    elif speech_backend in LOCAL_TRANSCRIPTION_ADAPTERS:
+        effective_adapter = speech_backend
+        adapter_source = "[speech].backend"
+    else:
+        effective_adapter = "disabled"
+        adapter_source = ""
+
+    raw_duration = getattr(voice_control, "default_record_duration", 0.0) or 0.0
+    try:
+        configured_duration = float(raw_duration)
+    except (TypeError, ValueError):
+        configured_duration = 0.0
+
+    speech_adapter = str(getattr(voice_control, "speech_output_adapter", "") or "")
+    effective_speech_adapter = speech_adapter or "macos-say"
+    say_path = shutil.which("say")
+    say_relevant = effective_speech_adapter == "macos-say"
+
+    return {
+        "api_base_url": _configured_api_base_url(config),
+        "transcription_adapter": {
+            "configured": configured_adapter,
+            "effective": effective_adapter,
+            "source": adapter_source,
+            "supported": effective_adapter in LOCAL_TRANSCRIPTION_ADAPTERS,
+        },
+        "model_path": _voice_doctor_model_path(config, effective_adapter),
+        "record_duration": {
+            "configured_default_seconds": configured_duration,
+            "effective_default_seconds": configured_duration
+            if configured_duration > 0
+            else None,
+            "duration_flag_required": configured_duration <= 0,
+        },
+        "speech_output": {
+            "configured": speech_adapter,
+            "effective": effective_speech_adapter,
+            "supported": effective_speech_adapter in LOCAL_SPEECH_OUTPUT_ADAPTERS,
+        },
+        "macos_say": {
+            "relevant": say_relevant,
+            "available": bool(say_path) and sys.platform == "darwin",
+            "path": say_path or "",
+        },
+        "hotkey_bridge": {
+            "configured_format": str(
+                getattr(voice_control, "hotkey_bridge_format", "command") or "command"
+            ),
+            "print_only": True,
+            "enabled": False,
+            "listener_started": False,
+            "global_key_capture": False,
+        },
+        "approval": {
+            "required": bool(
+                getattr(config.speech, "require_explicit_voice_approval", True)
+            ),
+            "config": "[speech].require_explicit_voice_approval",
+        },
+        "safety": {
+            "microphone_access_required": False,
+            "model_download_required": False,
+            "dispatch_called": False,
+            "speech_called": False,
+            "hotkeys_started": False,
+            "approval_bypassed": False,
+        },
+    }
+
+
+def _format_voice_doctor(data: dict[str, Any]) -> None:
+    click.echo("Voice doctor")
+    click.echo(
+        f"  api_base_url: {data['api_base_url']['value']} "
+        f"({data['api_base_url']['source']})"
+    )
+    adapter = data["transcription_adapter"]
+    click.echo(f"  transcription_adapter: {adapter['effective']}")
+    model = data["model_path"]
+    exists = model["exists"] if model["exists"] is not None else "not required"
+    click.echo(
+        f"  model_path: {model['value'] or '-'} "
+        f"(required={model['required']}, exists={exists})"
+    )
+    duration = data["record_duration"]
+    default_duration = duration["effective_default_seconds"]
+    click.echo(
+        "  record_duration: "
+        f"{default_duration if default_duration is not None else 'requires --duration'}"
+    )
+    speech_output = data["speech_output"]
+    click.echo(f"  speech_output: {speech_output['effective']}")
+    macos_say = data["macos_say"]
+    if macos_say["relevant"]:
+        click.echo(f"  macos_say_available: {macos_say['available']}")
+    hotkey_bridge = data["hotkey_bridge"]
+    click.echo(
+        "  hotkey_bridge: "
+        f"print_only={hotkey_bridge['print_only']}, enabled={hotkey_bridge['enabled']}"
+    )
+    click.echo(f"  approval_required: {data['approval']['required']}")
+    click.echo(
+        "  safety: no microphone, downloads, dispatch, speech, or hotkeys started"
+    )
+
+
 @click.group("voice")
 def voice() -> None:
     """Local typed/mock voice flow over /v1/voice/ptt."""
+
+
+@voice.command("doctor")
+@click.option("--json", "as_json", is_flag=True, help="Print raw JSON diagnostics.")
+def doctor(as_json: bool) -> None:
+    """Inspect voice setup without recording, dispatching, speaking, or hotkeys."""
+    data = _voice_doctor_data()
+    if as_json:
+        _emit_json(data)
+        return
+    _format_voice_doctor(data)
 
 
 @voice.command("hotkey-bridge")
