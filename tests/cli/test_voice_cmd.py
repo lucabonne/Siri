@@ -31,6 +31,10 @@ def _load_voice_cmd_module():
 voice_cmd = _load_voice_cmd_module()
 
 
+def setup_function() -> None:
+    voice_cmd._log_voice_event = lambda *args, **kwargs: None
+
+
 def _safe_config(**voice_overrides: Any) -> SimpleNamespace:
     voice_defaults = {
         "transcription_adapter": "",
@@ -45,6 +49,10 @@ def _safe_config(**voice_overrides: Any) -> SimpleNamespace:
         "hotkey_bridge_recorder": "macos",
         "hotkey_bridge_input_device": ":0",
         "hotkey_bridge_session_id": "",
+        "voice_logs_enabled": False,
+        "voice_logs_path": "",
+        "voice_logs_include_full_transcripts": False,
+        "voice_logs_preview_chars": 80,
     }
     voice_defaults.update(voice_overrides)
     return SimpleNamespace(
@@ -111,7 +119,36 @@ def test_voice_command_help_lists_subcommands() -> None:
     assert "run-local" in result.output
     assert "doctor" in result.output
     assert "hotkey-bridge" in result.output
+    assert "logs" in result.output
     assert "cancel" in result.output
+
+
+def test_voice_logs_command_outputs_recent_events(monkeypatch, tmp_path: Path) -> None:
+    log_path = tmp_path / "voice-events.jsonl"
+    logger = voice_cmd.VoiceEventLogger(
+        voice_cmd.voice_log_settings_from_config(
+            _safe_config(voice_logs_enabled=True, voice_logs_path=str(log_path))
+        )
+    )
+    logger.record(
+        command="submit",
+        event="preview_result",
+        transcript="email luca@example.com token sk-1234567890abcdef",
+    )
+    monkeypatch.setattr(
+        voice_cmd,
+        "load_config",
+        lambda: _safe_config(voice_logs_enabled=True, voice_logs_path=str(log_path)),
+    )
+
+    result = CliRunner().invoke(voice_cmd.voice, ["logs", "--limit", "5"])
+
+    assert result.exit_code == 0
+    assert "Voice logs" in result.output
+    assert "submit preview_result" in result.output
+    assert "transcript_length=" in result.output
+    assert "luca@example.com" not in result.output
+    assert "sk-1234567890abcdef" not in result.output
 
 
 def test_voice_doctor_json_reports_available_configured_setup(

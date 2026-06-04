@@ -1309,6 +1309,10 @@ class VoiceControlConfig:
     hotkey_bridge_recorder: str = "macos"
     hotkey_bridge_input_device: str = ":0"
     hotkey_bridge_session_id: str = ""
+    voice_logs_enabled: bool = True
+    voice_logs_path: str = str(DEFAULT_CONFIG_DIR / "voice-events.jsonl")
+    voice_logs_include_full_transcripts: bool = False
+    voice_logs_preview_chars: int = 80
 
 
 @dataclass(slots=True)
@@ -1997,6 +2001,10 @@ hotkey_bridge_jarvis_bin = "jarvis"
 hotkey_bridge_recorder = "macos"
 hotkey_bridge_input_device = ":0"
 hotkey_bridge_session_id = ""
+voice_logs_enabled = true
+voice_logs_path = "~/.openjarvis/voice-events.jsonl"
+voice_logs_include_full_transcripts = false
+voice_logs_preview_chars = 80
 
 [security]
 enabled = true

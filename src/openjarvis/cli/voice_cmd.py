@@ -17,6 +17,11 @@ import httpx
 
 from openjarvis.core.config import load_config
 from openjarvis.hotkeys.macos_bridge import MacOSHotkeyBridgeCommand
+from openjarvis.voice.event_log import (
+    VoiceEventLogger,
+    read_voice_events,
+    voice_log_settings_from_config,
+)
 from openjarvis.voice.models import TranscriptionUnavailableError, VoiceRecordingError
 from openjarvis.voice.recorder import LocalMacOSRecorder, Recorder, SilentWavRecorder
 from openjarvis.voice.speech_output import (
@@ -129,6 +134,57 @@ def _get_json(
 
 def _emit_json(data: dict[str, Any]) -> None:
     click.echo(json.dumps(data, indent=2, sort_keys=True))
+
+
+def _voice_event_logger() -> VoiceEventLogger:
+    return VoiceEventLogger(voice_log_settings_from_config(load_config()))
+
+
+def _log_voice_event(
+    command: str,
+    event: str,
+    *,
+    status: str = "ok",
+    transcript: str | None = None,
+    details: dict[str, Any] | None = None,
+) -> None:
+    _voice_event_logger().record(
+        command=command,
+        event=event,
+        status=status,
+        transcript=transcript,
+        details=details,
+    )
+
+
+def _preview_log_details(data: dict[str, Any]) -> dict[str, Any]:
+    preview = data.get("intent_preview") or {}
+    return {
+        "preview_status": data.get("status", ""),
+        "fsm_state": data.get("fsm_state", ""),
+        "intent": preview.get("interpreted_intent", ""),
+        "risk_level": preview.get("risk_level", ""),
+        "approval_required": bool(preview.get("approval_required", False)),
+        "approved": bool(data.get("approved", False)),
+        "dispatched": bool(data.get("dispatched", False)),
+    }
+
+
+def _dispatch_log_details(
+    data: dict[str, Any],
+    *,
+    approved: bool,
+    agent_id: str,
+) -> dict[str, Any]:
+    return {
+        "approved": approved,
+        "agent_id": agent_id,
+        "dispatched": bool(data.get("dispatched", False)),
+        "dispatch_status": data.get("status", ""),
+        "fsm_state": data.get("fsm_state", ""),
+        "reason": data.get("reason", ""),
+        "has_error": bool(data.get("error")),
+    }
 
 
 def _format_preview(data: dict[str, Any]) -> None:
@@ -545,6 +601,17 @@ def voice() -> None:
 def doctor(as_json: bool) -> None:
     """Inspect voice setup without recording, dispatching, speaking, or hotkeys."""
     data = _voice_doctor_data()
+    _log_voice_event(
+        "doctor",
+        "diagnostics_result",
+        details={
+            "transcription_adapter": data["transcription_adapter"]["effective"],
+            "speech_output": data["speech_output"]["effective"],
+            "hotkeys_started": False,
+            "dispatch_called": False,
+            "speech_called": False,
+        },
+    )
     if as_json:
         _emit_json(data)
         return
@@ -667,6 +734,19 @@ def hotkey_bridge(
         session_id=resolved_session,
     )
     command = bridge.shell_command()
+    _log_voice_event(
+        "hotkey-bridge",
+        "bridge_preview",
+        details={
+            "format": bridge_format,
+            "recorder": bridge_recorder,
+            "adapter": resolved_adapter or "",
+            "listener_started": False,
+            "global_key_capture": False,
+            "dispatch_enabled": False,
+            "speech_enabled": False,
+        },
+    )
 
     if bridge_format == "json":
         _emit_json(
@@ -746,6 +826,12 @@ def submit(
         api_key=resolved_key,
         timeout=timeout,
     )
+    _log_voice_event(
+        "submit",
+        "preview_result",
+        transcript=text,
+        details=_preview_log_details(preview),
+    )
 
     if as_json:
         output: dict[str, Any] = {"preview": preview}
@@ -753,6 +839,17 @@ def submit(
         _format_preview(preview)
 
     if not approve_dispatch:
+        _log_voice_event(
+            "submit",
+            "dispatch_decision",
+            status="skipped",
+            transcript=text,
+            details={
+                "approved": False,
+                "attempted": False,
+                "reason": "missing --approve-dispatch",
+            },
+        )
         if as_json:
             output["dispatch_skipped"] = True
             output["dispatch_reason"] = "missing --approve-dispatch"
@@ -767,6 +864,12 @@ def submit(
         base_url=resolved_base,
         api_key=resolved_key,
         timeout=timeout,
+    )
+    _log_voice_event(
+        "submit",
+        "dispatch_result",
+        transcript=text,
+        details=_dispatch_log_details(dispatch, approved=True, agent_id=agent_id),
     )
     if as_json:
         output["dispatch"] = dispatch
@@ -801,6 +904,19 @@ def transcribe_file(
     data = _transcribe_audio_file(audio_file, adapter=adapter, language=language)
     data["dispatch_skipped"] = True
     data["dispatch_reason"] = "file transcription does not dispatch"
+    _log_voice_event(
+        "transcribe-file",
+        "transcription_result",
+        transcript=str(data.get("text") or ""),
+        details={
+            "audio_file": str(audio_file),
+            "adapter": data.get("backend") or adapter or "",
+            "language": data.get("language") or "",
+            "duration_seconds": data.get("duration_seconds"),
+            "dispatch_skipped": True,
+            "dispatch_reason": "file transcription does not dispatch",
+        },
+    )
     if as_json:
         _emit_json(data)
         return
@@ -856,6 +972,16 @@ def speak(
         output.speak(speech_text)
     except (OSError, SpeechOutputUnavailableError, ValueError) as exc:
         raise click.ClickException(str(exc)) from exc
+    _log_voice_event(
+        "speak",
+        "speech_result",
+        transcript=speech_text,
+        details={
+            "adapter": resolved_adapter,
+            "spoken": True,
+            "dispatch_skipped": True,
+        },
+    )
 
     click.echo("Voice speech output")
     click.echo(f"  adapter: {resolved_adapter}")
@@ -910,6 +1036,17 @@ def record_local(
         _sleep(resolved_duration)
     finally:
         recorder.stop(handle)
+    _log_voice_event(
+        "record-local",
+        "recording_result",
+        details={
+            "path": str(handle.path),
+            "recorder": recorder_kind,
+            "duration": resolved_duration,
+            "transcribed": False,
+            "dispatch_skipped": True,
+        },
+    )
     click.echo(str(handle.path))
 
 
@@ -1035,6 +1172,24 @@ def capture_preview(
         base_url=_base_url(base_url),
         api_key=_api_key(api_key),
         timeout=timeout,
+    )
+    preview_details = _preview_log_details(preview)
+    preview_details.update(
+        {
+            "recording_path": str(handle.path),
+            "recorder": recorder_kind,
+            "duration": resolved_duration,
+            "adapter": adapter_id,
+            "language": transcription.get("language") or "",
+            "dispatch_skipped": True,
+            "dispatch_reason": "capture-preview does not dispatch",
+        }
+    )
+    _log_voice_event(
+        "capture-preview",
+        "preview_result",
+        transcript=transcript,
+        details=preview_details,
     )
 
     if as_json:
@@ -1218,6 +1373,22 @@ def run_local(
         api_key=resolved_key,
         timeout=timeout,
     )
+    run_details = _preview_log_details(preview)
+    run_details.update(
+        {
+            "recording_path": str(handle.path),
+            "recorder": recorder_kind,
+            "duration": resolved_duration,
+            "adapter": adapter_id,
+            "language": transcription_data.get("language") or "",
+        }
+    )
+    _log_voice_event(
+        "run-local",
+        "preview_result",
+        transcript=transcript,
+        details=run_details,
+    )
 
     dispatch: dict[str, Any] | None = None
     speech: dict[str, Any] | None = None
@@ -1232,6 +1403,16 @@ def run_local(
             api_key=resolved_key,
             timeout=timeout,
         )
+        _log_voice_event(
+            "run-local",
+            "dispatch_result",
+            transcript=transcript,
+            details=_dispatch_log_details(
+                dispatch,
+                approved=True,
+                agent_id=agent_id,
+            ),
+        )
         if speak_result:
             speech_text = _dispatch_speech_text(dispatch)
             resolved_speech_adapter = _speech_output_adapter(speech_adapter)
@@ -1245,8 +1426,34 @@ def run_local(
             except (OSError, SpeechOutputUnavailableError, ValueError) as exc:
                 raise click.ClickException(str(exc)) from exc
             speech = {"adapter": resolved_speech_adapter, "spoken": True}
+            _log_voice_event(
+                "run-local",
+                "speech_result",
+                transcript=speech_text,
+                details={"adapter": resolved_speech_adapter, "spoken": True},
+            )
     elif not as_json:
         _format_preview(preview)
+
+    if dispatch is None:
+        _log_voice_event(
+            "run-local",
+            "dispatch_decision",
+            status="skipped",
+            transcript=transcript,
+            details={
+                "approved": False,
+                "attempted": False,
+                "reason": "missing --approve-dispatch",
+            },
+        )
+    elif speech is None:
+        _log_voice_event(
+            "run-local",
+            "speech_decision",
+            status="skipped",
+            details={"spoken": False, "reason": "missing --speak-result"},
+        )
 
     if as_json:
         output_data: dict[str, Any] = {
@@ -1283,6 +1490,54 @@ def run_local(
         click.echo(f"  speech: spoken (adapter={speech['adapter']})")
 
 
+@voice.command("logs")
+@click.option(
+    "--limit",
+    type=click.IntRange(min=1),
+    default=20,
+    show_default=True,
+    help="Number of recent voice events to show.",
+)
+@click.option("--json", "as_json", is_flag=True, help="Print raw JSON events.")
+def logs(limit: int, as_json: bool) -> None:
+    """Show recent local structured voice command events."""
+    logger = _voice_event_logger()
+    events = read_voice_events(logger.path, limit=limit)
+    if as_json:
+        _emit_json(
+            {
+                "enabled": logger.enabled,
+                "path": str(logger.path) if logger.path else "",
+                "events": events,
+            }
+        )
+        return
+
+    click.echo("Voice logs")
+    click.echo(f"  enabled: {logger.enabled}")
+    click.echo(f"  path: {logger.path if logger.path else '-'}")
+    if not events:
+        click.echo("  no voice events logged")
+        return
+
+    for event in events:
+        transcript = event.get("transcript") or {}
+        transcript_info = ""
+        if transcript:
+            transcript_info = (
+                f" transcript_length={transcript.get('length', 0)}"
+                f" transcript_sha256={str(transcript.get('sha256', ''))[:12]}"
+            )
+        click.echo(
+            "  "
+            f"{event.get('timestamp', '-')}"
+            f" {event.get('command', '-')}"
+            f" {event.get('event', '-')}"
+            f" status={event.get('status', '-')}"
+            f"{transcript_info}"
+        )
+
+
 @voice.command("cancel")
 @click.option(
     "--base-url",
@@ -1316,6 +1571,14 @@ def cancel(
         base_url=_base_url(base_url),
         api_key=_api_key(api_key),
         timeout=timeout,
+    )
+    _log_voice_event(
+        "cancel",
+        "cancel_result",
+        details={
+            "status": data.get("status", ""),
+            "fsm_state": data.get("fsm_state", ""),
+        },
     )
     if as_json:
         _emit_json(data)
@@ -1355,6 +1618,15 @@ def status(
         base_url=_base_url(base_url),
         api_key=_api_key(api_key),
         timeout=timeout,
+    )
+    _log_voice_event(
+        "status",
+        "status_result",
+        details={
+            "fsm_state": data.get("fsm_state", ""),
+            "push_to_talk_only": data.get("push_to_talk_only", True),
+            "passive_listening": data.get("passive_listening", False),
+        },
     )
     if as_json:
         _emit_json(data)

@@ -1,5 +1,36 @@
 # Customization Plan
 
+## Voice Control Phase 14
+
+Phase 14 adds local structured logs for explicit voice CLI activity while
+preserving the existing preview-first voice pipeline.
+
+- `[voice_control]` now includes local voice log settings:
+  `voice_logs_enabled`, `voice_logs_path`,
+  `voice_logs_include_full_transcripts`, and `voice_logs_preview_chars`.
+- `jarvis voice` actions write JSONL events for submit, status, cancel,
+  transcribe-file, record-local, capture-preview, run-local, speak, doctor, and
+  hotkey-bridge when logging is enabled.
+- Log events never store raw audio. Transcript text is summarized by length,
+  SHA-256, and a redacted preview by default; full transcript logging requires
+  explicit config opt-in.
+- Approval decisions, skipped dispatches, approved dispatch results, and speech
+  attempts/results are recorded as structured metadata.
+- `jarvis voice logs` shows recent local voice events without dispatching,
+  speaking, recording, or starting hotkeys.
+- Tests cover redaction, local JSONL writing, disabled logging, and CLI log
+  output.
+
+Deferred work remains intentionally untouched in this phase:
+
+- no always-on listening
+- no enabled Fn hotkey capture
+- no approval bypass
+- no automatic dispatch by default
+- no automatic speech playback by default
+- no live Hammerspoon or Swift helper installation
+- no voice-only mode; text input remains available
+
 ## Voice Control Phase 13
 
 Phase 13 adds a safe read-only diagnostics command for local voice setup.

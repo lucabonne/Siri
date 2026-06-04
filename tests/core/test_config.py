@@ -35,6 +35,9 @@ class TestDefaults:
         assert cfg.voice_control.default_record_duration == 0.0
         assert cfg.voice_control.default_api_base_url == ""
         assert cfg.voice_control.speech_output_adapter == ""
+        assert cfg.voice_control.voice_logs_enabled is True
+        assert cfg.voice_control.voice_logs_path.endswith("voice-events.jsonl")
+        assert cfg.voice_control.voice_logs_include_full_transcripts is False
 
     def test_engine_config_defaults(self) -> None:
         ec = EngineConfig()
@@ -117,6 +120,10 @@ class TestTomlLoading:
                     'hotkey_bridge_recorder = "dev-silent"',
                     'hotkey_bridge_input_device = ":1"',
                     'hotkey_bridge_session_id = "session-1"',
+                    "voice_logs_enabled = false",
+                    'voice_logs_path = "/tmp/openjarvis-voice.jsonl"',
+                    "voice_logs_include_full_transcripts = true",
+                    "voice_logs_preview_chars = 24",
                 ]
             )
         )
@@ -135,6 +142,10 @@ class TestTomlLoading:
         assert cfg.voice_control.hotkey_bridge_recorder == "dev-silent"
         assert cfg.voice_control.hotkey_bridge_input_device == ":1"
         assert cfg.voice_control.hotkey_bridge_session_id == "session-1"
+        assert cfg.voice_control.voice_logs_enabled is False
+        assert cfg.voice_control.voice_logs_path == "/tmp/openjarvis-voice.jsonl"
+        assert cfg.voice_control.voice_logs_include_full_transcripts is True
+        assert cfg.voice_control.voice_logs_preview_chars == 24
 
 
 class TestGenerateToml:

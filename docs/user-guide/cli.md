@@ -485,6 +485,7 @@ jarvis voice doctor                                     # Safe local setup diagn
 jarvis voice hotkey-bridge --adapter faster-whisper      # Print bridge command only
 jarvis voice hotkey-bridge --format hammerspoon          # Print disabled helper example
 jarvis voice speak "preview complete"                    # Explicit local TTS only
+jarvis voice logs                                        # Show recent local voice events
 jarvis voice status
 jarvis voice cancel
 ```
@@ -500,6 +501,7 @@ jarvis voice cancel
 | `voice doctor`        | Inspect configured voice defaults and local dependency paths without recording, dispatching, speaking, or starting hotkeys |
 | `voice hotkey-bridge` | Print the disabled macOS hotkey bridge command/example that an external helper can call later |
 | `voice speak TEXT`     | Speak text through an explicit local speech-output adapter; defaults to macOS `say` when available |
+| `voice logs`           | Show recent local structured voice command events |
 | `voice status`          | GET `/v1/voice/ptt/status`                       |
 | `voice cancel`          | POST `/v1/voice/ptt/cancel`                      |
 
@@ -537,6 +539,10 @@ hotkey_bridge_jarvis_bin = "jarvis"
 hotkey_bridge_recorder = "macos"
 hotkey_bridge_input_device = ":0"
 hotkey_bridge_session_id = ""
+voice_logs_enabled = true
+voice_logs_path = "~/.openjarvis/voice-events.jsonl"
+voice_logs_include_full_transcripts = false
+voice_logs_preview_chars = 80
 ```
 
 CLI flags and `OPENJARVIS_BASE_URL` override these config values. This section
@@ -545,12 +551,21 @@ auto-dispatch, or automatic speech playback. Dispatch still requires
 `--approve-dispatch`; speech still requires `voice speak` or
 `voice run-local --speak-result`.
 
-`voice doctor` is read-only. It reports the effective API base URL, configured
-local transcription adapter, model path existence when a local path is required,
+`voice logs` reads recent JSONL events from the local `voice_logs_path`.
+Logging is local-only and records command activity such as submit, status,
+cancel, transcribe-file, record-local, capture-preview, run-local, speak,
+doctor, and hotkey-bridge. Log events never store raw audio. By default,
+transcripts are summarized as length, SHA-256, and a redacted preview; set
+`voice_logs_include_full_transcripts = true` only if you explicitly want full
+transcripts written to disk.
+
+`voice doctor` reports the effective API base URL, configured local
+transcription adapter, model path existence when a local path is required,
 default record duration, configured speech-output adapter, macOS `say`
 availability when relevant, print-only/disabled hotkey bridge state, and whether
-explicit voice approval is still required. It does not request microphone
-access, download models, call dispatch, speak text, or start a hotkey listener.
+explicit voice approval is still required. Apart from optional local structured
+logging, it does not request microphone access, download models, call dispatch,
+speak text, or start a hotkey listener.
 
 `voice hotkey-bridge` is a print-only boundary for future macOS Fn or
 push-to-talk integration. It formats a `jarvis voice run-local ...` command, or
