@@ -136,6 +136,49 @@ def _emit_json(data: dict[str, Any]) -> None:
     click.echo(json.dumps(data, indent=2, sort_keys=True))
 
 
+def _voice_logs_export_format(path: Path, requested: str) -> str:
+    if requested != "auto":
+        return requested
+    return "json" if path.suffix.lower() == ".json" else "jsonl"
+
+
+def _validate_voice_logs_export_path(path: Path) -> None:
+    if not str(path):
+        raise click.ClickException("Export path is required")
+    if "://" in str(path):
+        raise click.ClickException("Export path must be a local filesystem path")
+    if path.exists() and path.is_dir():
+        raise click.ClickException(f"Export path is a directory: {path}")
+    parent = path.parent if str(path.parent) else Path(".")
+    if not parent.exists():
+        raise click.ClickException(
+            f"Export parent directory does not exist: {parent}. "
+            "Create it first, then rerun the export."
+        )
+    if not parent.is_dir():
+        raise click.ClickException(f"Export parent path is not a directory: {parent}")
+
+
+def _write_voice_logs_export(
+    *,
+    events: list[dict[str, Any]],
+    path: Path,
+    output_format: str,
+) -> None:
+    _validate_voice_logs_export_path(path)
+    if output_format == "json":
+        content = json.dumps(events, indent=2, sort_keys=True) + "\n"
+    else:
+        content = "".join(
+            json.dumps(event, sort_keys=True, separators=(",", ":")) + "\n"
+            for event in events
+        )
+    try:
+        path.write_text(content, encoding="utf-8")
+    except OSError as exc:
+        raise click.ClickException(f"Could not write voice log export: {exc}") from exc
+
+
 def _voice_event_logger() -> VoiceEventLogger:
     return VoiceEventLogger(voice_log_settings_from_config(load_config()))
 
@@ -1518,6 +1561,20 @@ def run_local(
     help="Show only approval or dispatch-related events.",
 )
 @click.option("--json", "as_json", is_flag=True, help="Print JSON events.")
+@click.option(
+    "--export",
+    "export_path",
+    type=click.Path(path_type=Path, dir_okay=False),
+    default=None,
+    help="Write filtered events to a local export file.",
+)
+@click.option(
+    "--export-format",
+    type=click.Choice(["auto", "jsonl", "json"]),
+    default="auto",
+    show_default=True,
+    help="Export format. Auto uses .json for JSON and JSONL otherwise.",
+)
 def logs(
     limit: int,
     event_types: tuple[str, ...],
@@ -1526,6 +1583,8 @@ def logs(
     failure: bool,
     approval_dispatch_only: bool,
     as_json: bool,
+    export_path: Path | None,
+    export_format: str,
 ) -> None:
     """Show recent local structured voice command events."""
     if success and failure:
@@ -1540,27 +1599,45 @@ def logs(
         success=False if failure else True if success else None,
         approval_dispatch_only=approval_dispatch_only,
     )
-    if as_json:
-        _emit_json(
-            {
-                "enabled": logger.enabled,
-                "path": str(logger.path) if logger.path else "",
-                "filters": {
-                    "event_types": list(event_types),
-                    "statuses": list(statuses),
-                    "success": success,
-                    "failure": failure,
-                    "approval_dispatch_only": approval_dispatch_only,
-                    "limit": limit,
-                },
-                "events": events,
-            }
+    exported_format = ""
+    if export_path is not None:
+        exported_format = _voice_logs_export_format(export_path, export_format)
+        _write_voice_logs_export(
+            events=events,
+            path=export_path,
+            output_format=exported_format,
         )
+    if as_json:
+        output: dict[str, Any] = {
+            "enabled": logger.enabled,
+            "path": str(logger.path) if logger.path else "",
+            "filters": {
+                "event_types": list(event_types),
+                "statuses": list(statuses),
+                "success": success,
+                "failure": failure,
+                "approval_dispatch_only": approval_dispatch_only,
+                "limit": limit,
+            },
+            "events": events,
+        }
+        if export_path is not None:
+            output["export"] = {
+                "path": str(export_path),
+                "format": exported_format,
+                "count": len(events),
+            }
+        _emit_json(output)
         return
 
     click.echo("Voice logs")
     click.echo(f"  enabled: {logger.enabled}")
     click.echo(f"  path: {logger.path if logger.path else '-'}")
+    if export_path is not None:
+        click.echo(
+            f"  export: wrote {len(events)} event(s) to {export_path}"
+            f" ({exported_format})"
+        )
     if event_types:
         click.echo(f"  event_filter: {', '.join(event_types)}")
     if statuses:

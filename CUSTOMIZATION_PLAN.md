@@ -1,5 +1,34 @@
 # Customization Plan
 
+## Voice Control Phase 16
+
+Phase 16 adds explicit local voice event export support without changing the
+voice execution safety boundary.
+
+- `jarvis voice logs --export PATH` writes the same filtered local events shown
+  by `jarvis voice logs`.
+- Exports preserve existing filters for exact event type, exact status,
+  success, failure, approval/dispatch-only metadata, and `--limit`.
+- Export output supports JSONL by default and JSON via `.json` paths or
+  `--export-format json`.
+- Export remains local-only. Paths must be local filesystem paths, and parent
+  directories must already exist.
+- Exports do not include raw audio. Transcript redaction remains the default,
+  and full transcript text is exposed only when it was explicitly logged before
+  the event was written.
+- Tests cover filtered export, JSON/JSONL output, redaction preservation, empty
+  log export, and invalid export path behavior.
+
+Deferred work remains intentionally untouched in this phase:
+
+- no always-on listening
+- no enabled Fn hotkey capture
+- no approval bypass
+- no automatic dispatch by default
+- no automatic speech playback by default
+- no live Hammerspoon or Swift helper installation
+- no voice-only mode; text input remains available
+
 ## Voice Control Phase 15
 
 Phase 15 adds a safe voice history/inspection layer on top of the existing

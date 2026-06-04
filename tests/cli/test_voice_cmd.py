@@ -222,6 +222,149 @@ def test_voice_logs_empty_log_outputs_empty_json(monkeypatch, tmp_path: Path) ->
     assert data["filters"]["event_types"] == ["missing"]
 
 
+def test_voice_logs_export_jsonl_preserves_filters(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    log_path = tmp_path / "voice-events.jsonl"
+    export_path = tmp_path / "filtered.jsonl"
+    logger = voice_cmd.VoiceEventLogger(
+        voice_cmd.voice_log_settings_from_config(
+            _safe_config(voice_logs_enabled=True, voice_logs_path=str(log_path))
+        )
+    )
+    logger.record(command="status", event="status_result")
+    logger.record(
+        command="run-local",
+        event="dispatch_result",
+        details={"dispatch_status": "ok"},
+    )
+    monkeypatch.setattr(
+        voice_cmd,
+        "load_config",
+        lambda: _safe_config(voice_logs_enabled=True, voice_logs_path=str(log_path)),
+    )
+
+    result = CliRunner().invoke(
+        voice_cmd.voice,
+        [
+            "logs",
+            "--approval-dispatch-only",
+            "--export",
+            str(export_path),
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "export: wrote 1 event(s)" in result.output
+    exported_lines = export_path.read_text(encoding="utf-8").splitlines()
+    exported = [json.loads(line) for line in exported_lines]
+    assert [event["event"] for event in exported] == ["dispatch_result"]
+
+
+def test_voice_logs_export_json_output(monkeypatch, tmp_path: Path) -> None:
+    log_path = tmp_path / "voice-events.jsonl"
+    export_path = tmp_path / "filtered.json"
+    logger = voice_cmd.VoiceEventLogger(
+        voice_cmd.voice_log_settings_from_config(
+            _safe_config(voice_logs_enabled=True, voice_logs_path=str(log_path))
+        )
+    )
+    logger.record(command="status", event="status_result")
+    monkeypatch.setattr(
+        voice_cmd,
+        "load_config",
+        lambda: _safe_config(voice_logs_enabled=True, voice_logs_path=str(log_path)),
+    )
+
+    result = CliRunner().invoke(
+        voice_cmd.voice,
+        ["logs", "--export", str(export_path), "--export-format", "json"],
+    )
+
+    assert result.exit_code == 0
+    exported = json.loads(export_path.read_text(encoding="utf-8"))
+    assert isinstance(exported, list)
+    assert len(exported) == 1
+    assert exported[0]["command"] == "status"
+    assert exported[0]["event"] == "status_result"
+    assert exported[0]["status"] == "ok"
+    assert "timestamp" in exported[0]
+
+
+def test_voice_logs_export_preserves_redaction(monkeypatch, tmp_path: Path) -> None:
+    log_path = tmp_path / "voice-events.jsonl"
+    export_path = tmp_path / "redacted.jsonl"
+    logger = voice_cmd.VoiceEventLogger(
+        voice_cmd.voice_log_settings_from_config(
+            _safe_config(voice_logs_enabled=True, voice_logs_path=str(log_path))
+        )
+    )
+    logger.record(
+        command="submit",
+        event="preview_result",
+        transcript="email luca@example.com token sk-1234567890abcdef",
+    )
+    monkeypatch.setattr(
+        voice_cmd,
+        "load_config",
+        lambda: _safe_config(voice_logs_enabled=True, voice_logs_path=str(log_path)),
+    )
+
+    result = CliRunner().invoke(
+        voice_cmd.voice,
+        ["logs", "--export", str(export_path)],
+    )
+
+    assert result.exit_code == 0
+    exported_text = export_path.read_text(encoding="utf-8")
+    exported = json.loads(exported_text)
+    assert exported["transcript"]["preview"] == "email [email] token [secret]"
+    assert "text" not in exported["transcript"]
+    assert "luca@example.com" not in exported_text
+    assert "sk-1234567890abcdef" not in exported_text
+
+
+def test_voice_logs_export_empty_log(monkeypatch, tmp_path: Path) -> None:
+    log_path = tmp_path / "voice-events.jsonl"
+    export_path = tmp_path / "empty.json"
+    monkeypatch.setattr(
+        voice_cmd,
+        "load_config",
+        lambda: _safe_config(voice_logs_enabled=True, voice_logs_path=str(log_path)),
+    )
+
+    result = CliRunner().invoke(
+        voice_cmd.voice,
+        ["logs", "--event", "missing", "--export", str(export_path)],
+    )
+
+    assert result.exit_code == 0
+    assert json.loads(export_path.read_text(encoding="utf-8")) == []
+
+
+def test_voice_logs_export_rejects_missing_parent(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    log_path = tmp_path / "voice-events.jsonl"
+    missing_parent_export = tmp_path / "missing" / "export.jsonl"
+    monkeypatch.setattr(
+        voice_cmd,
+        "load_config",
+        lambda: _safe_config(voice_logs_enabled=True, voice_logs_path=str(log_path)),
+    )
+
+    result = CliRunner().invoke(
+        voice_cmd.voice,
+        ["logs", "--export", str(missing_parent_export)],
+    )
+
+    assert result.exit_code != 0
+    assert "Export parent directory does not exist" in result.output
+    assert not missing_parent_export.exists()
+
+
 def test_voice_doctor_json_reports_available_configured_setup(
     monkeypatch,
     tmp_path: Path,

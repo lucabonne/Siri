@@ -488,6 +488,8 @@ jarvis voice speak "preview complete"                    # Explicit local TTS on
 jarvis voice logs                                        # Show recent local voice events
 jarvis voice logs --event dispatch_result --json         # Filter local events as JSON
 jarvis voice logs --approval-dispatch-only --limit 10
+jarvis voice logs --export ./voice-events.jsonl          # Export filtered events as JSONL
+jarvis voice logs --export ./voice-events.json           # Export filtered events as JSON
 jarvis voice status
 jarvis voice cancel
 ```
@@ -561,11 +563,20 @@ dispatch, approve, speak, call the API, or start hotkeys. Use `--limit N` to
 show the last N matching events, repeat `--event TYPE` or `--status STATUS` to
 filter exact event/status values, use `--success` or `--failure` for outcome
 filtering, use `--approval-dispatch-only` to show approval/dispatch-related
-events, and pass `--json` for machine-readable output. Log events never store
-raw audio. By default, transcripts are summarized as length, SHA-256, and a
-redacted preview; `voice logs --json` returns that same stored summary. Set
-`voice_logs_include_full_transcripts = true` only if you explicitly want full
-transcripts written to disk and exposed through later log inspection.
+events, and pass `--json` for machine-readable stdout.
+
+Use `--export PATH` to write the same filtered events to a local file for
+backup or offline inspection. Export defaults to JSONL, uses JSON automatically
+for `.json` paths, and can be forced with `--export-format jsonl` or
+`--export-format json`. Export paths must be local filesystem paths; the parent
+directory must already exist, and the command does not create missing parent
+directories implicitly.
+
+Log exports never include raw audio. By default, transcripts are summarized as
+length, SHA-256, and a redacted preview; `voice logs --json` and
+`voice logs --export` return that same stored summary. Full transcript text is
+available only for events that were originally written after
+`voice_logs_include_full_transcripts = true` was explicitly enabled.
 
 `voice doctor` reports the effective API base URL, configured local
 transcription adapter, model path existence when a local path is required,
