@@ -1,5 +1,33 @@
 # Customization Plan
 
+## Voice Control Phase 18
+
+Phase 18 adds a safe read-only Mission Control status panel for the local voice
+stack without changing the voice execution safety boundary.
+
+- `/v1/voice/ptt/status` now includes a `voice_stack` block with FSM-adjacent
+  local configuration metadata for Mission Control.
+- Mission Control's Voice tab shows the FSM state, configured transcription
+  adapter, model path status, default record duration, speech-output backend,
+  disabled/print-only hotkey bridge state, and explicit approval requirement.
+- The panel shows recent sanitized structured voice events when local voice
+  logging is enabled, using redacted transcript previews and omitting local
+  audio/path details.
+- The existing typed/mock voice preview flow remains available, but status-loaded
+  latest transcripts are not displayed as full text in the panel.
+- Tests cover safe status flags, read-only voice stack fields, and redacted
+  recent event summaries.
+
+Deferred work remains intentionally untouched in this phase:
+
+- no always-on listening
+- no enabled Fn hotkey capture
+- no approval bypass
+- no automatic dispatch by default
+- no automatic speech playback by default
+- no live Hammerspoon or Swift helper installation
+- no voice-only mode; text input remains available
+
 ## Voice Control Phase 17
 
 Phase 17 adds explicit local voice log cleanup and retention controls without

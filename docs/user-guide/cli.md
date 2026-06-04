@@ -509,7 +509,7 @@ jarvis voice cancel
 | `voice hotkey-bridge` | Print the disabled macOS hotkey bridge command/example that an external helper can call later |
 | `voice speak TEXT`     | Speak text through an explicit local speech-output adapter; defaults to macOS `say` when available |
 | `voice logs`           | Inspect, export, or explicitly clean up local structured voice command events |
-| `voice status`          | GET `/v1/voice/ptt/status`                       |
+| `voice status`          | GET `/v1/voice/ptt/status`, including the same read-only voice stack fields Mission Control uses |
 | `voice cancel`          | POST `/v1/voice/ptt/cancel`                      |
 
 This command does not listen in the background, capture Fn hotkeys, call a cloud
@@ -597,6 +597,14 @@ availability when relevant, print-only/disabled hotkey bridge state, and whether
 explicit voice approval is still required. Apart from optional local structured
 logging, it does not request microphone access, download models, call dispatch,
 speak text, or start a hotkey listener.
+
+Mission Control's Voice tab reads `/v1/voice/ptt/status` for a read-only status
+panel showing the FSM state, configured transcription adapter, model path
+status, default record duration, speech output backend, disabled/print-only
+hotkey bridge state, approval requirement, and recent redacted voice events
+when local voice logging is enabled. It does not record audio, start hotkeys,
+approve, dispatch, or speak, and it does not show raw audio or full transcript
+text from status events.
 
 `voice hotkey-bridge` is a print-only boundary for future macOS Fn or
 push-to-talk integration. It formats a `jarvis voice run-local ...` command, or

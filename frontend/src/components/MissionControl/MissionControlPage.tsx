@@ -99,6 +99,7 @@ import type {
   TerminalContextSnapshot,
   VisualContext,
   VoicePttStatus,
+  VoiceStackStatus,
   VoiceSubmitTranscriptResponse,
   VoiceDispatchResponse,
   WorkspaceAgentConfig,
@@ -294,6 +295,29 @@ function ContextTile({
       )}
     </div>
   );
+}
+
+function formatVoiceDuration(value: number | null | undefined): string {
+  return value && value > 0 ? `${value}s` : 'Requires --duration';
+}
+
+function modelPathStatus(model: VoiceStackStatus['model_path'] | undefined): string {
+  if (!model) return 'Unknown';
+  if (!model.required) return 'Not required';
+  if (model.exists === true) return 'Found';
+  if (model.exists === false) return 'Missing';
+  return 'Required';
+}
+
+function eventTranscriptDetail(
+  transcript: VoiceStackStatus['recent_events']['events'][number]['transcript'],
+): string {
+  if (transcript.preview) return transcript.preview;
+  if (transcript.full_transcript_logged) return 'Full transcript logged; panel shows redacted summaries only';
+  if (typeof transcript.length === 'number' && transcript.length > 0) {
+    return `Transcript length ${transcript.length}`;
+  }
+  return 'No transcript summary';
 }
 
 function MissionTabs({
@@ -1857,6 +1881,8 @@ function VoiceSection() {
 
   const recording = status?.recording ?? false;
   const latest = status?.latest;
+  const stack = status?.voice_stack;
+  const recentVoiceEvents = stack?.recent_events.events ?? [];
   const intent = preview?.intent_preview || latest?.intent_preview;
   const canSubmit = busy === 'idle' && fsmState === 'idle' && transcript.trim().length > 0;
   const canApprove = busy === 'idle' && fsmState === 'awaiting_approval' && Boolean(preview?.transcript.trim());
@@ -1870,13 +1896,108 @@ function VoiceSection() {
       : busy === 'cancelling'
         ? 'Cancelling'
         : fsmState.replace(/_/g, ' ');
-  const displayedTranscript = preview?.transcript || transcript || latest?.transcript || '';
+  const displayedTranscript = preview?.transcript || transcript || '';
   const completionDetail = dispatchResult?.dispatched
     ? `Dispatched${dispatchResult.agent_id ? ` to ${dispatchResult.agent_id}` : ''}`
     : dispatchResult?.reason || dispatchResult?.error?.message || 'No dispatch yet';
 
   return (
-    <div className="grid gap-4 xl:grid-cols-[0.9fr_1.1fr]">
+    <div className="grid gap-4">
+      <ShellPanel title="Voice Control Status" action="read only">
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <ContextTile
+            icon={<Mic2 size={15} />}
+            label="FSM"
+            value={stateLabel}
+            detail={status?.push_to_talk_only ? 'Push-to-talk only' : 'Voice status pending'}
+          />
+          <ContextTile
+            icon={<Cpu size={15} />}
+            label="Transcription"
+            value={stack?.transcription_adapter.effective || 'Unknown'}
+            detail={stack?.transcription_adapter.source || 'No adapter configured'}
+          />
+          <ContextTile
+            icon={<Package size={15} />}
+            label="Model Path"
+            value={modelPathStatus(stack?.model_path)}
+            detail={stack?.model_path.value ? compactPath(stack.model_path.value) : 'No model path configured'}
+          />
+          <ContextTile
+            icon={<Clock3 size={15} />}
+            label="Default Duration"
+            value={formatVoiceDuration(stack?.record_duration.effective_default_seconds)}
+            detail={stack?.record_duration.duration_flag_required ? 'CLI flag required' : 'Configured default'}
+          />
+          <ContextTile
+            icon={<Activity size={15} />}
+            label="Speech Output"
+            value={stack?.speech_output.backend || 'Unknown'}
+            detail={stack?.macos_say.relevant ? `macOS say ${stack.macos_say.available ? 'available' : 'unavailable'}` : 'Explicit only'}
+          />
+          <ContextTile
+            icon={<Ban size={15} />}
+            label="Hotkey Bridge"
+            value={stack?.hotkey_bridge.enabled ? 'Enabled' : 'Disabled'}
+            detail={stack?.hotkey_bridge.print_only ? 'Print-only preview' : 'No listener started'}
+          />
+          <ContextTile
+            icon={<ShieldCheck size={15} />}
+            label="Approval"
+            value={(stack?.approval.required ?? status?.requires_explicit_approval) ? 'Required' : 'Not required'}
+            detail="No approval bypass"
+          />
+          <ContextTile
+            icon={<LockKeyhole size={15} />}
+            label="Safety"
+            value={stack?.safety.always_on_listening ? 'Listening' : 'Passive'}
+            detail="No auto dispatch or speech"
+          />
+        </div>
+
+        <div className="mt-5">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <h3 className="text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--color-text-tertiary)' }}>
+              Recent redacted voice events
+            </h3>
+            <StatusPill tone={stack?.recent_events.enabled ? 'quiet' : 'watch'}>
+              {stack?.recent_events.enabled ? 'Logs enabled' : 'Logs unavailable'}
+            </StatusPill>
+          </div>
+          {recentVoiceEvents.length ? (
+            <div className="grid gap-2">
+              {recentVoiceEvents.map((event, index) => (
+                <div
+                  key={`${event.timestamp}-${event.command}-${event.event}-${index}`}
+                  className="rounded-md border px-3 py-2"
+                  style={{
+                    borderColor: 'var(--color-border)',
+                    background: 'var(--color-bg-secondary)',
+                  }}
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                    <span className="font-medium" style={{ color: 'var(--color-text)' }}>
+                      {event.command || 'voice'} / {event.event || 'event'}
+                    </span>
+                    <span style={{ color: 'var(--color-text-tertiary)' }}>
+                      {formatTime(event.timestamp)}
+                    </span>
+                  </div>
+                  <div className="mt-1 text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+                    status={event.status || 'unknown'} · {eventTranscriptDetail(event.transcript)}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm" style={{ color: 'var(--color-text-tertiary)' }}>
+              No local voice events available.
+            </p>
+          )}
+        </div>
+      </ShellPanel>
+
+      <div className="grid gap-4 xl:grid-cols-[0.9fr_1.1fr]">
       <ShellPanel title="Voice Push-to-Talk" action="mock transcript">
         <div className="grid gap-3 md:grid-cols-3">
           <ContextTile
@@ -2059,6 +2180,7 @@ function VoiceSection() {
           />
         </div>
       </ShellPanel>
+      </div>
     </div>
   );
 }

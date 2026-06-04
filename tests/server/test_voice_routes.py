@@ -11,6 +11,10 @@ from fastapi.testclient import TestClient  # noqa: E402
 
 from openjarvis.core.config import JarvisConfig  # noqa: E402
 from openjarvis.server.api_routes import voice_router  # noqa: E402
+from openjarvis.voice.event_log import (  # noqa: E402
+    VoiceEventLogger,
+    voice_log_settings_from_config,
+)
 from openjarvis.voice.models import TranscriptionUnavailableError  # noqa: E402
 from openjarvis.voice.ptt import RecordingHandle, VoicePushToTalkService  # noqa: E402
 
@@ -76,6 +80,8 @@ class FakeUnavailableTranscriber:
 def client(tmp_path: Path) -> TestClient:
     app = FastAPI()
     config = JarvisConfig()
+    config.voice_control.voice_logs_enabled = False
+    config.voice_control.voice_logs_path = str(tmp_path / "voice-events.jsonl")
     service = VoicePushToTalkService(
         config=config,
         speech_backend=FakeBackend(),
@@ -96,6 +102,65 @@ def test_voice_status_is_push_to_talk_only(client: TestClient) -> None:
     assert data["wake_word_enabled"] is False
     assert data["passive_listening"] is False
     assert data["fsm_state"] == "idle"
+    assert data["voice_stack"]["safety"]["always_on_listening"] is False
+    assert data["voice_stack"]["hotkey_bridge"]["print_only"] is True
+    assert data["voice_stack"]["hotkey_bridge"]["enabled"] is False
+    assert data["voice_stack"]["approval"]["required"] is True
+
+
+def test_voice_status_includes_safe_stack_config(client: TestClient) -> None:
+    resp = client.get("/v1/voice/ptt/status")
+
+    assert resp.status_code == 200
+    stack = resp.json()["voice_stack"]
+    assert stack["transcription_adapter"]["effective"] == "disabled"
+    assert stack["model_path"]["source"] == "[speech].model"
+    assert stack["record_duration"]["duration_flag_required"] is True
+    assert stack["speech_output"]["backend"] == "macos-say"
+    assert stack["safety"]["dispatch_called"] is False
+    assert stack["safety"]["speech_called"] is False
+    assert stack["safety"]["approval_bypassed"] is False
+    assert stack["recent_events"]["events"] == []
+
+
+def test_voice_status_recent_events_are_redacted(tmp_path: Path) -> None:
+    app = FastAPI()
+    config = JarvisConfig()
+    config.voice_control.voice_logs_enabled = True
+    config.voice_control.voice_logs_path = str(tmp_path / "voice-events.jsonl")
+    config.voice_control.voice_logs_include_full_transcripts = False
+    config.voice_control.voice_logs_preview_chars = 120
+    logger = VoiceEventLogger(voice_log_settings_from_config(config))
+    logger.record(
+        command="capture-preview",
+        event="preview_result",
+        transcript="email me at luca@example.com with token-123456789",
+        details={
+            "recording_path": str(tmp_path / "voice.wav"),
+            "dispatch_skipped": True,
+            "approved": False,
+        },
+    )
+    service = VoicePushToTalkService(
+        config=config,
+        speech_backend=FakeBackend(),
+        recorder=FakeRecorder(tmp_path),
+        permission_middleware=FakePermissionMiddleware(),
+    )
+    app.state.voice_ptt_service = service
+    app.include_router(voice_router)
+
+    resp = TestClient(app).get("/v1/voice/ptt/status")
+
+    assert resp.status_code == 200
+    events = resp.json()["voice_stack"]["recent_events"]["events"]
+    assert len(events) == 1
+    event = events[0]
+    assert event["transcript"]["preview"] == "email me at [email] with [secret]"
+    assert event["transcript"]["full_transcript_logged"] is False
+    assert "text" not in event["transcript"]
+    assert "recording_path" not in event["details"]
+    assert event["details"] == {"dispatch_skipped": True, "approved": False}
 
 
 def test_voice_start_requires_approval(client: TestClient) -> None:

@@ -1046,6 +1046,189 @@ def _get_voice_session_fsm(request: Request):
     return fsm
 
 
+def _get_voice_config(request: Request) -> Any:
+    config = getattr(request.app.state, "config", None)
+    if config is not None:
+        return config
+    service = getattr(request.app.state, "voice_ptt_service", None)
+    config = getattr(service, "_config", None)
+    if config is not None:
+        return config
+    from openjarvis.core.config import load_config
+
+    return load_config()
+
+
+def _looks_like_local_path(value: str) -> bool:
+    return (
+        "/" in value or "\\" in value or value.startswith(".") or value.startswith("~")
+    )
+
+
+def _voice_model_path_status(config: Any, adapter_id: str) -> dict[str, Any]:
+    from os import environ
+    from pathlib import Path
+
+    voice_control = getattr(config, "voice_control", None)
+    configured_model = str(getattr(voice_control, "model_path", "") or "")
+    if configured_model:
+        required = _looks_like_local_path(configured_model)
+        exists = Path(configured_model).expanduser().exists() if required else None
+        return {
+            "value": configured_model,
+            "source": "[voice_control].model_path",
+            "required": required,
+            "exists": exists,
+        }
+
+    if adapter_id == "whisper.cpp":
+        model_path = environ.get("WHISPER_CPP_MODEL", "")
+        return {
+            "value": model_path,
+            "source": "WHISPER_CPP_MODEL" if model_path else "",
+            "required": True,
+            "exists": Path(model_path).expanduser().exists() if model_path else False,
+        }
+
+    return {
+        "value": str(getattr(config.speech, "model", "") or ""),
+        "source": "[speech].model",
+        "required": False,
+        "exists": None,
+    }
+
+
+def _safe_voice_event_details(details: Any) -> dict[str, Any]:
+    if not isinstance(details, dict):
+        return {}
+    safe: dict[str, Any] = {}
+    blocked_fragments = ("path", "audio", "transcript")
+    for key, value in details.items():
+        if any(fragment in str(key).lower() for fragment in blocked_fragments):
+            continue
+        if isinstance(value, (str, int, float, bool)) or value is None:
+            safe[key] = value
+        elif isinstance(value, (list, tuple)):
+            safe[key] = [str(item) for item in value[:4]]
+    return safe
+
+
+def _safe_voice_event(event: dict[str, Any]) -> dict[str, Any]:
+    transcript = event.get("transcript")
+    transcript_summary: dict[str, Any] = {}
+    if isinstance(transcript, dict):
+        transcript_summary = {
+            "length": transcript.get("length", 0),
+            "sha256": transcript.get("sha256", ""),
+            "preview": transcript.get("preview", ""),
+            "full_transcript_logged": "text" in transcript,
+        }
+    return {
+        "timestamp": event.get("timestamp", ""),
+        "command": event.get("command", ""),
+        "event": event.get("event", ""),
+        "status": event.get("status", ""),
+        "transcript": transcript_summary,
+        "details": _safe_voice_event_details(event.get("details")),
+    }
+
+
+def _recent_voice_events(config: Any, *, limit: int = 5) -> dict[str, Any]:
+    from openjarvis.voice.event_log import (
+        query_voice_events,
+        voice_log_settings_from_config,
+    )
+
+    settings = voice_log_settings_from_config(config)
+    events = query_voice_events(settings.path, limit=limit) if settings.enabled else []
+    return {
+        "enabled": settings.enabled,
+        "include_full_transcripts": settings.include_full_transcripts,
+        "events": [_safe_voice_event(event) for event in events],
+    }
+
+
+def _voice_stack_status(request: Request) -> dict[str, Any]:
+    import shutil
+
+    from openjarvis.voice.speech_output import LOCAL_SPEECH_OUTPUT_ADAPTERS
+    from openjarvis.voice.transcription import LOCAL_TRANSCRIPTION_ADAPTERS
+
+    config = _get_voice_config(request)
+    voice_control = getattr(config, "voice_control", None)
+    configured_adapter = str(getattr(voice_control, "transcription_adapter", "") or "")
+    speech_backend = str(getattr(config.speech, "backend", "") or "")
+    if configured_adapter:
+        effective_adapter = configured_adapter
+        adapter_source = "[voice_control].transcription_adapter"
+    elif speech_backend in LOCAL_TRANSCRIPTION_ADAPTERS:
+        effective_adapter = speech_backend
+        adapter_source = "[speech].backend"
+    else:
+        effective_adapter = "disabled"
+        adapter_source = ""
+
+    raw_duration = getattr(voice_control, "default_record_duration", 0.0) or 0.0
+    try:
+        configured_duration = float(raw_duration)
+    except (TypeError, ValueError):
+        configured_duration = 0.0
+
+    speech_adapter = str(getattr(voice_control, "speech_output_adapter", "") or "")
+    effective_speech_adapter = speech_adapter or "macos-say"
+
+    return {
+        "transcription_adapter": {
+            "configured": configured_adapter,
+            "effective": effective_adapter,
+            "source": adapter_source,
+            "supported": effective_adapter in LOCAL_TRANSCRIPTION_ADAPTERS,
+        },
+        "model_path": _voice_model_path_status(config, effective_adapter),
+        "record_duration": {
+            "configured_default_seconds": configured_duration,
+            "effective_default_seconds": configured_duration
+            if configured_duration > 0
+            else None,
+            "duration_flag_required": configured_duration <= 0,
+        },
+        "speech_output": {
+            "configured": speech_adapter,
+            "effective": effective_speech_adapter,
+            "supported": effective_speech_adapter in LOCAL_SPEECH_OUTPUT_ADAPTERS,
+            "backend": effective_speech_adapter,
+        },
+        "macos_say": {
+            "relevant": effective_speech_adapter == "macos-say",
+            "available": bool(shutil.which("say")),
+        },
+        "hotkey_bridge": {
+            "configured_format": str(
+                getattr(voice_control, "hotkey_bridge_format", "command") or "command"
+            ),
+            "print_only": True,
+            "enabled": False,
+            "listener_started": False,
+            "global_key_capture": False,
+        },
+        "approval": {
+            "required": bool(
+                getattr(config.speech, "require_explicit_voice_approval", True)
+            ),
+            "config": "[speech].require_explicit_voice_approval",
+        },
+        "recent_events": _recent_voice_events(config),
+        "safety": {
+            "always_on_listening": False,
+            "dispatch_called": False,
+            "speech_called": False,
+            "hotkeys_started": False,
+            "approval_bypassed": False,
+            "voice_only_mode": False,
+        },
+    }
+
+
 def _voice_error(exc: Exception) -> HTTPException:
     from openjarvis.voice import VoicePermissionError, VoiceRecordingError
 
@@ -1099,6 +1282,7 @@ async def voice_recording_status(request: Request):
     data = _get_voice_ptt_service(request).status()
     fsm = _get_voice_session_fsm(request)
     data["fsm_state"] = fsm.state.value
+    data["voice_stack"] = _voice_stack_status(request)
     return data
 
 

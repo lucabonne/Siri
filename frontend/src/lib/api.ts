@@ -878,6 +878,72 @@ export interface VoiceSession {
   context: Record<string, unknown>;
 }
 
+export interface VoiceStackStatus {
+  transcription_adapter: {
+    configured: string;
+    effective: string;
+    source: string;
+    supported: boolean;
+  };
+  model_path: {
+    value: string;
+    source: string;
+    required: boolean;
+    exists: boolean | null;
+  };
+  record_duration: {
+    configured_default_seconds: number;
+    effective_default_seconds: number | null;
+    duration_flag_required: boolean;
+  };
+  speech_output: {
+    configured: string;
+    effective: string;
+    supported: boolean;
+    backend: string;
+  };
+  macos_say: {
+    relevant: boolean;
+    available: boolean;
+  };
+  hotkey_bridge: {
+    configured_format: string;
+    print_only: boolean;
+    enabled: boolean;
+    listener_started: boolean;
+    global_key_capture: boolean;
+  };
+  approval: {
+    required: boolean;
+    config: string;
+  };
+  recent_events: {
+    enabled: boolean;
+    include_full_transcripts: boolean;
+    events: Array<{
+      timestamp: string;
+      command: string;
+      event: string;
+      status: string;
+      transcript: {
+        length?: number;
+        sha256?: string;
+        preview?: string;
+        full_transcript_logged?: boolean;
+      };
+      details: Record<string, string | number | boolean | null | string[]>;
+    }>;
+  };
+  safety: {
+    always_on_listening: boolean;
+    dispatch_called: boolean;
+    speech_called: boolean;
+    hotkeys_started: boolean;
+    approval_bypassed: boolean;
+    voice_only_mode: boolean;
+  };
+}
+
 export interface VoicePttStatus {
   state: 'idle' | 'recording' | string;
   fsm_state: 'idle' | 'listening' | 'transcribing' | 'awaiting_approval' | 'dispatching' | 'completed' | 'failed' | string;
@@ -892,6 +958,7 @@ export interface VoicePttStatus {
   active_agent_id: string;
   transcription_available: boolean;
   latest: VoiceSession | null;
+  voice_stack?: VoiceStackStatus;
 }
 
 export interface VoicePttStartResponse {
