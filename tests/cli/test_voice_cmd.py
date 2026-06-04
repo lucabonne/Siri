@@ -151,6 +151,77 @@ def test_voice_logs_command_outputs_recent_events(monkeypatch, tmp_path: Path) -
     assert "sk-1234567890abcdef" not in result.output
 
 
+def test_voice_logs_json_filters_without_exposing_redacted_text(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    log_path = tmp_path / "voice-events.jsonl"
+    logger = voice_cmd.VoiceEventLogger(
+        voice_cmd.voice_log_settings_from_config(
+            _safe_config(voice_logs_enabled=True, voice_logs_path=str(log_path))
+        )
+    )
+    logger.record(
+        command="submit",
+        event="preview_result",
+        transcript="email luca@example.com",
+        details={"approval_required": True, "approved": False},
+    )
+    logger.record(
+        command="submit",
+        event="dispatch_decision",
+        status="skipped",
+        transcript="token sk-1234567890abcdef",
+        details={"approved": False, "attempted": False},
+    )
+    monkeypatch.setattr(
+        voice_cmd,
+        "load_config",
+        lambda: _safe_config(voice_logs_enabled=True, voice_logs_path=str(log_path)),
+    )
+
+    result = CliRunner().invoke(
+        voice_cmd.voice,
+        [
+            "logs",
+            "--approval-dispatch-only",
+            "--status",
+            "skipped",
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    data = json.loads(result.output)
+    assert data["filters"]["approval_dispatch_only"] is True
+    assert data["filters"]["statuses"] == ["skipped"]
+    assert [event["event"] for event in data["events"]] == ["dispatch_decision"]
+    transcript = data["events"][0]["transcript"]
+    assert transcript["preview"] == "token [secret]"
+    assert "text" not in transcript
+    assert "sk-1234567890abcdef" not in result.output
+    assert "luca@example.com" not in result.output
+
+
+def test_voice_logs_empty_log_outputs_empty_json(monkeypatch, tmp_path: Path) -> None:
+    log_path = tmp_path / "voice-events.jsonl"
+    monkeypatch.setattr(
+        voice_cmd,
+        "load_config",
+        lambda: _safe_config(voice_logs_enabled=True, voice_logs_path=str(log_path)),
+    )
+
+    result = CliRunner().invoke(
+        voice_cmd.voice, ["logs", "--event", "missing", "--json"]
+    )
+
+    assert result.exit_code == 0
+    data = json.loads(result.output)
+    assert data["enabled"] is True
+    assert data["events"] == []
+    assert data["filters"]["event_types"] == ["missing"]
+
+
 def test_voice_doctor_json_reports_available_configured_setup(
     monkeypatch,
     tmp_path: Path,

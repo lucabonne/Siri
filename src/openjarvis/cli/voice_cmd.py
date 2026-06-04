@@ -19,7 +19,7 @@ from openjarvis.core.config import load_config
 from openjarvis.hotkeys.macos_bridge import MacOSHotkeyBridgeCommand
 from openjarvis.voice.event_log import (
     VoiceEventLogger,
-    read_voice_events,
+    query_voice_events,
     voice_log_settings_from_config,
 )
 from openjarvis.voice.models import TranscriptionUnavailableError, VoiceRecordingError
@@ -1498,16 +1498,61 @@ def run_local(
     show_default=True,
     help="Number of recent voice events to show.",
 )
-@click.option("--json", "as_json", is_flag=True, help="Print raw JSON events.")
-def logs(limit: int, as_json: bool) -> None:
+@click.option(
+    "--event",
+    "event_types",
+    multiple=True,
+    help="Show only events with this exact event type. May be repeated.",
+)
+@click.option(
+    "--status",
+    "statuses",
+    multiple=True,
+    help="Show only events with this exact status. May be repeated.",
+)
+@click.option("--success", is_flag=True, help="Show successful events only.")
+@click.option("--failure", is_flag=True, help="Show failed events only.")
+@click.option(
+    "--approval-dispatch-only",
+    is_flag=True,
+    help="Show only approval or dispatch-related events.",
+)
+@click.option("--json", "as_json", is_flag=True, help="Print JSON events.")
+def logs(
+    limit: int,
+    event_types: tuple[str, ...],
+    statuses: tuple[str, ...],
+    success: bool,
+    failure: bool,
+    approval_dispatch_only: bool,
+    as_json: bool,
+) -> None:
     """Show recent local structured voice command events."""
+    if success and failure:
+        raise click.UsageError("--success and --failure are mutually exclusive")
+
     logger = _voice_event_logger()
-    events = read_voice_events(logger.path, limit=limit)
+    events = query_voice_events(
+        logger.path,
+        limit=limit,
+        event_types=event_types,
+        statuses=statuses,
+        success=False if failure else True if success else None,
+        approval_dispatch_only=approval_dispatch_only,
+    )
     if as_json:
         _emit_json(
             {
                 "enabled": logger.enabled,
                 "path": str(logger.path) if logger.path else "",
+                "filters": {
+                    "event_types": list(event_types),
+                    "statuses": list(statuses),
+                    "success": success,
+                    "failure": failure,
+                    "approval_dispatch_only": approval_dispatch_only,
+                    "limit": limit,
+                },
                 "events": events,
             }
         )
@@ -1516,6 +1561,16 @@ def logs(limit: int, as_json: bool) -> None:
     click.echo("Voice logs")
     click.echo(f"  enabled: {logger.enabled}")
     click.echo(f"  path: {logger.path if logger.path else '-'}")
+    if event_types:
+        click.echo(f"  event_filter: {', '.join(event_types)}")
+    if statuses:
+        click.echo(f"  status_filter: {', '.join(statuses)}")
+    if success:
+        click.echo("  success_filter: true")
+    if failure:
+        click.echo("  failure_filter: true")
+    if approval_dispatch_only:
+        click.echo("  approval_dispatch_only: true")
     if not events:
         click.echo("  no voice events logged")
         return

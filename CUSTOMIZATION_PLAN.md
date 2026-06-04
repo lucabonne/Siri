@@ -1,5 +1,36 @@
 # Customization Plan
 
+## Voice Control Phase 15
+
+Phase 15 adds a safe voice history/inspection layer on top of the existing
+local structured voice event logs.
+
+- `jarvis voice logs` remains read-only and can now filter local JSONL events
+  by exact event type, exact status, success, failure, or approval/dispatch
+  metadata.
+- `jarvis voice logs --approval-dispatch-only` shows approval and dispatch
+  related events without calling the API or changing session state.
+- `jarvis voice logs --limit N` returns the last N matching events after
+  filters are applied.
+- `jarvis voice logs --json` returns local event data plus the active filter
+  metadata for tooling.
+- Transcript inspection preserves the existing privacy boundary: redacted
+  transcript summaries remain the default, and full transcript text appears
+  only if full transcript logging was explicitly enabled before the event was
+  written.
+- Tests cover filtering, JSON output, redaction preservation, and empty log
+  behavior.
+
+Deferred work remains intentionally untouched in this phase:
+
+- no always-on listening
+- no enabled Fn hotkey capture
+- no approval bypass
+- no automatic dispatch by default
+- no automatic speech playback by default
+- no live Hammerspoon or Swift helper installation
+- no voice-only mode; text input remains available
+
 ## Voice Control Phase 14
 
 Phase 14 adds local structured logs for explicit voice CLI activity while

@@ -486,6 +486,8 @@ jarvis voice hotkey-bridge --adapter faster-whisper      # Print bridge command 
 jarvis voice hotkey-bridge --format hammerspoon          # Print disabled helper example
 jarvis voice speak "preview complete"                    # Explicit local TTS only
 jarvis voice logs                                        # Show recent local voice events
+jarvis voice logs --event dispatch_result --json         # Filter local events as JSON
+jarvis voice logs --approval-dispatch-only --limit 10
 jarvis voice status
 jarvis voice cancel
 ```
@@ -501,7 +503,7 @@ jarvis voice cancel
 | `voice doctor`        | Inspect configured voice defaults and local dependency paths without recording, dispatching, speaking, or starting hotkeys |
 | `voice hotkey-bridge` | Print the disabled macOS hotkey bridge command/example that an external helper can call later |
 | `voice speak TEXT`     | Speak text through an explicit local speech-output adapter; defaults to macOS `say` when available |
-| `voice logs`           | Show recent local structured voice command events |
+| `voice logs`           | Inspect recent local structured voice command events with optional filters |
 | `voice status`          | GET `/v1/voice/ptt/status`                       |
 | `voice cancel`          | POST `/v1/voice/ptt/cancel`                      |
 
@@ -554,10 +556,16 @@ auto-dispatch, or automatic speech playback. Dispatch still requires
 `voice logs` reads recent JSONL events from the local `voice_logs_path`.
 Logging is local-only and records command activity such as submit, status,
 cancel, transcribe-file, record-local, capture-preview, run-local, speak,
-doctor, and hotkey-bridge. Log events never store raw audio. By default,
-transcripts are summarized as length, SHA-256, and a redacted preview; set
+doctor, and hotkey-bridge. The command is inspection-only: it does not record,
+dispatch, approve, speak, call the API, or start hotkeys. Use `--limit N` to
+show the last N matching events, repeat `--event TYPE` or `--status STATUS` to
+filter exact event/status values, use `--success` or `--failure` for outcome
+filtering, use `--approval-dispatch-only` to show approval/dispatch-related
+events, and pass `--json` for machine-readable output. Log events never store
+raw audio. By default, transcripts are summarized as length, SHA-256, and a
+redacted preview; `voice logs --json` returns that same stored summary. Set
 `voice_logs_include_full_transcripts = true` only if you explicitly want full
-transcripts written to disk.
+transcripts written to disk and exposed through later log inspection.
 
 `voice doctor` reports the effective API base URL, configured local
 transcription adapter, model path existence when a local path is required,
