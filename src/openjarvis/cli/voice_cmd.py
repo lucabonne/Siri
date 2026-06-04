@@ -9,6 +9,7 @@ import sys
 import time
 import uuid
 from dataclasses import replace
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -19,6 +20,7 @@ from openjarvis.core.config import load_config
 from openjarvis.hotkeys.macos_bridge import MacOSHotkeyBridgeCommand
 from openjarvis.voice.event_log import (
     VoiceEventLogger,
+    cleanup_voice_events,
     query_voice_events,
     voice_log_settings_from_config,
 )
@@ -177,6 +179,15 @@ def _write_voice_logs_export(
         path.write_text(content, encoding="utf-8")
     except OSError as exc:
         raise click.ClickException(f"Could not write voice log export: {exc}") from exc
+
+
+def _parse_voice_logs_clear_before(value: str | None) -> datetime | None:
+    if value is None:
+        return None
+    try:
+        return datetime.strptime(value, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+    except ValueError as exc:
+        raise click.UsageError("--clear-before must use YYYY-MM-DD format") from exc
 
 
 def _voice_event_logger() -> VoiceEventLogger:
@@ -1575,6 +1586,31 @@ def run_local(
     show_default=True,
     help="Export format. Auto uses .json for JSON and JSONL otherwise.",
 )
+@click.option(
+    "--clear",
+    "clear_all",
+    is_flag=True,
+    help="Clear all local voice log events. Requires --confirm unless --dry-run.",
+)
+@click.option(
+    "--clear-before",
+    default=None,
+    metavar="YYYY-MM-DD",
+    help=(
+        "Clear local voice log events before this UTC date. Requires --confirm "
+        "unless --dry-run."
+    ),
+)
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    help="Preview a cleanup without changing the local voice log.",
+)
+@click.option(
+    "--confirm",
+    is_flag=True,
+    help="Confirm a destructive local voice log cleanup.",
+)
 def logs(
     limit: int,
     event_types: tuple[str, ...],
@@ -1585,12 +1621,68 @@ def logs(
     as_json: bool,
     export_path: Path | None,
     export_format: str,
+    clear_all: bool,
+    clear_before: str | None,
+    dry_run: bool,
+    confirm: bool,
 ) -> None:
-    """Show recent local structured voice command events."""
+    """Show or explicitly clean up local structured voice command events."""
     if success and failure:
         raise click.UsageError("--success and --failure are mutually exclusive")
+    cutoff = _parse_voice_logs_clear_before(clear_before)
+    cleanup_requested = clear_all or cutoff is not None
+    if clear_all and cutoff is not None:
+        raise click.UsageError("--clear and --clear-before are mutually exclusive")
+    if cleanup_requested and export_path is not None:
+        raise click.UsageError("--export cannot be combined with log cleanup")
 
     logger = _voice_event_logger()
+    if cleanup_requested:
+        refused = not dry_run and not confirm
+        try:
+            cleanup = cleanup_voice_events(
+                logger.path,
+                clear_all=clear_all,
+                clear_before=cutoff,
+                dry_run=True if refused else dry_run,
+            )
+        except OSError as exc:
+            raise click.ClickException(f"Could not clean up voice logs: {exc}") from exc
+        if as_json:
+            output = {
+                "enabled": logger.enabled,
+                "path": str(logger.path) if logger.path else "",
+                "cleanup": cleanup.to_dict()
+                | {
+                    "requested": True,
+                    "confirmed": confirm,
+                    "refused": refused,
+                    "mode": "clear" if clear_all else "clear-before",
+                },
+            }
+            _emit_json(output)
+            if refused:
+                raise click.exceptions.Exit(1)
+            return
+
+        click.echo("Voice log cleanup")
+        click.echo(f"  enabled: {logger.enabled}")
+        click.echo(f"  path: {logger.path if logger.path else '-'}")
+        click.echo(f"  mode: {'clear' if clear_all else 'clear-before'}")
+        if clear_before:
+            click.echo(f"  clear_before: {clear_before}")
+        if refused:
+            click.echo("  refused: pass --confirm to delete local voice log events")
+            raise click.exceptions.Exit(1)
+        click.echo(f"  dry_run: {cleanup.dry_run}")
+        click.echo(f"  matched_for_delete: {cleanup.deleted_count}")
+        click.echo(f"  kept: {cleanup.kept_count}")
+        if cleanup.dry_run:
+            click.echo("  changed: false")
+        else:
+            click.echo(f"  changed: {str(cleanup.changed).lower()}")
+        return
+
     events = query_voice_events(
         logger.path,
         limit=limit,

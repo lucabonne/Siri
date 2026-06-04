@@ -365,6 +365,164 @@ def test_voice_logs_export_rejects_missing_parent(
     assert not missing_parent_export.exists()
 
 
+def test_voice_logs_clear_dry_run_does_not_modify_log(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    log_path = tmp_path / "voice-events.jsonl"
+    log_path.write_text(
+        json.dumps({"command": "status", "event": "status_result"}) + "\n",
+        encoding="utf-8",
+    )
+    original = log_path.read_text(encoding="utf-8")
+    monkeypatch.setattr(
+        voice_cmd,
+        "load_config",
+        lambda: _safe_config(voice_logs_enabled=True, voice_logs_path=str(log_path)),
+    )
+
+    result = CliRunner().invoke(voice_cmd.voice, ["logs", "--clear", "--dry-run"])
+
+    assert result.exit_code == 0
+    assert "Voice log cleanup" in result.output
+    assert "dry_run: True" in result.output
+    assert "matched_for_delete: 1" in result.output
+    assert log_path.read_text(encoding="utf-8") == original
+
+
+def test_voice_logs_clear_refuses_without_confirmation(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    log_path = tmp_path / "voice-events.jsonl"
+    log_path.write_text(
+        json.dumps({"command": "status", "event": "status_result"}) + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        voice_cmd,
+        "load_config",
+        lambda: _safe_config(voice_logs_enabled=True, voice_logs_path=str(log_path)),
+    )
+
+    result = CliRunner().invoke(voice_cmd.voice, ["logs", "--clear"])
+
+    assert result.exit_code == 1
+    assert "refused: pass --confirm" in result.output
+    assert "status_result" in log_path.read_text(encoding="utf-8")
+
+
+def test_voice_logs_confirmed_clear_truncates_log(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    log_path = tmp_path / "voice-events.jsonl"
+    log_path.write_text(
+        json.dumps({"command": "status", "event": "status_result"}) + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        voice_cmd,
+        "load_config",
+        lambda: _safe_config(voice_logs_enabled=True, voice_logs_path=str(log_path)),
+    )
+
+    result = CliRunner().invoke(voice_cmd.voice, ["logs", "--clear", "--confirm"])
+
+    assert result.exit_code == 0
+    assert "matched_for_delete: 1" in result.output
+    assert "changed: true" in result.output
+    assert log_path.read_text(encoding="utf-8") == ""
+
+
+def test_voice_logs_clear_before_retains_events_on_or_after_date(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    log_path = tmp_path / "voice-events.jsonl"
+    records = [
+        {"timestamp": "2025-12-31T23:59:59Z", "event": "old"},
+        {"timestamp": "2026-01-01T00:00:00Z", "event": "kept"},
+        {"event": "undated"},
+    ]
+    log_path.write_text(
+        "\n".join(json.dumps(record) for record in records) + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        voice_cmd,
+        "load_config",
+        lambda: _safe_config(voice_logs_enabled=True, voice_logs_path=str(log_path)),
+    )
+
+    result = CliRunner().invoke(
+        voice_cmd.voice,
+        ["logs", "--clear-before", "2026-01-01", "--confirm"],
+    )
+
+    remaining = log_path.read_text(encoding="utf-8")
+    assert result.exit_code == 0
+    assert "clear_before: 2026-01-01" in result.output
+    assert "matched_for_delete: 1" in result.output
+    assert '"event": "old"' not in remaining
+    assert '"event": "kept"' in remaining
+    assert '"event": "undated"' in remaining
+
+
+def test_voice_logs_clear_empty_log_outputs_zero_changes_json(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    log_path = tmp_path / "missing.jsonl"
+    monkeypatch.setattr(
+        voice_cmd,
+        "load_config",
+        lambda: _safe_config(voice_logs_enabled=True, voice_logs_path=str(log_path)),
+    )
+
+    result = CliRunner().invoke(
+        voice_cmd.voice,
+        ["logs", "--clear", "--confirm", "--json"],
+    )
+
+    assert result.exit_code == 0
+    data = json.loads(result.output)
+    assert data["cleanup"]["exists"] is False
+    assert data["cleanup"]["deleted_count"] == 0
+    assert data["cleanup"]["changed"] is False
+    assert not log_path.exists()
+
+
+def test_voice_logs_clear_before_dry_run_json(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    log_path = tmp_path / "voice-events.jsonl"
+    log_path.write_text(
+        json.dumps({"timestamp": "2025-12-31T23:59:59Z", "event": "old"}) + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        voice_cmd,
+        "load_config",
+        lambda: _safe_config(voice_logs_enabled=True, voice_logs_path=str(log_path)),
+    )
+
+    result = CliRunner().invoke(
+        voice_cmd.voice,
+        ["logs", "--clear-before", "2026-01-01", "--dry-run", "--json"],
+    )
+
+    assert result.exit_code == 0
+    data = json.loads(result.output)
+    assert data["cleanup"]["mode"] == "clear-before"
+    assert data["cleanup"]["dry_run"] is True
+    assert data["cleanup"]["confirmed"] is False
+    assert data["cleanup"]["refused"] is False
+    assert data["cleanup"]["deleted_count"] == 1
+    assert "old" in log_path.read_text(encoding="utf-8")
+
+
 def test_voice_doctor_json_reports_available_configured_setup(
     monkeypatch,
     tmp_path: Path,

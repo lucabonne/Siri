@@ -1,5 +1,37 @@
 # Customization Plan
 
+## Voice Control Phase 17
+
+Phase 17 adds explicit local voice log cleanup and retention controls without
+changing the voice execution safety boundary.
+
+- `jarvis voice logs --clear --dry-run` previews clearing all local voice log
+  events from the configured JSONL file.
+- `jarvis voice logs --clear --confirm` clears local voice log events only after
+  explicit confirmation.
+- `jarvis voice logs --clear-before YYYY-MM-DD --dry-run` previews date-based
+  retention, and `--confirm` removes dated events before that UTC date while
+  retaining newer, undated, or unparseable lines.
+- Cleanup supports `--json` summaries for tooling and reports matched,
+  retained, and changed counts.
+- Cleanup remains local-only and operates only on the configured structured
+  voice log file. It does not delete audio files; voice logs do not store raw
+  audio.
+- Transcript redaction defaults are preserved because cleanup does not rewrite
+  event payloads except to remove whole local log lines.
+- Tests cover dry-run, confirmed clear, date-based retention, refusal without
+  confirmation, empty log behavior, and JSON cleanup output.
+
+Deferred work remains intentionally untouched in this phase:
+
+- no always-on listening
+- no enabled Fn hotkey capture
+- no approval bypass
+- no automatic dispatch by default
+- no automatic speech playback by default
+- no live Hammerspoon or Swift helper installation
+- no voice-only mode; text input remains available
+
 ## Voice Control Phase 16
 
 Phase 16 adds explicit local voice event export support without changing the

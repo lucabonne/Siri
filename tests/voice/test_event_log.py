@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
 
 from openjarvis.voice.event_log import (
     VoiceEventLogger,
+    cleanup_voice_events,
     query_voice_events,
     read_voice_events,
     redact_transcript_preview,
@@ -167,3 +169,96 @@ def test_query_voice_events_preserves_redacted_transcript_summary(
     transcript = events[0]["transcript"]
     assert transcript["preview"] == "email [email] token [secret]"
     assert "text" not in transcript
+
+
+def test_cleanup_voice_events_dry_run_keeps_local_log(tmp_path: Path) -> None:
+    log_path = tmp_path / "voice-events.jsonl"
+    log_path.write_text(
+        "\n".join(
+            [
+                json.dumps(
+                    {
+                        "timestamp": "2025-12-31T23:59:59Z",
+                        "command": "submit",
+                        "event": "preview_result",
+                    }
+                ),
+                json.dumps(
+                    {
+                        "timestamp": "2026-01-01T00:00:00Z",
+                        "command": "status",
+                        "event": "status_result",
+                    }
+                ),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    result = cleanup_voice_events(
+        log_path,
+        clear_before=datetime(2026, 1, 1),
+        dry_run=True,
+    )
+
+    assert result.deleted_count == 1
+    assert result.kept_count == 1
+    assert result.changed is False
+    assert "preview_result" in log_path.read_text(encoding="utf-8")
+
+
+def test_cleanup_voice_events_confirmed_clear_truncates_log(tmp_path: Path) -> None:
+    log_path = tmp_path / "voice-events.jsonl"
+    log_path.write_text(
+        json.dumps({"command": "status", "event": "status_result"}) + "\n",
+        encoding="utf-8",
+    )
+
+    result = cleanup_voice_events(log_path, clear_all=True, dry_run=False)
+
+    assert result.deleted_count == 1
+    assert result.kept_count == 0
+    assert result.changed is True
+    assert log_path.read_text(encoding="utf-8") == ""
+
+
+def test_cleanup_voice_events_clear_before_retains_new_and_undated_lines(
+    tmp_path: Path,
+) -> None:
+    log_path = tmp_path / "voice-events.jsonl"
+    old = {"timestamp": "2025-12-31T23:59:59Z", "event": "old"}
+    new = {"timestamp": "2026-01-01T00:00:00Z", "event": "new"}
+    undated = {"event": "undated"}
+    log_path.write_text(
+        "\n".join(json.dumps(item) for item in [old, new, undated]) + "\n",
+        encoding="utf-8",
+    )
+
+    result = cleanup_voice_events(
+        log_path,
+        clear_before=datetime(2026, 1, 1),
+        dry_run=False,
+    )
+
+    remaining = log_path.read_text(encoding="utf-8")
+    assert result.deleted_count == 1
+    assert '"event": "old"' not in remaining
+    assert '"event": "new"' in remaining
+    assert '"event": "undated"' in remaining
+
+
+def test_cleanup_voice_events_empty_log_behavior(tmp_path: Path) -> None:
+    missing_path = tmp_path / "missing.jsonl"
+    empty_path = tmp_path / "empty.jsonl"
+    empty_path.write_text("", encoding="utf-8")
+
+    missing_result = cleanup_voice_events(missing_path, clear_all=True, dry_run=False)
+    empty_result = cleanup_voice_events(empty_path, clear_all=True, dry_run=False)
+
+    assert missing_result.exists is False
+    assert missing_result.deleted_count == 0
+    assert not missing_path.exists()
+    assert empty_result.exists is True
+    assert empty_result.deleted_count == 0
+    assert empty_path.read_text(encoding="utf-8") == ""

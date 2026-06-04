@@ -490,6 +490,9 @@ jarvis voice logs --event dispatch_result --json         # Filter local events a
 jarvis voice logs --approval-dispatch-only --limit 10
 jarvis voice logs --export ./voice-events.jsonl          # Export filtered events as JSONL
 jarvis voice logs --export ./voice-events.json           # Export filtered events as JSON
+jarvis voice logs --clear --dry-run                      # Preview local log cleanup
+jarvis voice logs --clear --confirm                      # Clear local voice log events
+jarvis voice logs --clear-before 2026-01-01 --confirm    # Remove older local events
 jarvis voice status
 jarvis voice cancel
 ```
@@ -505,7 +508,7 @@ jarvis voice cancel
 | `voice doctor`        | Inspect configured voice defaults and local dependency paths without recording, dispatching, speaking, or starting hotkeys |
 | `voice hotkey-bridge` | Print the disabled macOS hotkey bridge command/example that an external helper can call later |
 | `voice speak TEXT`     | Speak text through an explicit local speech-output adapter; defaults to macOS `say` when available |
-| `voice logs`           | Inspect recent local structured voice command events with optional filters |
+| `voice logs`           | Inspect, export, or explicitly clean up local structured voice command events |
 | `voice status`          | GET `/v1/voice/ptt/status`                       |
 | `voice cancel`          | POST `/v1/voice/ptt/cancel`                      |
 
@@ -571,6 +574,15 @@ for `.json` paths, and can be forced with `--export-format jsonl` or
 `--export-format json`. Export paths must be local filesystem paths; the parent
 directory must already exist, and the command does not create missing parent
 directories implicitly.
+
+Use `--clear --dry-run` to preview clearing all local voice log events, or
+`--clear-before YYYY-MM-DD --dry-run` to preview date-based retention. Actual
+cleanup requires `--confirm`: `--clear --confirm` removes all local voice log
+events from the configured JSONL file, while
+`--clear-before YYYY-MM-DD --confirm` removes dated events before that UTC date
+and keeps newer, undated, or unparseable lines. Cleanup can also be reported
+with `--json`. It does not delete audio files; voice logs do not store raw
+audio.
 
 Log exports never include raw audio. By default, transcripts are summarized as
 length, SHA-256, and a redacted preview; `voice logs --json` and

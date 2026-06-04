@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 import re
+import tempfile
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -129,6 +130,100 @@ class VoiceEventLogger:
             return
 
 
+@dataclass(frozen=True, slots=True)
+class VoiceLogCleanupResult:
+    path: Path
+    exists: bool
+    dry_run: bool
+    deleted_count: int
+    kept_count: int
+    total_count: int
+    clear_before: str | None = None
+
+    @property
+    def changed(self) -> bool:
+        return not self.dry_run and self.deleted_count > 0
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "path": str(self.path) if self.path else "",
+            "exists": self.exists,
+            "dry_run": self.dry_run,
+            "deleted_count": self.deleted_count,
+            "kept_count": self.kept_count,
+            "total_count": self.total_count,
+            "clear_before": self.clear_before,
+            "changed": self.changed,
+        }
+
+
+def cleanup_voice_events(
+    path: Path,
+    *,
+    clear_all: bool = False,
+    clear_before: datetime | None = None,
+    dry_run: bool = True,
+) -> VoiceLogCleanupResult:
+    if not clear_all and clear_before is None:
+        raise ValueError("cleanup requires clear_all or clear_before")
+    if clear_all and clear_before is not None:
+        raise ValueError("clear_all and clear_before are mutually exclusive")
+
+    if not path.exists():
+        return VoiceLogCleanupResult(
+            path=path,
+            exists=False,
+            dry_run=dry_run,
+            deleted_count=0,
+            kept_count=0,
+            total_count=0,
+            clear_before=_format_cutoff(clear_before),
+        )
+
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return VoiceLogCleanupResult(
+            path=path,
+            exists=True,
+            dry_run=dry_run,
+            deleted_count=0,
+            kept_count=0,
+            total_count=0,
+            clear_before=_format_cutoff(clear_before),
+        )
+
+    if clear_all:
+        kept_lines: list[str] = []
+        deleted_count = len(lines)
+    else:
+        kept_lines = []
+        deleted_count = 0
+        assert clear_before is not None
+        cutoff = _as_utc(clear_before)
+        for line in lines:
+            if _line_is_before_cutoff(line, cutoff):
+                deleted_count += 1
+            else:
+                kept_lines.append(line)
+
+    result = VoiceLogCleanupResult(
+        path=path,
+        exists=True,
+        dry_run=dry_run,
+        deleted_count=deleted_count,
+        kept_count=len(kept_lines),
+        total_count=len(lines),
+        clear_before=_format_cutoff(clear_before),
+    )
+    if dry_run or deleted_count == 0:
+        return result
+
+    content = "".join(f"{line}\n" for line in kept_lines)
+    _replace_log_file(path, content)
+    return result
+
+
 def read_voice_events(path: Path, *, limit: int) -> list[dict[str, Any]]:
     return query_voice_events(path, limit=limit)
 
@@ -206,9 +301,59 @@ def is_approval_dispatch_event(event: dict[str, Any]) -> bool:
     )
 
 
+def _line_is_before_cutoff(line: str, cutoff: datetime) -> bool:
+    try:
+        item = json.loads(line)
+    except json.JSONDecodeError:
+        return False
+    if not isinstance(item, dict):
+        return False
+    timestamp = _parse_event_timestamp(str(item.get("timestamp", "")))
+    return timestamp is not None and timestamp < cutoff
+
+
+def _parse_event_timestamp(value: str) -> datetime | None:
+    if not value:
+        return None
+    normalized = value[:-1] + "+00:00" if value.endswith("Z") else value
+    try:
+        parsed = datetime.fromisoformat(normalized)
+    except ValueError:
+        return None
+    return _as_utc(parsed)
+
+
+def _as_utc(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
+def _format_cutoff(value: datetime | None) -> str | None:
+    if value is None:
+        return None
+    return _as_utc(value).date().isoformat()
+
+
+def _replace_log_file(path: Path, content: str) -> None:
+    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(
+        "w",
+        encoding="utf-8",
+        dir=path.parent,
+        delete=False,
+    ) as fh:
+        fh.write(content)
+        temp_path = Path(fh.name)
+    os.chmod(temp_path, 0o600)
+    os.replace(temp_path, path)
+
+
 __all__ = [
+    "VoiceLogCleanupResult",
     "VoiceEventLogger",
     "VoiceLogSettings",
+    "cleanup_voice_events",
     "is_approval_dispatch_event",
     "query_voice_events",
     "read_voice_events",
