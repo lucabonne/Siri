@@ -599,12 +599,13 @@ logging, it does not request microphone access, download models, call dispatch,
 speak text, or start a hotkey listener.
 
 Mission Control's Voice tab reads `/v1/voice/ptt/status` for a read-only status
-panel showing the FSM state, configured transcription adapter, model path
-status, default record duration, speech output backend, disabled/print-only
-hotkey bridge state, approval requirement, and recent redacted voice events
-when local voice logging is enabled. It does not record audio, start hotkeys,
-approve, dispatch, or speak, and it does not show raw audio or full transcript
-text from status events.
+panel showing the FSM state, configured/effective API base URL, configured
+transcription adapter, model path status, default record duration, speech output
+backend, macOS `say` availability, disabled/print-only hotkey bridge state,
+approval requirement, and recent redacted voice events when local voice logging
+is enabled. It does not record audio, start hotkeys, approve, dispatch, or
+speak, and it does not show raw audio or full transcript text from status
+events.
 
 For a lightweight frontend verification pass focused on that status panel, run
 `npm run check:mission-control-voice` from `frontend/`. In environments where

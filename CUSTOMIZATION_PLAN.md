@@ -1,5 +1,36 @@
 # Customization Plan
 
+## Voice Control Phase 20
+
+Phase 20 expands the read-only Mission Control voice settings/status surface
+using the stabilized Phase 19 verification path, without changing voice command
+execution behavior.
+
+- `/v1/voice/ptt/status` now includes the effective `jarvis voice` API base URL
+  source, matching `jarvis voice doctor` precedence:
+  `[voice_control].default_api_base_url` first, then server host/port.
+- Mission Control's Voice status panel now shows the configured/effective API
+  base URL, configured transcription adapter, model path status, default record
+  duration, speech output backend, macOS `say` availability, disabled/print-only
+  hotkey bridge state, explicit approval requirement, and recent redacted voice
+  events.
+- Recent voice events remain sanitized for the UI: raw audio is not exposed, and
+  full transcript text is not shown from status-loaded event history.
+- The existing typed/mock Voice Push-to-Talk panel remains available and
+  approval-gated; this phase does not add automation or a voice-only mode.
+- `npm run check:mission-control-voice` remains the focused frontend
+  verification path for the Mission Control Voice surface.
+
+Deferred work remains intentionally untouched in this phase:
+
+- no always-on listening
+- no enabled Fn hotkey capture
+- no approval bypass
+- no automatic dispatch by default
+- no automatic speech playback by default
+- no live Hammerspoon or Swift helper installation
+- no voice-only mode; text input remains available
+
 ## Voice Control Phase 19
 
 Phase 19 stabilizes frontend verification for the Mission Control voice status

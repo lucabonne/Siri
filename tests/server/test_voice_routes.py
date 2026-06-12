@@ -113,6 +113,10 @@ def test_voice_status_includes_safe_stack_config(client: TestClient) -> None:
 
     assert resp.status_code == 200
     stack = resp.json()["voice_stack"]
+    assert stack["api_base_url"] == {
+        "value": "http://127.0.0.1:8000",
+        "source": "[server].host/[server].port",
+    }
     assert stack["transcription_adapter"]["effective"] == "disabled"
     assert stack["model_path"]["source"] == "[speech].model"
     assert stack["record_duration"]["duration_flag_required"] is True
@@ -121,6 +125,30 @@ def test_voice_status_includes_safe_stack_config(client: TestClient) -> None:
     assert stack["safety"]["speech_called"] is False
     assert stack["safety"]["approval_bypassed"] is False
     assert stack["recent_events"]["events"] == []
+
+
+def test_voice_status_includes_configured_api_base_url(tmp_path: Path) -> None:
+    app = FastAPI()
+    config = JarvisConfig()
+    config.voice_control.default_api_base_url = "http://configured:9000/"
+    config.voice_control.voice_logs_enabled = False
+    config.voice_control.voice_logs_path = str(tmp_path / "voice-events.jsonl")
+    service = VoicePushToTalkService(
+        config=config,
+        speech_backend=FakeBackend(),
+        recorder=FakeRecorder(tmp_path),
+        permission_middleware=FakePermissionMiddleware(),
+    )
+    app.state.voice_ptt_service = service
+    app.include_router(voice_router)
+
+    resp = TestClient(app).get("/v1/voice/ptt/status")
+
+    assert resp.status_code == 200
+    assert resp.json()["voice_stack"]["api_base_url"] == {
+        "value": "http://configured:9000",
+        "source": "[voice_control].default_api_base_url",
+    }
 
 
 def test_voice_status_recent_events_are_redacted(tmp_path: Path) -> None:

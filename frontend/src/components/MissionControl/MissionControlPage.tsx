@@ -309,6 +309,10 @@ function modelPathStatus(model: VoiceStackStatus['model_path'] | undefined): str
   return 'Required';
 }
 
+function configuredVoiceValue(value: string | undefined, fallback = 'Not configured'): string {
+  return value && value.trim() ? value : fallback;
+}
+
 function eventTranscriptDetail(
   transcript: VoiceStackStatus['recent_events']['events'][number]['transcript'],
 ): string {
@@ -1904,7 +1908,7 @@ function VoiceSection() {
   return (
     <div className="grid gap-4">
       <ShellPanel title="Voice Control Status" action="read only">
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
           <ContextTile
             icon={<Mic2 size={15} />}
             label="FSM"
@@ -1912,10 +1916,16 @@ function VoiceSection() {
             detail={status?.push_to_talk_only ? 'Push-to-talk only' : 'Voice status pending'}
           />
           <ContextTile
+            icon={<Radar size={15} />}
+            label="API Base"
+            value={stack?.api_base_url.value || 'Unknown'}
+            detail={stack?.api_base_url.source || 'Voice status pending'}
+          />
+          <ContextTile
             icon={<Cpu size={15} />}
             label="Transcription"
-            value={stack?.transcription_adapter.effective || 'Unknown'}
-            detail={stack?.transcription_adapter.source || 'No adapter configured'}
+            value={configuredVoiceValue(stack?.transcription_adapter.configured)}
+            detail={`Effective: ${stack?.transcription_adapter.effective || 'unknown'}`}
           />
           <ContextTile
             icon={<Package size={15} />}
@@ -1933,7 +1943,13 @@ function VoiceSection() {
             icon={<Activity size={15} />}
             label="Speech Output"
             value={stack?.speech_output.backend || 'Unknown'}
-            detail={stack?.macos_say.relevant ? `macOS say ${stack.macos_say.available ? 'available' : 'unavailable'}` : 'Explicit only'}
+            detail={configuredVoiceValue(stack?.speech_output.configured, 'Default adapter')}
+          />
+          <ContextTile
+            icon={<TerminalSquare size={15} />}
+            label="macOS Say"
+            value={stack ? (stack.macos_say.available ? 'Available' : 'Unavailable') : 'Unknown'}
+            detail={stack?.macos_say.relevant ? 'Relevant backend' : 'Not selected'}
           />
           <ContextTile
             icon={<Ban size={15} />}

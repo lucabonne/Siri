@@ -879,6 +879,10 @@ export interface VoiceSession {
 }
 
 export interface VoiceStackStatus {
+  api_base_url: {
+    value: string;
+    source: string;
+  };
   transcription_adapter: {
     configured: string;
     effective: string;

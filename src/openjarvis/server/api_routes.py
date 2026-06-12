@@ -1098,6 +1098,26 @@ def _voice_model_path_status(config: Any, adapter_id: str) -> dict[str, Any]:
     }
 
 
+def _voice_api_base_url_status(config: Any) -> dict[str, str]:
+    voice_control = getattr(config, "voice_control", None)
+    configured_base = str(
+        getattr(voice_control, "default_api_base_url", "") or ""
+    ).rstrip("/")
+    if configured_base:
+        return {
+            "value": configured_base,
+            "source": "[voice_control].default_api_base_url",
+        }
+
+    host = str(getattr(config.server, "host", "") or "")
+    if host in {"0.0.0.0", "::", ""}:
+        host = "127.0.0.1"
+    return {
+        "value": f"http://{host}:{config.server.port}",
+        "source": "[server].host/[server].port",
+    }
+
+
 def _safe_voice_event_details(details: Any) -> dict[str, Any]:
     if not isinstance(details, dict):
         return {}
@@ -1178,6 +1198,7 @@ def _voice_stack_status(request: Request) -> dict[str, Any]:
     effective_speech_adapter = speech_adapter or "macos-say"
 
     return {
+        "api_base_url": _voice_api_base_url_status(config),
         "transcription_adapter": {
             "configured": configured_adapter,
             "effective": effective_adapter,
