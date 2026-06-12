@@ -313,8 +313,11 @@ function configuredVoiceValue(value: string | undefined, fallback = 'Not configu
   return value && value.trim() ? value : fallback;
 }
 
+type RecentVoiceEvent = VoiceStackStatus['recent_events']['events'][number];
+type RecentVoiceEventDetails = RecentVoiceEvent['details'];
+
 function eventTranscriptDetail(
-  transcript: VoiceStackStatus['recent_events']['events'][number]['transcript'],
+  transcript: RecentVoiceEvent['transcript'],
 ): string {
   if (transcript.preview) return transcript.preview;
   if (transcript.full_transcript_logged) return 'Full transcript logged; panel shows redacted summaries only';
@@ -322,6 +325,118 @@ function eventTranscriptDetail(
     return `Transcript length ${transcript.length}`;
   }
   return 'No transcript summary';
+}
+
+function voiceEventKey(event: RecentVoiceEvent, index: number): string {
+  return `${event.timestamp}-${event.command}-${event.event}-${index}`;
+}
+
+function hasVoiceDetail(details: RecentVoiceEventDetails, key: string): boolean {
+  return Object.prototype.hasOwnProperty.call(details, key);
+}
+
+function formatVoiceDetail(value: RecentVoiceEventDetails[string] | undefined): string {
+  if (Array.isArray(value)) return value.length ? value.join(', ') : 'None';
+  if (typeof value === 'boolean') return value ? 'yes' : 'no';
+  if (value === null || typeof value === 'undefined' || value === '') return 'Not recorded';
+  return String(value);
+}
+
+function voiceDetailSummary(details: RecentVoiceEventDetails, keys: string[]): string {
+  const parts = keys
+    .filter((key) => hasVoiceDetail(details, key))
+    .map((key) => `${key.replace(/_/g, ' ')}=${formatVoiceDetail(details[key])}`);
+  return parts.length ? parts.join(' · ') : 'Not recorded';
+}
+
+function voiceActionSummary(details: RecentVoiceEventDetails, keys: string[]): string {
+  const parts = keys
+    .filter((key) => hasVoiceDetail(details, key))
+    .map((key) => `${key.replace(/_/g, ' ')}=${formatVoiceDetail(details[key])}`);
+  if (parts.length && hasVoiceDetail(details, 'reason')) {
+    parts.push(`reason=${formatVoiceDetail(details.reason)}`);
+  }
+  return parts.length ? parts.join(' · ') : 'Not recorded';
+}
+
+function voiceApprovalSummary(details: RecentVoiceEventDetails): string {
+  return voiceDetailSummary(details, ['approval_required', 'approved']);
+}
+
+function voiceDispatchSummary(details: RecentVoiceEventDetails): string {
+  return voiceActionSummary(details, [
+    'attempted',
+    'dispatch_enabled',
+    'dispatch_called',
+    'dispatched',
+    'dispatch_status',
+    'agent_id',
+  ]);
+}
+
+function voiceSpeechSummary(details: RecentVoiceEventDetails): string {
+  return voiceActionSummary(details, [
+    'speech_enabled',
+    'speech_called',
+    'spoken',
+    'adapter',
+    'speech_output',
+  ]);
+}
+
+function voiceErrorSummary(event: RecentVoiceEvent): string {
+  const details = event.details;
+  const failedStatus = ['error', 'failed', 'failure'].includes(event.status);
+  if (hasVoiceDetail(details, 'error_summary')) return formatVoiceDetail(details.error_summary);
+  if (hasVoiceDetail(details, 'error')) return formatVoiceDetail(details.error);
+  if (hasVoiceDetail(details, 'message')) return formatVoiceDetail(details.message);
+  if (hasVoiceDetail(details, 'has_error')) {
+    return details.has_error ? voiceDetailSummary(details, ['has_error', 'reason']) : 'No error recorded';
+  }
+  return failedStatus ? voiceDetailSummary(details, ['reason']) : 'No error recorded';
+}
+
+function VoiceEventDetailRow({ label, value }: { label: string; value: ReactNode }) {
+  return (
+    <div className="min-w-0">
+      <div className="text-[11px] font-medium uppercase tracking-wide" style={{ color: 'var(--color-text-tertiary)' }}>
+        {label}
+      </div>
+      <div className="mt-1 break-words text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+        {value}
+      </div>
+    </div>
+  );
+}
+
+function VoiceEventDetails({ event }: { event: RecentVoiceEvent }) {
+  const transcript = event.transcript || {};
+  return (
+    <div
+      className="mt-3 grid gap-3 border-t pt-3 md:grid-cols-2 xl:grid-cols-3"
+      style={{ borderColor: 'var(--color-border)' }}
+    >
+      <VoiceEventDetailRow label="Event type" value={event.event || 'Not recorded'} />
+      <VoiceEventDetailRow label="Status" value={event.status || 'unknown'} />
+      <VoiceEventDetailRow label="Timestamp" value={event.timestamp || 'Not recorded'} />
+      <VoiceEventDetailRow
+        label="Transcript length"
+        value={typeof transcript.length === 'number' ? transcript.length : 'Not recorded'}
+      />
+      <VoiceEventDetailRow
+        label="Transcript hash"
+        value={transcript.sha256 ? <span className="break-all">{transcript.sha256}</span> : 'Not recorded'}
+      />
+      <VoiceEventDetailRow
+        label="Redacted preview"
+        value={transcript.preview || (transcript.full_transcript_logged ? 'Full transcript was logged; hidden in Mission Control' : 'Not recorded')}
+      />
+      <VoiceEventDetailRow label="Approval decision" value={voiceApprovalSummary(event.details)} />
+      <VoiceEventDetailRow label="Dispatch" value={voiceDispatchSummary(event.details)} />
+      <VoiceEventDetailRow label="Speech" value={voiceSpeechSummary(event.details)} />
+      <VoiceEventDetailRow label="Error summary" value={voiceErrorSummary(event)} />
+    </div>
+  );
 }
 
 function MissionTabs({
@@ -1807,6 +1922,7 @@ function VoiceSection() {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState<'idle' | 'submitting' | 'dispatching' | 'cancelling'>('idle');
   const [fallbackFsmState, setFallbackFsmState] = useState('idle');
+  const [expandedVoiceEventKey, setExpandedVoiceEventKey] = useState<string | null>(null);
 
   const loadVoiceStatus = async () => {
     try {
@@ -1982,28 +2098,50 @@ function VoiceSection() {
           </div>
           {recentVoiceEvents.length ? (
             <div className="grid gap-2">
-              {recentVoiceEvents.map((event, index) => (
-                <div
-                  key={`${event.timestamp}-${event.command}-${event.event}-${index}`}
-                  className="rounded-md border px-3 py-2"
-                  style={{
-                    borderColor: 'var(--color-border)',
-                    background: 'var(--color-bg-secondary)',
-                  }}
-                >
-                  <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
-                    <span className="font-medium" style={{ color: 'var(--color-text)' }}>
-                      {event.command || 'voice'} / {event.event || 'event'}
-                    </span>
-                    <span style={{ color: 'var(--color-text-tertiary)' }}>
-                      {formatTime(event.timestamp)}
-                    </span>
+              {recentVoiceEvents.map((event, index) => {
+                const key = voiceEventKey(event, index);
+                const expanded = expandedVoiceEventKey === key;
+                return (
+                  <div
+                    key={key}
+                    className="rounded-md border px-3 py-2"
+                    style={{
+                      borderColor: 'var(--color-border)',
+                      background: 'var(--color-bg-secondary)',
+                    }}
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                      <span className="font-medium" style={{ color: 'var(--color-text)' }}>
+                        {event.command || 'voice'} / {event.event || 'event'}
+                      </span>
+                      <div className="flex items-center gap-2">
+                        <span style={{ color: 'var(--color-text-tertiary)' }}>
+                          {formatTime(event.timestamp)}
+                        </span>
+                        <button
+                          type="button"
+                          className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs"
+                          style={{
+                            borderColor: 'var(--color-border)',
+                            color: 'var(--color-text-secondary)',
+                            background: 'var(--color-bg)',
+                          }}
+                          aria-expanded={expanded}
+                          aria-label={expanded ? 'Hide voice event details' : 'Inspect voice event details'}
+                          onClick={() => setExpandedVoiceEventKey(expanded ? null : key)}
+                        >
+                          <Eye size={13} />
+                          {expanded ? 'Hide' : 'Inspect'}
+                        </button>
+                      </div>
+                    </div>
+                    <div className="mt-1 text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+                      status={event.status || 'unknown'} · {eventTranscriptDetail(event.transcript)}
+                    </div>
+                    {expanded && <VoiceEventDetails event={event} />}
                   </div>
-                  <div className="mt-1 text-xs" style={{ color: 'var(--color-text-secondary)' }}>
-                    status={event.status || 'unknown'} · {eventTranscriptDetail(event.transcript)}
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           ) : (
             <p className="text-sm" style={{ color: 'var(--color-text-tertiary)' }}>

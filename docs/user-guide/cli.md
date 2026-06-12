@@ -603,9 +603,13 @@ panel showing the FSM state, configured/effective API base URL, configured
 transcription adapter, model path status, default record duration, speech output
 backend, macOS `say` availability, disabled/print-only hotkey bridge state,
 approval requirement, and recent redacted voice events when local voice logging
-is enabled. It does not record audio, start hotkeys, approve, dispatch, or
-speak, and it does not show raw audio or full transcript text from status
-events.
+is enabled. Recent events can be expanded in place to inspect only sanitized
+fields: event type, status, timestamp, transcript length/hash/redacted preview,
+approval decision, dispatch and speech attempt/result summaries, and error
+summary when available. It does not record audio, start hotkeys, approve,
+dispatch, or speak, and it does not show raw audio or full transcript text from
+status events. Log export and cleanup remain available only through
+`jarvis voice logs`; Mission Control does not add those controls.
 
 For a lightweight frontend verification pass focused on that status panel, run
 `npm run check:mission-control-voice` from `frontend/`. In environments where

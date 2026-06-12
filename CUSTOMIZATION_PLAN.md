@@ -1,5 +1,34 @@
 # Customization Plan
 
+## Voice Control Phase 21
+
+Phase 21 adds a read-only Mission Control detail view for recent redacted voice
+events without changing voice command execution behavior.
+
+- Mission Control's Voice status panel keeps the Phase 20 stack/status tiles and
+  now lets one recent redacted voice event expand in place for inspection.
+- The detail view only shows sanitized event metadata: event type, status,
+  timestamp, transcript length/hash/redacted preview when available, approval
+  decision, dispatch and speech attempt/result summaries, and error summary.
+- Raw audio is not exposed, and full transcript text is not shown from
+  status-loaded event history. If an event was written with full transcript
+  logging enabled, Mission Control still indicates that fact without rendering
+  the transcript body.
+- Destructive log cleanup and export controls remain CLI-only through
+  `jarvis voice logs`; Mission Control does not add cleanup or export actions.
+- `npm run check:mission-control-voice` remains the focused frontend
+  verification path for the Mission Control Voice surface.
+
+Deferred work remains intentionally untouched in this phase:
+
+- no always-on listening
+- no enabled Fn hotkey capture
+- no approval bypass
+- no automatic dispatch by default
+- no automatic speech playback by default
+- no live Hammerspoon or Swift helper installation
+- no voice-only mode; text input remains available
+
 ## Voice Control Phase 20
 
 Phase 20 expands the read-only Mission Control voice settings/status surface
