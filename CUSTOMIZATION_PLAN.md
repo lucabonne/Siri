@@ -1,5 +1,38 @@
 # Customization Plan
 
+## Voice Control Phase 19
+
+Phase 19 stabilizes frontend verification for the Mission Control voice status
+panel without adding new voice features or changing the Phase 18 safety
+boundary.
+
+- The Mission Control Voice status panel remains read-only and continues to use
+  `/v1/voice/ptt/status` for FSM state, local voice stack metadata, approval
+  status, disabled/print-only hotkey bridge state, and recent redacted voice
+  events.
+- Frontend investigation found that full project TypeScript checks and
+  file-scoped checks for the existing Base UI wrappers hang silently in this
+  environment, even though a focused Mission Control Voice status check
+  completes.
+- Vite port-binding investigation found that the dev server binds with a
+  minimal/React-only config, but stalls before listening when the existing
+  Tailwind Vite plugin is imported in this environment.
+- `npm run check:mission-control-voice` provides a lightweight TypeScript smoke
+  check for `MissionControlPage.tsx` plus `src/vite-env.d.ts`.
+- `npm run dev:verify` starts Vite with `OPENJARVIS_VITE_SKIP_TAILWIND=1` so
+  the local server bind path can be verified on `127.0.0.1:5173` while leaving
+  the normal `npm run dev` and build plugin set unchanged.
+
+Deferred work remains intentionally untouched in this phase:
+
+- no always-on listening
+- no enabled Fn hotkey capture
+- no approval bypass
+- no automatic dispatch by default
+- no automatic speech playback by default
+- no live Hammerspoon or Swift helper installation
+- no voice-only mode; text input remains available
+
 ## Voice Control Phase 18
 
 Phase 18 adds a safe read-only Mission Control status panel for the local voice

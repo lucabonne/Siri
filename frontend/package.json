@@ -8,6 +8,8 @@
   },
   "scripts": {
     "dev": "vite",
+    "dev:verify": "OPENJARVIS_VITE_SKIP_TAILWIND=1 vite --host 127.0.0.1 --port 5173 --strictPort",
+    "check:mission-control-voice": "tsc --noEmit --pretty false --jsx react-jsx --target ES2020 --module ESNext --moduleResolution bundler --lib ES2020,DOM,DOM.Iterable --skipLibCheck --allowSyntheticDefaultImports --strict src/vite-env.d.ts src/components/MissionControl/MissionControlPage.tsx",
     "build": "tsc -b && vite build",
     "build:tauri": "tsc -b && vite build --outDir dist",
     "preview": "vite preview",

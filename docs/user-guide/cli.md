@@ -606,6 +606,14 @@ when local voice logging is enabled. It does not record audio, start hotkeys,
 approve, dispatch, or speak, and it does not show raw audio or full transcript
 text from status events.
 
+For a lightweight frontend verification pass focused on that status panel, run
+`npm run check:mission-control-voice` from `frontend/`. In environments where
+the full TypeScript project check hangs silently while resolving existing UI
+library wrappers, this command checks the Mission Control Voice status surface
+directly. If Vite starts but does not bind port `5173`, `npm run dev:verify`
+uses the same app entry with `OPENJARVIS_VITE_SKIP_TAILWIND=1` to verify the
+local server bind path without changing normal `npm run dev` or build behavior.
+
 `voice hotkey-bridge` is a print-only boundary for future macOS Fn or
 push-to-talk integration. It formats a `jarvis voice run-local ...` command, or
 a disabled Hammerspoon example with `enable_openjarvis_voice_hotkey = false`.
