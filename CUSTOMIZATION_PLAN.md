@@ -1,5 +1,69 @@
 # Customization Plan
 
+## Voice Control Phase 23
+
+Phase 23 adds read-only manual command guidance to the Mission Control voice
+setup checklist, without changing `jarvis voice` command behavior.
+
+- Missing checklist items now show copyable snippets labeled as manual terminal
+  commands.
+- Suggested commands stay on the safe CLI surface: `jarvis voice doctor`,
+  `jarvis voice transcribe-file ./voice-sample.wav --adapter faster-whisper`,
+  `jarvis voice record-local --duration 2`, `jarvis voice hotkey-bridge`, and
+  `jarvis voice run-local --duration 2 --adapter faster-whisper` when relevant.
+- Mission Control only copies command text to the clipboard. It does not run
+  commands, mutate settings, request microphone or accessibility permissions,
+  start hotkeys, dispatch, approve, speak, export logs, or clean up logs.
+- Phase 22 setup checklist behavior remains intact, and Phase 21 event detail
+  privacy remains intact: raw audio is never shown, and full transcript text is
+  not rendered unless it was explicitly logged before the event was written.
+- `npm run check:mission-control-voice` remains the focused frontend
+  verification path for the Mission Control Voice surface.
+
+Deferred work remains intentionally untouched in this phase:
+
+- no always-on listening
+- no enabled Fn/global hotkey capture by default
+- no approval bypass
+- no automatic dispatch by default
+- no automatic speech playback by default
+- no settings mutation controls in Mission Control
+- no destructive voice log cleanup/export controls in Mission Control
+- no voice-only mode; text input remains available
+
+## Voice Control Phase 22
+
+Phase 22 adds a read-only Mission Control voice setup checklist before real
+push-to-talk is enabled, without changing `jarvis voice` command behavior.
+
+- Mission Control's Voice status panel now derives a setup checklist from the
+  existing `/v1/voice/ptt/status` safe status fields.
+- The checklist shows API base URL configuration, transcription adapter
+  selection, model path configuration and existence, recorder boundary
+  availability, speech output backend, macOS `say` availability,
+  disabled/print-only hotkey bridge state, approval requirement, and full
+  transcript logging state.
+- The checklist is display-only and does not add settings mutation controls,
+  destructive log cleanup/export controls, hotkey capture, dispatch, approval,
+  speech, or recording behavior.
+- Phase 21 event detail behavior remains intact: recent voice events still show
+  only sanitized metadata, transcript length/hash/redacted preview, approval,
+  dispatch/speech summaries, and error summary when available.
+- `npm run check:mission-control-voice` remains the focused frontend
+  verification path for the Mission Control Voice surface.
+
+Deferred work remains intentionally untouched in this phase:
+
+- no always-on listening
+- no enabled Fn hotkey capture
+- no approval bypass
+- no automatic dispatch by default
+- no automatic speech playback by default
+- no live Hammerspoon or Swift helper installation
+- no settings mutation controls in Mission Control
+- no destructive voice log cleanup/export controls in Mission Control
+- no voice-only mode; text input remains available
+
 ## Voice Control Phase 21
 
 Phase 21 adds a read-only Mission Control detail view for recent redacted voice

@@ -313,6 +313,254 @@ function configuredVoiceValue(value: string | undefined, fallback = 'Not configu
   return value && value.trim() ? value : fallback;
 }
 
+type VoiceSetupChecklistItem = {
+  label: string;
+  value: string;
+  detail: string;
+  tone: StatusTone;
+  manualCommands?: Array<{
+    command: string;
+    detail: string;
+  }>;
+};
+
+function voiceChecklistTone(ready: boolean, pendingTone: StatusTone = 'watch'): StatusTone {
+  return ready ? 'good' : pendingTone;
+}
+
+function copyManualCommand(command: string) {
+  if (typeof navigator === 'undefined' || !navigator.clipboard) return;
+  void navigator.clipboard.writeText(command).catch(() => {});
+}
+
+function voiceSetupCommandAdapter(stack: VoiceStackStatus | undefined): string {
+  if (
+    stack?.transcription_adapter.supported
+    && stack.transcription_adapter.effective
+    && stack.transcription_adapter.effective !== 'disabled'
+  ) {
+    return stack.transcription_adapter.effective;
+  }
+  return 'faster-whisper';
+}
+
+function voiceSetupCommandDuration(stack: VoiceStackStatus | undefined): number {
+  const duration = stack?.record_duration.effective_default_seconds;
+  return duration && duration > 0 ? duration : 2;
+}
+
+function voiceSetupManualCommands(stack: VoiceStackStatus | undefined) {
+  const adapter = voiceSetupCommandAdapter(stack);
+  const duration = voiceSetupCommandDuration(stack);
+  return {
+    doctor: {
+      command: 'jarvis voice doctor',
+      detail: 'Inspect local voice setup without recording, dispatching, speaking, or starting hotkeys.',
+    },
+    transcribeFile: {
+      command: `jarvis voice transcribe-file ./voice-sample.wav --adapter ${adapter}`,
+      detail: 'Transcribe an existing local WAV with an explicit local adapter.',
+    },
+    recordLocal: {
+      command: `jarvis voice record-local --duration ${duration}`,
+      detail: 'Record a fixed-duration local WAV only; no transcription, dispatch, or speech.',
+    },
+    hotkeyBridge: {
+      command: `jarvis voice hotkey-bridge --adapter ${adapter}`,
+      detail: 'Print the disabled bridge command/example only; no global listener is started.',
+    },
+    runLocal: {
+      command: `jarvis voice run-local --duration ${duration} --adapter ${adapter}`,
+      detail: 'Run the explicit preview-only local pipeline; dispatch and speech stay off.',
+    },
+  };
+}
+
+function buildVoiceSetupChecklist(
+  status: VoicePttStatus | null,
+  stack: VoiceStackStatus | undefined,
+): VoiceSetupChecklistItem[] {
+  const commands = voiceSetupManualCommands(stack);
+  const hasApiBase = Boolean(stack?.api_base_url.value);
+  const adapterSelected = Boolean(
+    stack?.transcription_adapter.effective
+      && stack.transcription_adapter.effective !== 'disabled'
+      && stack.transcription_adapter.supported,
+  );
+  const modelConfigured = Boolean(stack?.model_path.value);
+  const modelExistsReady = !stack?.model_path.required || stack.model_path.exists === true;
+  const recorderBoundaryAvailable = Boolean(status?.push_to_talk_only)
+    && status?.passive_listening === false;
+  const speechBackendReady = Boolean(
+    stack?.speech_output.effective && stack.speech_output.supported,
+  );
+  const hotkeyBridgeSafe = Boolean(stack?.hotkey_bridge.print_only)
+    && stack?.hotkey_bridge.enabled === false
+    && stack?.hotkey_bridge.listener_started === false
+    && stack?.hotkey_bridge.global_key_capture === false;
+  const approvalRequired = stack?.approval.required ?? status?.requires_explicit_approval ?? false;
+  const fullTranscriptLoggingEnabled = stack?.recent_events.include_full_transcripts ?? false;
+
+  return [
+    {
+      label: 'API base URL configured',
+      value: hasApiBase ? 'Configured' : 'Missing',
+      detail: stack?.api_base_url.source || 'Voice status not loaded',
+      tone: voiceChecklistTone(hasApiBase),
+      manualCommands: hasApiBase ? undefined : [commands.doctor],
+    },
+    {
+      label: 'Transcription adapter selected',
+      value: adapterSelected ? stack?.transcription_adapter.effective || 'Selected' : 'Missing',
+      detail: stack?.transcription_adapter.source || 'Local transcription disabled',
+      tone: voiceChecklistTone(adapterSelected),
+      manualCommands: adapterSelected ? undefined : [commands.transcribeFile, commands.runLocal],
+    },
+    {
+      label: 'Model path configured',
+      value: modelConfigured ? 'Configured' : 'Missing',
+      detail: stack?.model_path.value ? compactPath(stack.model_path.value) : 'No model path configured',
+      tone: voiceChecklistTone(modelConfigured),
+      manualCommands: modelConfigured ? undefined : [commands.doctor, commands.transcribeFile],
+    },
+    {
+      label: 'Model path exists',
+      value: !stack?.model_path.required
+        ? 'Not required'
+        : stack.model_path.exists
+          ? 'Found'
+          : 'Missing',
+      detail: stack?.model_path.source || 'No model source',
+      tone: stack?.model_path.required ? voiceChecklistTone(modelExistsReady) : 'quiet',
+      manualCommands: stack?.model_path.required && !modelExistsReady
+        ? [commands.doctor, commands.transcribeFile]
+        : undefined,
+    },
+    {
+      label: 'Recorder boundary available',
+      value: recorderBoundaryAvailable ? 'Available' : 'Pending',
+      detail: status ? 'Live capture remains deferred' : 'Voice status not loaded',
+      tone: voiceChecklistTone(recorderBoundaryAvailable),
+      manualCommands: recorderBoundaryAvailable ? undefined : [commands.recordLocal],
+    },
+    {
+      label: 'Speech output backend configured',
+      value: speechBackendReady ? stack?.speech_output.effective || 'Configured' : 'Missing',
+      detail: configuredVoiceValue(stack?.speech_output.configured, 'Default adapter'),
+      tone: voiceChecklistTone(speechBackendReady),
+      manualCommands: speechBackendReady ? undefined : [commands.doctor],
+    },
+    {
+      label: 'macOS say availability',
+      value: stack?.macos_say.relevant
+        ? stack.macos_say.available
+          ? 'Available'
+          : 'Unavailable'
+        : 'Not selected',
+      detail: stack?.macos_say.relevant ? 'Relevant backend' : 'Not required for selected backend',
+      tone: stack?.macos_say.relevant
+        ? voiceChecklistTone(stack.macos_say.available)
+        : 'quiet',
+      manualCommands: stack?.macos_say.relevant && !stack.macos_say.available
+        ? [commands.doctor]
+        : undefined,
+    },
+    {
+      label: 'Hotkey bridge disabled/print-only',
+      value: hotkeyBridgeSafe ? 'Safe' : 'Check required',
+      detail: stack?.hotkey_bridge.print_only ? 'Print-only preview' : 'Listener state unknown',
+      tone: voiceChecklistTone(hotkeyBridgeSafe),
+      manualCommands: hotkeyBridgeSafe ? undefined : [commands.hotkeyBridge],
+    },
+    {
+      label: 'Approval required',
+      value: approvalRequired ? 'Required' : 'Not required',
+      detail: stack?.approval.config || 'Voice approval status pending',
+      tone: voiceChecklistTone(approvalRequired),
+      manualCommands: approvalRequired ? undefined : [commands.doctor],
+    },
+    {
+      label: 'Full transcript logging',
+      value: fullTranscriptLoggingEnabled ? 'Enabled' : 'Disabled',
+      detail: stack?.recent_events.enabled ? 'Local voice event logging configured' : 'Local voice event logging unavailable',
+      tone: fullTranscriptLoggingEnabled ? 'watch' : 'good',
+    },
+  ];
+}
+
+function VoiceSetupChecklist({ items }: { items: VoiceSetupChecklistItem[] }) {
+  return (
+    <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-5">
+      {items.map((item) => {
+        const style = toneStyle(item.tone);
+        const Icon = item.tone === 'good' ? CheckCircle2 : item.tone === 'watch' ? AlertTriangle : Circle;
+        return (
+          <div
+            key={item.label}
+            className="min-w-0 rounded-md border px-3 py-2"
+            style={{ borderColor: style.border, background: style.bg }}
+          >
+            <div className="flex items-start gap-2">
+              <Icon className="mt-0.5 shrink-0" size={15} style={{ color: style.text }} />
+              <div className="min-w-0">
+                <div className="text-xs font-medium" style={{ color: 'var(--color-text)' }}>
+                  {item.label}
+                </div>
+                <div className="mt-1 text-xs font-semibold" style={{ color: style.text }}>
+                  {item.value}
+                </div>
+                <div className="mt-1 truncate text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+                  {item.detail}
+                </div>
+                {item.manualCommands?.length ? (
+                  <div className="mt-3 grid gap-2">
+                    <div className="text-[11px] font-medium uppercase tracking-wide" style={{ color: 'var(--color-text-tertiary)' }}>
+                      Manual terminal commands
+                    </div>
+                    {item.manualCommands.map((manualCommand) => (
+                      <div
+                        key={manualCommand.command}
+                        className="rounded-md border px-2 py-2"
+                        style={{
+                          borderColor: 'var(--color-border)',
+                          background: 'var(--color-bg)',
+                        }}
+                      >
+                        <div className="flex items-start gap-2">
+                          <code className="min-w-0 flex-1 break-all text-[11px]" style={{ color: 'var(--color-text)' }}>
+                            {manualCommand.command}
+                          </code>
+                          <button
+                            type="button"
+                            className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md border"
+                            style={{
+                              borderColor: 'var(--color-border)',
+                              color: 'var(--color-text-secondary)',
+                              background: 'var(--color-bg-secondary)',
+                            }}
+                            title="Copy manual terminal command"
+                            aria-label={`Copy manual terminal command: ${manualCommand.command}`}
+                            onClick={() => copyManualCommand(manualCommand.command)}
+                          >
+                            <Clipboard size={13} />
+                          </button>
+                        </div>
+                        <div className="mt-1 text-[11px]" style={{ color: 'var(--color-text-secondary)' }}>
+                          {manualCommand.detail}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 type RecentVoiceEvent = VoiceStackStatus['recent_events']['events'][number];
 type RecentVoiceEventDetails = RecentVoiceEvent['details'];
 
@@ -2002,6 +2250,10 @@ function VoiceSection() {
   const recording = status?.recording ?? false;
   const latest = status?.latest;
   const stack = status?.voice_stack;
+  const voiceSetupChecklist = useMemo(
+    () => buildVoiceSetupChecklist(status, stack),
+    [status, stack],
+  );
   const recentVoiceEvents = stack?.recent_events.events ?? [];
   const intent = preview?.intent_preview || latest?.intent_preview;
   const canSubmit = busy === 'idle' && fsmState === 'idle' && transcript.trim().length > 0;
@@ -2085,6 +2337,16 @@ function VoiceSection() {
             value={stack?.safety.always_on_listening ? 'Listening' : 'Passive'}
             detail="No auto dispatch or speech"
           />
+        </div>
+
+        <div className="mt-5">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <h3 className="text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--color-text-tertiary)' }}>
+              Voice setup checklist
+            </h3>
+            <StatusPill tone="quiet">Read only</StatusPill>
+          </div>
+          <VoiceSetupChecklist items={voiceSetupChecklist} />
         </div>
 
         <div className="mt-5">
