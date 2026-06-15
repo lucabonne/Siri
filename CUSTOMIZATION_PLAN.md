@@ -1,5 +1,42 @@
 # Customization Plan
 
+## Voice Control Phase 26
+
+Phase 26 adds a read-only Mission Control voice safety/audit summary that makes
+the voice safeguards visible without enabling new behavior.
+
+- Mission Control now shows a separate safety/audit summary for explicit
+  approval, disabled auto-dispatch, disabled auto-speech, disabled always-on
+  listening, disabled/print-only hotkey bridge state, raw audio non-storage,
+  transcript redaction defaults, full transcript logging state, local-only event
+  logging state, and recent approval/dispatch/speech event counts when safe
+  event data is available.
+- `/v1/voice/ptt/status` now includes read-only audit fields for disabled
+  auto-dispatch/auto-speech, raw audio non-storage, transcript redaction
+  default, local-only event logging, and recent safe event counts. These fields
+  are derived from existing config/status data and sanitized recent event
+  summaries.
+- The Phase 25 diagnostics summary remains intact. The setup checklist and
+  recent redacted event filters remain read-only and continue to avoid raw audio
+  and full transcript text from status-loaded events.
+- Mission Control still does not run CLI commands, mutate settings, start
+  hotkeys, approve, dispatch, speak, export/clean logs, show raw audio, or render
+  full transcript text unless it was explicitly logged before the event was
+  written, and even then status-loaded full text remains hidden in the UI.
+- `npm run check:mission-control-voice` remains the focused frontend
+  verification path for the Mission Control Voice surface.
+
+Deferred work remains intentionally untouched in this phase:
+
+- no always-on listening
+- no enabled Fn/global hotkey capture by default
+- no approval bypass
+- no automatic dispatch by default
+- no automatic speech playback by default
+- no settings mutation controls in Mission Control
+- no destructive voice log cleanup/export controls in Mission Control
+- no voice-only mode; text input remains available
+
 ## Voice Control Phase 25
 
 Phase 25 adds a read-only Mission Control voice diagnostics summary that mirrors

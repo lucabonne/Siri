@@ -925,6 +925,15 @@ export interface VoiceStackStatus {
   recent_events: {
     enabled: boolean;
     include_full_transcripts: boolean;
+    local_only: boolean;
+    raw_audio_stored: boolean;
+    transcript_redaction_default: boolean;
+    counts: {
+      total: number;
+      approval: number;
+      dispatch: number;
+      speech: number;
+    };
     events: Array<{
       timestamp: string;
       command: string;
@@ -941,10 +950,13 @@ export interface VoiceStackStatus {
   };
   safety: {
     always_on_listening: boolean;
+    auto_dispatch_enabled: boolean;
+    auto_speech_enabled: boolean;
     dispatch_called: boolean;
     speech_called: boolean;
     hotkeys_started: boolean;
     approval_bypassed: boolean;
+    raw_audio_stored: boolean;
     voice_only_mode: boolean;
   };
 }

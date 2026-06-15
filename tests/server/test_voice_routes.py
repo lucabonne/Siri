@@ -122,9 +122,21 @@ def test_voice_status_includes_safe_stack_config(client: TestClient) -> None:
     assert stack["record_duration"]["duration_flag_required"] is True
     assert stack["speech_output"]["backend"] == "macos-say"
     assert "path" in stack["macos_say"]
+    assert stack["safety"]["auto_dispatch_enabled"] is False
+    assert stack["safety"]["auto_speech_enabled"] is False
     assert stack["safety"]["dispatch_called"] is False
     assert stack["safety"]["speech_called"] is False
     assert stack["safety"]["approval_bypassed"] is False
+    assert stack["safety"]["raw_audio_stored"] is False
+    assert stack["recent_events"]["local_only"] is False
+    assert stack["recent_events"]["raw_audio_stored"] is False
+    assert stack["recent_events"]["transcript_redaction_default"] is True
+    assert stack["recent_events"]["counts"] == {
+        "total": 0,
+        "approval": 0,
+        "dispatch": 0,
+        "speech": 0,
+    }
     assert stack["recent_events"]["events"] == []
 
 
@@ -190,6 +202,16 @@ def test_voice_status_recent_events_are_redacted(tmp_path: Path) -> None:
     assert "text" not in event["transcript"]
     assert "recording_path" not in event["details"]
     assert event["details"] == {"dispatch_skipped": True, "approved": False}
+    recent_events = resp.json()["voice_stack"]["recent_events"]
+    assert recent_events["local_only"] is True
+    assert recent_events["raw_audio_stored"] is False
+    assert recent_events["transcript_redaction_default"] is True
+    assert recent_events["counts"] == {
+        "total": 1,
+        "approval": 1,
+        "dispatch": 0,
+        "speech": 0,
+    }
 
 
 def test_voice_start_requires_approval(client: TestClient) -> None:

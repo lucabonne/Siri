@@ -331,6 +331,8 @@ type VoiceDiagnosticsSummaryItem = {
   tone: StatusTone;
 };
 
+type VoiceSafetyAuditSummaryItem = VoiceDiagnosticsSummaryItem;
+
 function voiceChecklistTone(ready: boolean, pendingTone: StatusTone = 'watch'): StatusTone {
   return ready ? 'good' : pendingTone;
 }
@@ -343,6 +345,11 @@ function enabledLabel(value: boolean | undefined): string {
 function yesNoLabel(value: boolean | undefined): string {
   if (typeof value === 'undefined') return 'Unknown';
   return value ? 'Yes' : 'No';
+}
+
+function auditEnabledLabel(value: boolean | undefined, enabled = 'Enabled', disabled = 'Disabled'): string {
+  if (typeof value === 'undefined') return 'Unknown';
+  return value ? enabled : disabled;
 }
 
 function copyManualCommand(command: string) {
@@ -587,6 +594,102 @@ function buildVoiceDiagnosticsSummary(
       value: enabledLabel(stack?.recent_events.include_full_transcripts),
       detail: stack?.recent_events.include_full_transcripts ? 'Transcript body may exist in local logs' : 'Redacted summaries only',
       tone: stack?.recent_events.include_full_transcripts ? 'watch' : 'good',
+    },
+  ];
+}
+
+function buildVoiceSafetyAuditSummary(
+  status: VoicePttStatus | null,
+  stack: VoiceStackStatus | undefined,
+): VoiceSafetyAuditSummaryItem[] {
+  const approvalRequired = stack?.approval.required ?? status?.requires_explicit_approval;
+  const autoDispatchDisabled = typeof stack?.safety.auto_dispatch_enabled === 'boolean'
+    ? !stack.safety.auto_dispatch_enabled
+    : stack?.safety.dispatch_called === false;
+  const autoSpeechDisabled = typeof stack?.safety.auto_speech_enabled === 'boolean'
+    ? !stack.safety.auto_speech_enabled
+    : stack?.safety.speech_called === false;
+  const alwaysOnDisabled = stack ? stack.safety.always_on_listening === false : undefined;
+  const hotkeyBridgeSafe = stack
+    ? stack.hotkey_bridge.print_only
+      && stack.hotkey_bridge.enabled === false
+      && stack.hotkey_bridge.listener_started === false
+      && stack.hotkey_bridge.global_key_capture === false
+    : undefined;
+  const rawAudioNotStored = stack
+    ? stack.safety.raw_audio_stored === false && stack.recent_events.raw_audio_stored === false
+    : undefined;
+  const transcriptRedactionDefault = stack
+    ? stack.recent_events.transcript_redaction_default ?? !stack.recent_events.include_full_transcripts
+    : undefined;
+  const fullTranscriptLogging = stack?.recent_events.include_full_transcripts;
+  const localOnlyEventLogging = stack?.recent_events.local_only ?? stack?.recent_events.enabled;
+  const counts = stack?.recent_events.counts;
+
+  return [
+    {
+      label: 'Approval required',
+      value: auditEnabledLabel(approvalRequired, 'Required', 'Not required'),
+      detail: stack?.approval.config || 'Voice approval status pending',
+      tone: approvalRequired ? 'good' : 'watch',
+    },
+    {
+      label: 'Auto-dispatch',
+      value: auditEnabledLabel(autoDispatchDisabled, 'Disabled', 'Enabled'),
+      detail: 'Dispatch remains explicit after approval',
+      tone: autoDispatchDisabled ? 'good' : 'watch',
+    },
+    {
+      label: 'Auto-speech',
+      value: auditEnabledLabel(autoSpeechDisabled, 'Disabled', 'Enabled'),
+      detail: 'Speech output remains explicit',
+      tone: autoSpeechDisabled ? 'good' : 'watch',
+    },
+    {
+      label: 'Always-on listening',
+      value: auditEnabledLabel(alwaysOnDisabled, 'Disabled', 'Enabled'),
+      detail: status ? 'Push-to-talk/status flow only' : 'Voice status not loaded',
+      tone: alwaysOnDisabled ? 'good' : 'watch',
+    },
+    {
+      label: 'Hotkey bridge',
+      value: auditEnabledLabel(hotkeyBridgeSafe, 'Disabled / print-only', 'Check required'),
+      detail: stack?.hotkey_bridge.configured_format
+        ? `Format: ${stack.hotkey_bridge.configured_format}`
+        : 'Voice status not loaded',
+      tone: hotkeyBridgeSafe ? 'good' : 'watch',
+    },
+    {
+      label: 'Raw audio storage',
+      value: auditEnabledLabel(rawAudioNotStored, 'Not stored', 'Stored'),
+      detail: 'Status and event summaries do not expose raw audio',
+      tone: rawAudioNotStored ? 'good' : 'watch',
+    },
+    {
+      label: 'Transcript redaction',
+      value: auditEnabledLabel(transcriptRedactionDefault, 'Default', 'Full text mode'),
+      detail: transcriptRedactionDefault ? 'Length/hash/redacted preview by default' : 'Full transcript logging is enabled',
+      tone: transcriptRedactionDefault ? 'good' : 'watch',
+    },
+    {
+      label: 'Full transcript logging',
+      value: enabledLabel(fullTranscriptLogging),
+      detail: fullTranscriptLogging
+        ? 'Only previously opted-in events may contain text'
+        : 'Full transcript text hidden from status events',
+      tone: fullTranscriptLogging ? 'watch' : 'good',
+    },
+    {
+      label: 'Local-only event logging',
+      value: enabledLabel(localOnlyEventLogging),
+      detail: stack?.recent_events.enabled ? 'Configured JSONL event summaries' : 'Local event logging disabled',
+      tone: localOnlyEventLogging ? 'quiet' : 'watch',
+    },
+    {
+      label: 'Recent audit counts',
+      value: counts ? `A ${counts.approval} / D ${counts.dispatch} / S ${counts.speech}` : 'Unavailable',
+      detail: counts ? `From ${counts.total} recent safe events` : 'No safe event count data',
+      tone: counts && counts.total > 0 ? 'quiet' : 'watch',
     },
   ];
 }
@@ -2478,6 +2581,10 @@ function VoiceSection() {
     () => buildVoiceDiagnosticsSummary(status, stack),
     [status, stack],
   );
+  const voiceSafetyAuditSummary = useMemo(
+    () => buildVoiceSafetyAuditSummary(status, stack),
+    [status, stack],
+  );
   const recentVoiceEvents = stack?.recent_events.events ?? [];
   const voiceEventTypeOptions = useMemo(
     () => uniqueVoiceEventValues(recentVoiceEvents, (event) => event.event),
@@ -2594,6 +2701,16 @@ function VoiceSection() {
             <StatusPill tone="quiet">Read only</StatusPill>
           </div>
           <VoiceDiagnosticsSummary items={voiceDiagnosticsSummary} />
+        </div>
+
+        <div className="mt-5">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <h3 className="text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--color-text-tertiary)' }}>
+              Voice safety audit summary
+            </h3>
+            <StatusPill tone="quiet">Read only</StatusPill>
+          </div>
+          <VoiceDiagnosticsSummary items={voiceSafetyAuditSummary} />
         </div>
 
         <div className="mt-5">

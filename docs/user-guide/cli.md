@@ -605,11 +605,16 @@ backend, macOS `say` availability, disabled/print-only hotkey bridge state,
 approval requirement, and recent redacted voice events when local voice logging
 is enabled. It also shows a read-only diagnostics summary mirroring the safe
 `voice doctor` data plus local voice logging and full transcript logging state;
-Mission Control does not run `jarvis voice doctor`. The setup checklist remains
-read-only for API base URL configuration, transcription adapter selection, model
-path configuration and existence, recorder boundary availability, speech output
-backend, macOS `say`, hotkey bridge state, approval requirement, and full
-transcript logging state.
+Mission Control does not run `jarvis voice doctor`. A separate read-only
+safety/audit summary shows approval required, auto-dispatch disabled,
+auto-speech disabled, always-on listening disabled, the hotkey bridge
+disabled/print-only state, raw audio non-storage, transcript redaction defaults,
+full transcript logging state, local-only event logging state, and recent
+approval/dispatch/speech event counts when safe event data is available. The
+setup checklist remains read-only for API base URL configuration, transcription
+adapter selection, model path configuration and existence, recorder boundary
+availability, speech output backend, macOS `say`, hotkey bridge state, approval
+requirement, and full transcript logging state.
 Missing checklist items show copyable suggestions labeled as manual terminal
 commands, such as `jarvis voice doctor`,
 `jarvis voice transcribe-file ./voice-sample.wav --adapter faster-whisper`,

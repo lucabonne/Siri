@@ -1153,6 +1153,35 @@ def _safe_voice_event(event: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _safe_voice_event_counts(events: list[dict[str, Any]]) -> dict[str, int]:
+    counts = {
+        "total": len(events),
+        "approval": 0,
+        "dispatch": 0,
+        "speech": 0,
+    }
+    for event in events:
+        event_type = str(event.get("event", "")).lower()
+        command = str(event.get("command", "")).lower()
+        details = event.get("details")
+        detail_keys = set(details) if isinstance(details, dict) else set()
+        if "approval" in event_type or detail_keys.intersection(
+            {"approval_required", "approved"}
+        ):
+            counts["approval"] += 1
+        if "dispatch" in event_type or detail_keys.intersection(
+            {"dispatch_enabled", "dispatch_called", "dispatched", "dispatch_status"}
+        ):
+            counts["dispatch"] += 1
+        if (
+            "speech" in event_type
+            or "speak" in command
+            or detail_keys.intersection({"speech_enabled", "speech_called", "spoken"})
+        ):
+            counts["speech"] += 1
+    return counts
+
+
 def _recent_voice_events(config: Any, *, limit: int = 5) -> dict[str, Any]:
     from openjarvis.voice.event_log import (
         query_voice_events,
@@ -1161,10 +1190,15 @@ def _recent_voice_events(config: Any, *, limit: int = 5) -> dict[str, Any]:
 
     settings = voice_log_settings_from_config(config)
     events = query_voice_events(settings.path, limit=limit) if settings.enabled else []
+    safe_events = [_safe_voice_event(event) for event in events]
     return {
         "enabled": settings.enabled,
         "include_full_transcripts": settings.include_full_transcripts,
-        "events": [_safe_voice_event(event) for event in events],
+        "local_only": settings.enabled,
+        "raw_audio_stored": False,
+        "transcript_redaction_default": not settings.include_full_transcripts,
+        "counts": _safe_voice_event_counts(safe_events),
+        "events": safe_events,
     }
 
 
@@ -1243,10 +1277,13 @@ def _voice_stack_status(request: Request) -> dict[str, Any]:
         "recent_events": _recent_voice_events(config),
         "safety": {
             "always_on_listening": False,
+            "auto_dispatch_enabled": False,
+            "auto_speech_enabled": False,
             "dispatch_called": False,
             "speech_called": False,
             "hotkeys_started": False,
             "approval_bypassed": False,
+            "raw_audio_stored": False,
             "voice_only_mode": False,
         },
     }
