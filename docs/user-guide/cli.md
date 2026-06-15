@@ -617,10 +617,13 @@ terminal.
 Recent events can be expanded in place to inspect only sanitized fields: event
 type, status, timestamp, transcript length/hash/redacted preview, approval
 decision, dispatch and speech attempt/result summaries, and error summary when
-available. It does not record audio, start hotkeys, approve, dispatch, speak, or
-mutate voice settings, and it does not show raw audio or full transcript text
-from status events. Log export and cleanup remain available only through
-`jarvis voice logs`; Mission Control does not add those controls.
+available. The same returned event list can be filtered locally by event type,
+status, derived success/failure outcome, approval/dispatch-only events, and text
+search over those safe displayed fields. It does not record audio, start
+hotkeys, approve, dispatch, speak, run CLI commands, mutate voice settings, or
+show raw audio or full transcript text from status events. Log export and
+cleanup remain available only through `jarvis voice logs`; Mission Control does
+not add those controls.
 
 For a lightweight frontend verification pass focused on that status panel, run
 `npm run check:mission-control-voice` from `frontend/`. In environments where

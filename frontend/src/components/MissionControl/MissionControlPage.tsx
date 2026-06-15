@@ -563,6 +563,26 @@ function VoiceSetupChecklist({ items }: { items: VoiceSetupChecklistItem[] }) {
 
 type RecentVoiceEvent = VoiceStackStatus['recent_events']['events'][number];
 type RecentVoiceEventDetails = RecentVoiceEvent['details'];
+type VoiceEventOutcomeFilter = 'all' | 'success' | 'failure';
+
+type VoiceEventFilters = {
+  eventType: string;
+  status: string;
+  outcome: VoiceEventOutcomeFilter;
+  approvalDispatchOnly: boolean;
+  search: string;
+};
+
+const defaultVoiceEventFilters: VoiceEventFilters = {
+  eventType: 'all',
+  status: 'all',
+  outcome: 'all',
+  approvalDispatchOnly: false,
+  search: '',
+};
+
+const successVoiceStatuses = new Set(['ok', 'success', 'succeeded', 'complete', 'completed']);
+const failureVoiceStatuses = new Set(['error', 'failed', 'failure']);
 
 function eventTranscriptDetail(
   transcript: RecentVoiceEvent['transcript'],
@@ -642,6 +662,75 @@ function voiceErrorSummary(event: RecentVoiceEvent): string {
     return details.has_error ? voiceDetailSummary(details, ['has_error', 'reason']) : 'No error recorded';
   }
   return failedStatus ? voiceDetailSummary(details, ['reason']) : 'No error recorded';
+}
+
+function voiceEventOutcome(event: RecentVoiceEvent): VoiceEventOutcomeFilter {
+  const status = (event.status || '').toLowerCase();
+  const hasExplicitError = Boolean(
+    hasVoiceDetail(event.details, 'error_summary')
+      || hasVoiceDetail(event.details, 'error')
+      || event.details.has_error === true,
+  );
+  if (failureVoiceStatuses.has(status) || hasExplicitError) return 'failure';
+  if (successVoiceStatuses.has(status)) return 'success';
+  return 'all';
+}
+
+function isApprovalDispatchVoiceEvent(event: RecentVoiceEvent): boolean {
+  const eventType = (event.event || '').toLowerCase();
+  if (eventType.includes('approval') || eventType.includes('dispatch')) return true;
+  return [
+    'approval_required',
+    'approved',
+    'attempted',
+    'dispatch_enabled',
+    'dispatch_called',
+    'dispatched',
+    'dispatch_status',
+  ].some((key) => hasVoiceDetail(event.details, key));
+}
+
+function voiceEventSearchText(event: RecentVoiceEvent): string {
+  const transcript = event.transcript || {};
+  return [
+    event.command,
+    event.event,
+    event.status,
+    event.timestamp,
+    eventTranscriptDetail(transcript),
+    typeof transcript.length === 'number' ? String(transcript.length) : '',
+    transcript.sha256 || '',
+    transcript.preview || '',
+    voiceApprovalSummary(event.details),
+    voiceDispatchSummary(event.details),
+    voiceSpeechSummary(event.details),
+    voiceErrorSummary(event),
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+}
+
+function filterVoiceEvents(
+  events: RecentVoiceEvent[],
+  filters: VoiceEventFilters,
+): RecentVoiceEvent[] {
+  const search = filters.search.trim().toLowerCase();
+  return events.filter((event) => {
+    if (filters.eventType !== 'all' && event.event !== filters.eventType) return false;
+    if (filters.status !== 'all' && event.status !== filters.status) return false;
+    if (filters.outcome !== 'all' && voiceEventOutcome(event) !== filters.outcome) return false;
+    if (filters.approvalDispatchOnly && !isApprovalDispatchVoiceEvent(event)) return false;
+    if (search && !voiceEventSearchText(event).includes(search)) return false;
+    return true;
+  });
+}
+
+function uniqueVoiceEventValues(
+  events: RecentVoiceEvent[],
+  getValue: (event: RecentVoiceEvent) => string,
+): string[] {
+  return Array.from(new Set(events.map(getValue).filter(Boolean))).sort((a, b) => a.localeCompare(b));
 }
 
 function VoiceEventDetailRow({ label, value }: { label: string; value: ReactNode }) {
@@ -2171,6 +2260,7 @@ function VoiceSection() {
   const [busy, setBusy] = useState<'idle' | 'submitting' | 'dispatching' | 'cancelling'>('idle');
   const [fallbackFsmState, setFallbackFsmState] = useState('idle');
   const [expandedVoiceEventKey, setExpandedVoiceEventKey] = useState<string | null>(null);
+  const [voiceEventFilters, setVoiceEventFilters] = useState<VoiceEventFilters>(defaultVoiceEventFilters);
 
   const loadVoiceStatus = async () => {
     try {
@@ -2255,6 +2345,23 @@ function VoiceSection() {
     [status, stack],
   );
   const recentVoiceEvents = stack?.recent_events.events ?? [];
+  const voiceEventTypeOptions = useMemo(
+    () => uniqueVoiceEventValues(recentVoiceEvents, (event) => event.event),
+    [recentVoiceEvents],
+  );
+  const voiceEventStatusOptions = useMemo(
+    () => uniqueVoiceEventValues(recentVoiceEvents, (event) => event.status),
+    [recentVoiceEvents],
+  );
+  const filteredVoiceEvents = useMemo(
+    () => filterVoiceEvents(recentVoiceEvents, voiceEventFilters),
+    [recentVoiceEvents, voiceEventFilters],
+  );
+  const hasVoiceEventFilters = voiceEventFilters.eventType !== defaultVoiceEventFilters.eventType
+    || voiceEventFilters.status !== defaultVoiceEventFilters.status
+    || voiceEventFilters.outcome !== defaultVoiceEventFilters.outcome
+    || voiceEventFilters.approvalDispatchOnly !== defaultVoiceEventFilters.approvalDispatchOnly
+    || voiceEventFilters.search.trim().length > 0;
   const intent = preview?.intent_preview || latest?.intent_preview;
   const canSubmit = busy === 'idle' && fsmState === 'idle' && transcript.trim().length > 0;
   const canApprove = busy === 'idle' && fsmState === 'awaiting_approval' && Boolean(preview?.transcript.trim());
@@ -2272,6 +2379,12 @@ function VoiceSection() {
   const completionDetail = dispatchResult?.dispatched
     ? `Dispatched${dispatchResult.agent_id ? ` to ${dispatchResult.agent_id}` : ''}`
     : dispatchResult?.reason || dispatchResult?.error?.message || 'No dispatch yet';
+  const updateVoiceEventFilter = <K extends keyof VoiceEventFilters>(
+    key: K,
+    value: VoiceEventFilters[K],
+  ) => {
+    setVoiceEventFilters((current) => ({ ...current, [key]: value }));
+  };
 
   return (
     <div className="grid gap-4">
@@ -2355,12 +2468,126 @@ function VoiceSection() {
               Recent redacted voice events
             </h3>
             <StatusPill tone={stack?.recent_events.enabled ? 'quiet' : 'watch'}>
-              {stack?.recent_events.enabled ? 'Logs enabled' : 'Logs unavailable'}
+              {stack?.recent_events.enabled
+                ? `${filteredVoiceEvents.length}/${recentVoiceEvents.length} shown`
+                : 'Logs unavailable'}
             </StatusPill>
           </div>
           {recentVoiceEvents.length ? (
-            <div className="grid gap-2">
-              {recentVoiceEvents.map((event, index) => {
+            <div
+              className="mb-3 grid gap-2 rounded-md border p-3 lg:grid-cols-[1fr_1fr_1fr_auto] xl:grid-cols-[1fr_1fr_1fr_auto_1.4fr_auto]"
+              style={{
+                borderColor: 'var(--color-border)',
+                background: 'var(--color-bg-secondary)',
+              }}
+            >
+              <label className="grid gap-1 text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+                <span className="font-medium">Event type</span>
+                <select
+                  value={voiceEventFilters.eventType}
+                  onChange={(event) => updateVoiceEventFilter('eventType', event.target.value)}
+                  className="h-9 rounded-md border px-2 text-xs"
+                  style={{
+                    borderColor: 'var(--color-border)',
+                    background: 'var(--color-bg)',
+                    color: 'var(--color-text)',
+                  }}
+                >
+                  <option value="all">All event types</option>
+                  {voiceEventTypeOptions.map((eventType) => (
+                    <option key={eventType} value={eventType}>{eventType}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="grid gap-1 text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+                <span className="font-medium">Status</span>
+                <select
+                  value={voiceEventFilters.status}
+                  onChange={(event) => updateVoiceEventFilter('status', event.target.value)}
+                  className="h-9 rounded-md border px-2 text-xs"
+                  style={{
+                    borderColor: 'var(--color-border)',
+                    background: 'var(--color-bg)',
+                    color: 'var(--color-text)',
+                  }}
+                >
+                  <option value="all">All statuses</option>
+                  {voiceEventStatusOptions.map((status) => (
+                    <option key={status} value={status}>{status}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="grid gap-1 text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+                <span className="font-medium">Outcome</span>
+                <select
+                  value={voiceEventFilters.outcome}
+                  onChange={(event) => updateVoiceEventFilter('outcome', event.target.value as VoiceEventOutcomeFilter)}
+                  className="h-9 rounded-md border px-2 text-xs"
+                  style={{
+                    borderColor: 'var(--color-border)',
+                    background: 'var(--color-bg)',
+                    color: 'var(--color-text)',
+                  }}
+                >
+                  <option value="all">Success and failure</option>
+                  <option value="success">Success only</option>
+                  <option value="failure">Failure only</option>
+                </select>
+              </label>
+              <label
+                className="flex min-h-9 items-center gap-2 self-end rounded-md border px-3 text-xs"
+                style={{
+                  borderColor: 'var(--color-border)',
+                  background: 'var(--color-bg)',
+                  color: 'var(--color-text-secondary)',
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={voiceEventFilters.approvalDispatchOnly}
+                  onChange={(event) => updateVoiceEventFilter('approvalDispatchOnly', event.target.checked)}
+                />
+                <span>Approval/dispatch only</span>
+              </label>
+              <label className="grid gap-1 text-xs lg:col-span-3 xl:col-span-1" style={{ color: 'var(--color-text-secondary)' }}>
+                <span className="font-medium">Search displayed fields</span>
+                <span
+                  className="flex h-9 items-center gap-2 rounded-md border px-2"
+                  style={{
+                    borderColor: 'var(--color-border)',
+                    background: 'var(--color-bg)',
+                  }}
+                >
+                  <Search size={14} style={{ color: 'var(--color-text-tertiary)' }} />
+                  <input
+                    value={voiceEventFilters.search}
+                    onChange={(event) => updateVoiceEventFilter('search', event.target.value)}
+                    placeholder="Search redacted event text"
+                    className="min-w-0 flex-1 bg-transparent text-xs outline-none"
+                    style={{ color: 'var(--color-text)' }}
+                  />
+                </span>
+              </label>
+              <button
+                type="button"
+                disabled={!hasVoiceEventFilters}
+                className="inline-flex h-9 items-center justify-center gap-2 self-end rounded-md border px-3 text-xs font-medium disabled:opacity-50"
+                style={{
+                  borderColor: 'var(--color-border)',
+                  color: 'var(--color-text-secondary)',
+                  background: 'var(--color-bg)',
+                }}
+                onClick={() => setVoiceEventFilters(defaultVoiceEventFilters)}
+              >
+                <XCircle size={14} />
+                Reset filters
+              </button>
+            </div>
+          ) : null}
+          {recentVoiceEvents.length ? (
+            filteredVoiceEvents.length ? (
+              <div className="grid gap-2">
+                {filteredVoiceEvents.map((event, index) => {
                 const key = voiceEventKey(event, index);
                 const expanded = expandedVoiceEventKey === key;
                 return (
@@ -2402,9 +2629,14 @@ function VoiceSection() {
                     </div>
                     {expanded && <VoiceEventDetails event={event} />}
                   </div>
-                );
-              })}
-            </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <p className="text-sm" style={{ color: 'var(--color-text-tertiary)' }}>
+                No local voice events match the current filters.
+              </p>
+            )
           ) : (
             <p className="text-sm" style={{ color: 'var(--color-text-tertiary)' }}>
               No local voice events available.

@@ -1,5 +1,36 @@
 # Customization Plan
 
+## Voice Control Phase 24
+
+Phase 24 adds read-only Mission Control filters for recent redacted voice events
+already returned by the status payload, without changing `jarvis voice` command
+behavior.
+
+- Mission Control now filters the existing recent voice event list locally by
+  event type, status, derived success/failure outcome, approval/dispatch-only
+  events, and text search over the safe displayed event fields.
+- Filtering is client-side only and uses the same sanitized fields already shown
+  in the Phase 21 detail view: event metadata, transcript length/hash/redacted
+  preview, approval decision, dispatch/speech summaries, and error summary.
+- Phase 23 setup command guidance remains intact: Mission Control only displays
+  and copies manual terminal command text. It does not run CLI commands or
+  mutate settings.
+- Raw audio is never shown, and full transcript text is not rendered unless it
+  was explicitly logged before the event was written.
+- `npm run check:mission-control-voice` remains the focused frontend
+  verification path for the Mission Control Voice surface.
+
+Deferred work remains intentionally untouched in this phase:
+
+- no always-on listening
+- no enabled Fn/global hotkey capture by default
+- no approval bypass
+- no automatic dispatch by default
+- no automatic speech playback by default
+- no settings mutation controls in Mission Control
+- no destructive voice log cleanup/export controls in Mission Control
+- no voice-only mode; text input remains available
+
 ## Voice Control Phase 23
 
 Phase 23 adds read-only manual command guidance to the Mission Control voice
