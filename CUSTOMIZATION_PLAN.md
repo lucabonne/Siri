@@ -1,5 +1,37 @@
 # Customization Plan
 
+## Voice Control Phase 27
+
+Phase 27 adds a guarded, opt-in Mission Control helper for copying the safe
+local voice pipeline command without executing anything from the UI.
+
+- Mission Control now shows a separate local pipeline command helper that builds
+  copyable manual terminal commands for `jarvis voice run-local --duration ...`.
+  The default command is preview-only and keeps dispatch and speech disabled.
+- When the safe status payload already identifies a supported local
+  transcription adapter, the helper includes the matching `--adapter` flag. It
+  otherwise leaves adapter selection to the existing CLI/config boundary.
+- Optional approve-dispatch and approve-dispatch-plus-speak variants are shown
+  separately and labeled as manual explicit terminal commands. Mission Control
+  still only copies command text; it does not run commands or mutate settings.
+- The Phase 26 diagnostics and safety/audit summaries remain intact. Raw audio
+  is not shown, destructive log cleanup/export controls are not added, and full
+  transcript text remains hidden from status-loaded events unless it was
+  explicitly logged before the event was written.
+- `npm run check:mission-control-voice` remains the focused frontend
+  verification path for the Mission Control Voice surface.
+
+Deferred work remains intentionally untouched in this phase:
+
+- no always-on listening
+- no enabled Fn/global hotkey capture by default
+- no approval bypass
+- no automatic dispatch by default
+- no automatic speech playback by default
+- no settings mutation controls in Mission Control
+- no destructive voice log cleanup/export controls in Mission Control
+- no voice-only mode; text input remains available
+
 ## Voice Control Phase 26
 
 Phase 26 adds a read-only Mission Control voice safety/audit summary that makes

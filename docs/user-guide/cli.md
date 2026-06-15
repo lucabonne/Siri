@@ -622,6 +622,14 @@ commands, such as `jarvis voice doctor`,
 `jarvis voice run-local --duration 2 --adapter faster-whisper`. Mission Control
 does not run those commands; it only displays/copies the text for use in a
 terminal.
+Mission Control also shows a guarded local pipeline command helper for
+`jarvis voice run-local --duration ...`. The default helper command is
+preview-only. If safe status data already identifies a supported local
+transcription adapter, Mission Control includes the matching `--adapter` flag;
+otherwise it leaves adapter resolution to the CLI/config boundary. Optional
+`--approve-dispatch` and `--approve-dispatch --speak-result` variants are
+displayed separately as manual explicit terminal commands, and Mission Control
+only copies their text.
 Recent events can be expanded in place to inspect only sanitized fields: event
 type, status, timestamp, transcript length/hash/redacted preview, approval
 decision, dispatch and speech attempt/result summaries, and error summary when

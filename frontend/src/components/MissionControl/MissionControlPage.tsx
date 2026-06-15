@@ -324,6 +324,13 @@ type VoiceSetupChecklistItem = {
   }>;
 };
 
+type VoiceManualCommand = {
+  label: string;
+  command: string;
+  detail: string;
+  tone: StatusTone;
+};
+
 type VoiceDiagnosticsSummaryItem = {
   label: string;
   value: string;
@@ -371,6 +378,52 @@ function voiceSetupCommandAdapter(stack: VoiceStackStatus | undefined): string {
 function voiceSetupCommandDuration(stack: VoiceStackStatus | undefined): number {
   const duration = stack?.record_duration.effective_default_seconds;
   return duration && duration > 0 ? duration : 2;
+}
+
+function voiceKnownCommandAdapter(stack: VoiceStackStatus | undefined): string {
+  if (
+    stack?.transcription_adapter.supported
+    && stack.transcription_adapter.effective
+    && stack.transcription_adapter.effective !== 'disabled'
+  ) {
+    return stack.transcription_adapter.effective;
+  }
+  return '';
+}
+
+function voiceRunLocalBaseCommand(stack: VoiceStackStatus | undefined): string {
+  const duration = voiceSetupCommandDuration(stack);
+  const adapter = voiceKnownCommandAdapter(stack);
+  return [
+    'jarvis voice run-local',
+    '--duration',
+    String(duration),
+    adapter ? `--adapter ${adapter}` : '',
+  ].filter(Boolean).join(' ');
+}
+
+function buildVoicePipelineManualCommands(stack: VoiceStackStatus | undefined): VoiceManualCommand[] {
+  const baseCommand = voiceRunLocalBaseCommand(stack);
+  return [
+    {
+      label: 'Preview only',
+      command: baseCommand,
+      detail: 'Manual terminal command. Records/transcribes locally and submits preview; dispatch and speech stay off.',
+      tone: 'good',
+    },
+    {
+      label: 'Approve dispatch',
+      command: `${baseCommand} --approve-dispatch`,
+      detail: 'Manual explicit terminal command. Dispatch happens only after this approval flag is included.',
+      tone: 'watch',
+    },
+    {
+      label: 'Approve dispatch + speak',
+      command: `${baseCommand} --approve-dispatch --speak-result`,
+      detail: 'Manual explicit terminal command. Speech happens only for the dispatch result after explicit approval.',
+      tone: 'watch',
+    },
+  ];
 }
 
 function voiceSetupManualCommands(stack: VoiceStackStatus | undefined) {
@@ -786,6 +839,62 @@ function VoiceSetupChecklist({ items }: { items: VoiceSetupChecklistItem[] }) {
                   </div>
                 ) : null}
               </div>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function VoicePipelineCommandHelper({ commands }: { commands: VoiceManualCommand[] }) {
+  return (
+    <div className="grid gap-2 lg:grid-cols-3">
+      {commands.map((manualCommand) => {
+        const style = toneStyle(manualCommand.tone);
+        return (
+          <div
+            key={manualCommand.label}
+            className="min-w-0 rounded-md border px-3 py-3"
+            style={{ borderColor: style.border, background: style.bg }}
+          >
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <div className="text-xs font-semibold" style={{ color: style.text }}>
+                {manualCommand.label}
+              </div>
+              <StatusPill tone={manualCommand.tone}>
+                Manual terminal
+              </StatusPill>
+            </div>
+            <div
+              className="rounded-md border px-2 py-2"
+              style={{
+                borderColor: 'var(--color-border)',
+                background: 'var(--color-bg)',
+              }}
+            >
+              <div className="flex items-start gap-2">
+                <code className="min-w-0 flex-1 break-all text-[11px]" style={{ color: 'var(--color-text)' }}>
+                  {manualCommand.command}
+                </code>
+                <button
+                  type="button"
+                  className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md border"
+                  style={{
+                    borderColor: 'var(--color-border)',
+                    color: 'var(--color-text-secondary)',
+                    background: 'var(--color-bg-secondary)',
+                  }}
+                  title="Copy manual terminal command"
+                  aria-label={`Copy manual terminal command: ${manualCommand.command}`}
+                  onClick={() => copyManualCommand(manualCommand.command)}
+                >
+                  <Clipboard size={13} />
+                </button>
+              </div>
+            </div>
+            <div className="mt-2 text-xs leading-5" style={{ color: 'var(--color-text-secondary)' }}>
+              {manualCommand.detail}
             </div>
           </div>
         );
@@ -2585,6 +2694,10 @@ function VoiceSection() {
     () => buildVoiceSafetyAuditSummary(status, stack),
     [status, stack],
   );
+  const voicePipelineManualCommands = useMemo(
+    () => buildVoicePipelineManualCommands(stack),
+    [stack],
+  );
   const recentVoiceEvents = stack?.recent_events.events ?? [];
   const voiceEventTypeOptions = useMemo(
     () => uniqueVoiceEventValues(recentVoiceEvents, (event) => event.event),
@@ -2711,6 +2824,16 @@ function VoiceSection() {
             <StatusPill tone="quiet">Read only</StatusPill>
           </div>
           <VoiceDiagnosticsSummary items={voiceSafetyAuditSummary} />
+        </div>
+
+        <div className="mt-5">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <h3 className="text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--color-text-tertiary)' }}>
+              Local pipeline command helper
+            </h3>
+            <StatusPill tone="quiet">Copy only</StatusPill>
+          </div>
+          <VoicePipelineCommandHelper commands={voicePipelineManualCommands} />
         </div>
 
         <div className="mt-5">
