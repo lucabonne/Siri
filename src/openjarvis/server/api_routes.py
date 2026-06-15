@@ -1170,6 +1170,7 @@ def _recent_voice_events(config: Any, *, limit: int = 5) -> dict[str, Any]:
 
 def _voice_stack_status(request: Request) -> dict[str, Any]:
     import shutil
+    import sys
 
     from openjarvis.voice.speech_output import LOCAL_SPEECH_OUTPUT_ADAPTERS
     from openjarvis.voice.transcription import LOCAL_TRANSCRIPTION_ADAPTERS
@@ -1221,7 +1222,8 @@ def _voice_stack_status(request: Request) -> dict[str, Any]:
         },
         "macos_say": {
             "relevant": effective_speech_adapter == "macos-say",
-            "available": bool(shutil.which("say")),
+            "available": bool(shutil.which("say")) and sys.platform == "darwin",
+            "path": shutil.which("say") or "",
         },
         "hotkey_bridge": {
             "configured_format": str(

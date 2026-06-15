@@ -1,5 +1,39 @@
 # Customization Plan
 
+## Voice Control Phase 25
+
+Phase 25 adds a read-only Mission Control voice diagnostics summary that mirrors
+the safe setup fields from `jarvis voice doctor` without running the command from
+the UI or changing voice command behavior.
+
+- Mission Control now shows a diagnostics summary for API base URL,
+  transcription adapter, configured model path, model path existence, default
+  record duration, speech output backend, macOS `say` availability, disabled
+  print-only hotkey bridge state, approval requirement, logging state, and full
+  transcript logging state.
+- The summary reads the existing `/v1/voice/ptt/status` voice stack payload; the
+  status payload now also includes the read-only macOS `say` path alongside the
+  existing availability flag.
+- Phase 24 event filters remain intact. Recent event details still show only
+  sanitized metadata, transcript length/hash/redacted preview, approval,
+  dispatch/speech summaries, and error summary when available.
+- Mission Control does not run `jarvis voice doctor`, mutate settings, start
+  hotkeys, approve, dispatch, speak, export/clean logs, show raw audio, or render
+  full transcript text from status-loaded events.
+- `npm run check:mission-control-voice` remains the focused frontend
+  verification path for the Mission Control Voice surface.
+
+Deferred work remains intentionally untouched in this phase:
+
+- no always-on listening
+- no enabled Fn/global hotkey capture by default
+- no approval bypass
+- no automatic dispatch by default
+- no automatic speech playback by default
+- no settings mutation controls in Mission Control
+- no destructive voice log cleanup/export controls in Mission Control
+- no voice-only mode; text input remains available
+
 ## Voice Control Phase 24
 
 Phase 24 adds read-only Mission Control filters for recent redacted voice events

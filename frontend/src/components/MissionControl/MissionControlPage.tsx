@@ -324,8 +324,25 @@ type VoiceSetupChecklistItem = {
   }>;
 };
 
+type VoiceDiagnosticsSummaryItem = {
+  label: string;
+  value: string;
+  detail: string;
+  tone: StatusTone;
+};
+
 function voiceChecklistTone(ready: boolean, pendingTone: StatusTone = 'watch'): StatusTone {
   return ready ? 'good' : pendingTone;
+}
+
+function enabledLabel(value: boolean | undefined): string {
+  if (typeof value === 'undefined') return 'Unknown';
+  return value ? 'Enabled' : 'Disabled';
+}
+
+function yesNoLabel(value: boolean | undefined): string {
+  if (typeof value === 'undefined') return 'Unknown';
+  return value ? 'Yes' : 'No';
 }
 
 function copyManualCommand(command: string) {
@@ -486,6 +503,119 @@ function buildVoiceSetupChecklist(
       tone: fullTranscriptLoggingEnabled ? 'watch' : 'good',
     },
   ];
+}
+
+function buildVoiceDiagnosticsSummary(
+  status: VoicePttStatus | null,
+  stack: VoiceStackStatus | undefined,
+): VoiceDiagnosticsSummaryItem[] {
+  const modelConfigured = Boolean(stack?.model_path.value);
+  const modelExistsReady = !stack?.model_path.required || stack.model_path.exists === true;
+  const hotkeyBridgeSafe = Boolean(stack?.hotkey_bridge.print_only)
+    && stack?.hotkey_bridge.enabled === false
+    && stack?.hotkey_bridge.listener_started === false
+    && stack?.hotkey_bridge.global_key_capture === false;
+  const approvalRequired = stack?.approval.required ?? status?.requires_explicit_approval;
+
+  return [
+    {
+      label: 'API base URL',
+      value: stack?.api_base_url.value || 'Unknown',
+      detail: stack?.api_base_url.source || 'Voice status not loaded',
+      tone: stack?.api_base_url.value ? 'quiet' : 'watch',
+    },
+    {
+      label: 'Transcription adapter',
+      value: stack?.transcription_adapter.effective || 'Unknown',
+      detail: configuredVoiceValue(stack?.transcription_adapter.configured),
+      tone: stack?.transcription_adapter.supported ? 'good' : 'watch',
+    },
+    {
+      label: 'Model path configured',
+      value: modelConfigured ? 'Configured' : 'Missing',
+      detail: stack?.model_path.value ? compactPath(stack.model_path.value) : 'No model path configured',
+      tone: voiceChecklistTone(modelConfigured),
+    },
+    {
+      label: 'Model path exists',
+      value: modelPathStatus(stack?.model_path),
+      detail: stack?.model_path.source || 'No model source',
+      tone: stack?.model_path.required ? voiceChecklistTone(modelExistsReady) : 'quiet',
+    },
+    {
+      label: 'Default record duration',
+      value: stack ? formatVoiceDuration(stack.record_duration.effective_default_seconds) : 'Unknown',
+      detail: stack
+        ? stack.record_duration.duration_flag_required ? 'CLI flag required' : 'Configured default'
+        : 'Voice status not loaded',
+      tone: stack?.record_duration.duration_flag_required ? 'watch' : stack ? 'good' : 'watch',
+    },
+    {
+      label: 'Speech output backend',
+      value: stack?.speech_output.backend || stack?.speech_output.effective || 'Unknown',
+      detail: configuredVoiceValue(stack?.speech_output.configured, 'Default adapter'),
+      tone: stack?.speech_output.supported ? 'good' : 'watch',
+    },
+    {
+      label: 'macOS say availability',
+      value: yesNoLabel(stack?.macos_say.available),
+      detail: stack?.macos_say.path ? compactPath(stack.macos_say.path) : stack?.macos_say.relevant ? 'No say binary found' : 'Not selected',
+      tone: stack?.macos_say.relevant ? voiceChecklistTone(stack.macos_say.available === true) : 'quiet',
+    },
+    {
+      label: 'Hotkey bridge',
+      value: hotkeyBridgeSafe ? 'Disabled / print-only' : 'Check required',
+      detail: stack?.hotkey_bridge.listener_started || stack?.hotkey_bridge.global_key_capture
+        ? 'Listener or global capture reported'
+        : 'No listener started',
+      tone: voiceChecklistTone(hotkeyBridgeSafe),
+    },
+    {
+      label: 'Approval required',
+      value: yesNoLabel(approvalRequired),
+      detail: stack?.approval.config || 'Voice approval status pending',
+      tone: approvalRequired ? 'good' : 'watch',
+    },
+    {
+      label: 'Logging',
+      value: enabledLabel(stack?.recent_events.enabled),
+      detail: stack?.recent_events.enabled ? 'Recent event metadata available' : 'Local voice event logging disabled',
+      tone: stack?.recent_events.enabled ? 'quiet' : 'watch',
+    },
+    {
+      label: 'Full transcript logging',
+      value: enabledLabel(stack?.recent_events.include_full_transcripts),
+      detail: stack?.recent_events.include_full_transcripts ? 'Transcript body may exist in local logs' : 'Redacted summaries only',
+      tone: stack?.recent_events.include_full_transcripts ? 'watch' : 'good',
+    },
+  ];
+}
+
+function VoiceDiagnosticsSummary({ items }: { items: VoiceDiagnosticsSummaryItem[] }) {
+  return (
+    <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-4">
+      {items.map((item) => {
+        const style = toneStyle(item.tone);
+        return (
+          <div
+            key={item.label}
+            className="min-w-0 rounded-md border px-3 py-2"
+            style={{ borderColor: style.border, background: style.bg }}
+          >
+            <div className="text-[11px] font-medium uppercase tracking-wide" style={{ color: 'var(--color-text-tertiary)' }}>
+              {item.label}
+            </div>
+            <div className="mt-1 truncate text-xs font-semibold" style={{ color: style.text }}>
+              {item.value}
+            </div>
+            <div className="mt-1 truncate text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+              {item.detail}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
 }
 
 function VoiceSetupChecklist({ items }: { items: VoiceSetupChecklistItem[] }) {
@@ -2344,6 +2474,10 @@ function VoiceSection() {
     () => buildVoiceSetupChecklist(status, stack),
     [status, stack],
   );
+  const voiceDiagnosticsSummary = useMemo(
+    () => buildVoiceDiagnosticsSummary(status, stack),
+    [status, stack],
+  );
   const recentVoiceEvents = stack?.recent_events.events ?? [];
   const voiceEventTypeOptions = useMemo(
     () => uniqueVoiceEventValues(recentVoiceEvents, (event) => event.event),
@@ -2450,6 +2584,16 @@ function VoiceSection() {
             value={stack?.safety.always_on_listening ? 'Listening' : 'Passive'}
             detail="No auto dispatch or speech"
           />
+        </div>
+
+        <div className="mt-5">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <h3 className="text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--color-text-tertiary)' }}>
+              Voice diagnostics summary
+            </h3>
+            <StatusPill tone="quiet">Read only</StatusPill>
+          </div>
+          <VoiceDiagnosticsSummary items={voiceDiagnosticsSummary} />
         </div>
 
         <div className="mt-5">

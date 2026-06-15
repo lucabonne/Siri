@@ -121,6 +121,7 @@ def test_voice_status_includes_safe_stack_config(client: TestClient) -> None:
     assert stack["model_path"]["source"] == "[speech].model"
     assert stack["record_duration"]["duration_flag_required"] is True
     assert stack["speech_output"]["backend"] == "macos-say"
+    assert "path" in stack["macos_say"]
     assert stack["safety"]["dispatch_called"] is False
     assert stack["safety"]["speech_called"] is False
     assert stack["safety"]["approval_bypassed"] is False

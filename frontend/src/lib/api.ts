@@ -909,6 +909,7 @@ export interface VoiceStackStatus {
   macos_say: {
     relevant: boolean;
     available: boolean;
+    path?: string;
   };
   hotkey_bridge: {
     configured_format: string;
