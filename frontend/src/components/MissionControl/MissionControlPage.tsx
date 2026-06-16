@@ -340,6 +340,14 @@ type VoiceDiagnosticsSummaryItem = {
 
 type VoiceSafetyAuditSummaryItem = VoiceDiagnosticsSummaryItem;
 
+type VoiceSetupTroubleshootingItem = {
+  label: string;
+  reason: string;
+  hint: string;
+  tone: StatusTone;
+  manualReference?: string;
+};
+
 function voiceChecklistTone(ready: boolean, pendingTone: StatusTone = 'watch'): StatusTone {
   return ready ? 'good' : pendingTone;
 }
@@ -651,6 +659,161 @@ function buildVoiceDiagnosticsSummary(
   ];
 }
 
+function buildVoiceSetupTroubleshooting(
+  status: VoicePttStatus | null,
+  stack: VoiceStackStatus | undefined,
+): VoiceSetupTroubleshootingItem[] {
+  const commands = voiceSetupManualCommands(stack);
+  const items: VoiceSetupTroubleshootingItem[] = [];
+
+  if (!stack) {
+    return [
+      {
+        label: 'Voice status',
+        reason: status ? 'Voice stack details were not returned by the status endpoint.' : 'Voice status has not loaded yet.',
+        hint: 'Refresh status or run the existing CLI diagnostics manually in a terminal.',
+        tone: 'watch',
+        manualReference: commands.doctor.command,
+      },
+    ];
+  }
+
+  if (!stack.api_base_url.value) {
+    items.push({
+      label: 'API base URL missing',
+      reason: 'The voice CLI/status flow does not have an effective OpenJarvis API base URL.',
+      hint: 'Set `OPENJARVIS_BASE_URL` or `[voice_control].default_api_base_url` before running manual terminal commands.',
+      tone: 'watch',
+      manualReference: commands.doctor.command,
+    });
+  }
+
+  const adapterSelected = Boolean(
+    stack.transcription_adapter.effective
+      && stack.transcription_adapter.effective !== 'disabled'
+      && stack.transcription_adapter.supported,
+  );
+  if (!adapterSelected) {
+    items.push({
+      label: 'No transcription adapter selected',
+      reason: stack.transcription_adapter.effective
+        ? `Effective adapter "${stack.transcription_adapter.effective}" is not supported for local voice transcription.`
+        : 'Local voice transcription is disabled or not configured.',
+      hint: 'Choose a local adapter with a CLI flag or `[voice_control].transcription_adapter`; Mission Control only reports the current value.',
+      tone: 'watch',
+      manualReference: commands.transcribeFile.command,
+    });
+  }
+
+  if (stack.model_path.required && !stack.model_path.value) {
+    items.push({
+      label: 'Model path missing',
+      reason: 'The selected local transcription adapter requires a model path or supported model name.',
+      hint: 'Set the model path in config or pass the adapter/model through an explicit terminal command before transcription.',
+      tone: 'watch',
+      manualReference: commands.doctor.command,
+    });
+  }
+
+  if (stack.model_path.required && stack.model_path.value && stack.model_path.exists === false) {
+    items.push({
+      label: 'Model path does not exist',
+      reason: `${compactPath(stack.model_path.value)} was configured but was not found on disk.`,
+      hint: 'Point the config or environment variable at an existing local model path; Mission Control will not create or download it.',
+      tone: 'watch',
+      manualReference: commands.doctor.command,
+    });
+  }
+
+  const recorderBoundaryAvailable = Boolean(status?.push_to_talk_only)
+    && status?.passive_listening === false;
+  if (!recorderBoundaryAvailable) {
+    items.push({
+      label: 'Recorder boundary pending',
+      reason: status ? 'The status payload does not confirm push-to-talk-only capture with passive listening disabled.' : 'Voice status is not loaded.',
+      hint: 'Use explicit fixed-duration recorder commands manually; Mission Control does not start microphone capture.',
+      tone: 'watch',
+      manualReference: commands.recordLocal.command,
+    });
+  }
+
+  if (!stack.speech_output.effective || !stack.speech_output.supported) {
+    items.push({
+      label: 'Speech backend unavailable',
+      reason: stack.speech_output.effective
+        ? `Configured speech backend "${stack.speech_output.effective}" is not supported here.`
+        : 'No speech output backend is available.',
+      hint: 'Use explicit `jarvis voice speak` only after selecting a supported local speech output adapter.',
+      tone: 'watch',
+      manualReference: 'jarvis voice speak "preview complete"',
+    });
+  }
+
+  if (stack.macos_say.relevant && !stack.macos_say.available) {
+    items.push({
+      label: 'macOS say unavailable',
+      reason: '`macos-say` is selected, but the local `say` executable was not found for this system.',
+      hint: 'Use another supported explicit speech output adapter when available, or run CLI diagnostics manually.',
+      tone: 'watch',
+      manualReference: commands.doctor.command,
+    });
+  }
+
+  const hotkeyBridgeSafe = stack.hotkey_bridge.print_only
+    && stack.hotkey_bridge.enabled === false
+    && stack.hotkey_bridge.listener_started === false
+    && stack.hotkey_bridge.global_key_capture === false;
+  items.push({
+    label: 'Hotkey bridge disabled/print-only',
+    reason: hotkeyBridgeSafe
+      ? 'This is intentional: Mission Control does not enable Fn/global hotkey capture or start a listener.'
+      : 'The reported bridge state is not the expected disabled, print-only boundary.',
+    hint: 'Use the hotkey bridge command only as a manual terminal preview; granting Accessibility permission and installing helpers remain external steps.',
+    tone: hotkeyBridgeSafe ? 'quiet' : 'watch',
+    manualReference: commands.hotkeyBridge.command,
+  });
+
+  const approvalRequired = stack.approval.required ?? status?.requires_explicit_approval;
+  if (!approvalRequired) {
+    items.push({
+      label: 'Approval requirement missing',
+      reason: 'The current status does not report explicit approval as required before dispatch.',
+      hint: 'Keep dispatch on the manual `--approve-dispatch` path; Mission Control does not bypass or grant approval.',
+      tone: 'watch',
+      manualReference: commands.doctor.command,
+    });
+  }
+
+  if (!stack.recent_events.enabled) {
+    items.push({
+      label: 'Logging disabled',
+      reason: 'Local voice event logging is disabled, so recent diagnostic/event history is unavailable.',
+      hint: 'Enable logging in config if you want future local event summaries; Mission Control does not mutate that setting.',
+      tone: 'watch',
+    });
+  }
+
+  if (stack.recent_events.include_full_transcripts) {
+    items.push({
+      label: 'Full transcript logging enabled',
+      reason: 'Future local voice log events may include transcript bodies because explicit full transcript logging is on.',
+      hint: 'Mission Control still hides full transcript text from status events and only shows sanitized summaries.',
+      tone: 'watch',
+    });
+  }
+
+  if (!items.length) {
+    items.push({
+      label: 'Setup troubleshooting',
+      reason: 'No missing or unsafe setup items were detected in the current read-only status payload.',
+      hint: 'Keep using explicit terminal commands for recording, dispatch, and speech; Mission Control does not execute them.',
+      tone: 'good',
+    });
+  }
+
+  return items;
+}
+
 function buildVoiceSafetyAuditSummary(
   status: VoicePttStatus | null,
   stack: VoiceStackStatus | undefined,
@@ -766,6 +929,50 @@ function VoiceDiagnosticsSummary({ items }: { items: VoiceDiagnosticsSummaryItem
             </div>
             <div className="mt-1 truncate text-xs" style={{ color: 'var(--color-text-secondary)' }}>
               {item.detail}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function VoiceSetupTroubleshooting({ items }: { items: VoiceSetupTroubleshootingItem[] }) {
+  return (
+    <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-4">
+      {items.map((item) => {
+        const style = toneStyle(item.tone);
+        return (
+          <div
+            key={item.label}
+            className="min-w-0 rounded-md border px-3 py-3"
+            style={{ borderColor: style.border, background: style.bg }}
+          >
+            <div className="flex items-start gap-2">
+              <AlertTriangle className="mt-0.5 shrink-0" size={15} style={{ color: style.text }} />
+              <div className="min-w-0">
+                <div className="text-xs font-semibold" style={{ color: style.text }}>
+                  {item.label}
+                </div>
+                <div className="mt-1 text-xs leading-5" style={{ color: 'var(--color-text-secondary)' }}>
+                  {item.reason}
+                </div>
+                <div className="mt-2 text-xs leading-5" style={{ color: 'var(--color-text)' }}>
+                  {item.hint}
+                </div>
+                {item.manualReference ? (
+                  <code
+                    className="mt-2 block break-all rounded-md border px-2 py-1.5 text-[11px]"
+                    style={{
+                      borderColor: 'var(--color-border)',
+                      background: 'var(--color-bg)',
+                      color: 'var(--color-text)',
+                    }}
+                  >
+                    {item.manualReference}
+                  </code>
+                ) : null}
+              </div>
             </div>
           </div>
         );
@@ -2694,6 +2901,10 @@ function VoiceSection() {
     () => buildVoiceSafetyAuditSummary(status, stack),
     [status, stack],
   );
+  const voiceSetupTroubleshooting = useMemo(
+    () => buildVoiceSetupTroubleshooting(status, stack),
+    [status, stack],
+  );
   const voicePipelineManualCommands = useMemo(
     () => buildVoicePipelineManualCommands(stack),
     [stack],
@@ -2844,6 +3055,16 @@ function VoiceSection() {
             <StatusPill tone="quiet">Read only</StatusPill>
           </div>
           <VoiceSetupChecklist items={voiceSetupChecklist} />
+        </div>
+
+        <div className="mt-5">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <h3 className="text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--color-text-tertiary)' }}>
+              Voice setup troubleshooting
+            </h3>
+            <StatusPill tone="quiet">Read only</StatusPill>
+          </div>
+          <VoiceSetupTroubleshooting items={voiceSetupTroubleshooting} />
         </div>
 
         <div className="mt-5">

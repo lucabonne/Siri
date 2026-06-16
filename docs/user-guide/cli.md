@@ -615,6 +615,13 @@ setup checklist remains read-only for API base URL configuration, transcription
 adapter selection, model path configuration and existence, recorder boundary
 availability, speech output backend, macOS `say`, hotkey bridge state, approval
 requirement, and full transcript logging state.
+Mission Control also shows a read-only setup troubleshooting section derived
+from those same status fields. It explains why setup items are missing or unsafe,
+including no local transcription adapter selected, missing model path,
+configured model path not found, unavailable speech backend, unavailable macOS
+`say`, non-standard hotkey bridge state, disabled logging, and full transcript
+logging warnings. The hints may reference manual terminal commands, but they are
+display-only; Mission Control does not run them or change settings.
 Missing checklist items show copyable suggestions labeled as manual terminal
 commands, such as `jarvis voice doctor`,
 `jarvis voice transcribe-file ./voice-sample.wav --adapter faster-whisper`,

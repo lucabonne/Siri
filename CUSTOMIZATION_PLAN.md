@@ -1,5 +1,42 @@
 # Customization Plan
 
+## Voice Control Phase 28
+
+Phase 28 adds read-only Mission Control setup troubleshooting hints for local
+voice configuration without enabling new behavior.
+
+- Mission Control now shows a separate setup troubleshooting section derived
+  from the existing `/v1/voice/ptt/status` payload. It explains missing or
+  unsafe setup items such as no local transcription adapter, missing model path,
+  non-existent model path, unavailable speech backend, unavailable macOS `say`,
+  non-standard hotkey bridge state, disabled local logging, and full transcript
+  logging warnings.
+- Hints are short and read-only. They may show manual terminal command
+  references, but Mission Control does not execute those commands or mutate
+  voice settings.
+- The hotkey bridge hint preserves the disabled/print-only boundary and
+  reiterates that Mission Control does not enable Fn/global hotkey capture or
+  start a listener.
+- The Phase 27 local pipeline command helper remains copy-only and intact.
+  Preview-only remains the default; approve-dispatch and speak-result variants
+  stay explicit manual terminal commands.
+- Recent voice event privacy remains unchanged: raw audio is not shown, and
+  status-loaded event details still show sanitized summaries instead of full
+  transcript text.
+- `npm run check:mission-control-voice` remains the focused frontend
+  verification path for the Mission Control Voice surface.
+
+Deferred work remains intentionally untouched in this phase:
+
+- no always-on listening
+- no enabled Fn/global hotkey capture by default
+- no approval bypass
+- no automatic dispatch by default
+- no automatic speech playback by default
+- no settings mutation controls in Mission Control
+- no destructive voice log cleanup/export controls in Mission Control
+- no voice-only mode; text input remains available
+
 ## Voice Control Phase 27
 
 Phase 27 adds a guarded, opt-in Mission Control helper for copying the safe
