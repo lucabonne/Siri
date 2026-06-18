@@ -1,5 +1,91 @@
 # Customization Plan
 
+## Voice Control Phase 30
+
+Phase 30 is a consolidation and release-readiness pass for the safe Voice
+Control stack before real microphone or Fn/global hotkey activation.
+
+### Voice Control Phase 1-30 summary
+
+- Phases 1-3 established the voice architecture, explicit session FSM, preview
+  endpoint, approval-gated dispatch endpoint, cancel/status endpoints, and a
+  Mission Control manual transcript panel without real microphone capture.
+- Phases 4-7 added the `jarvis voice` CLI bridge, local recorder boundary,
+  local transcription boundary, fixed-duration `record-local`, existing-file
+  `transcribe-file`, and preview-only `capture-preview` pipeline.
+- Phases 8-10 added optional local `faster-whisper` and `whisper.cpp`
+  transcription adapters, explicit local speech output, and the manual
+  end-to-end `run-local` command. Dispatch and speech stayed behind
+  `--approve-dispatch` and `--speak-result`.
+- Phases 11-13 added the disabled/print-only macOS hotkey bridge boundary,
+  `[voice_control]` safe defaults for explicit commands, and side-effect-free
+  `jarvis voice doctor` diagnostics.
+- Phases 14-17 added local structured voice event logging, redacted history
+  inspection, explicit export, and confirmation-gated cleanup through
+  `jarvis voice logs`.
+- Phases 18-29 expanded Mission Control's read-only voice status surface:
+  stack metadata, recent redacted events, event detail/filtering, setup
+  checklist, manual command suggestions, diagnostics, safety/audit summary,
+  copy-only local pipeline helper, troubleshooting, and readiness summary from
+  `/v1/voice/ptt/status`.
+- Phase 30 keeps the behavior unchanged and cleans release-facing docs and
+  labels so the implemented safe/manual workflow, optional configured behavior,
+  and deferred real activation scope are clearly separated.
+
+### Current safe workflow
+
+1. `jarvis voice doctor`
+2. Configure a local transcription backend/model.
+3. `jarvis voice record-local --duration 2`
+4. `jarvis voice transcribe-file ./voice-sample.wav --adapter faster-whisper`
+5. `jarvis voice capture-preview --duration 2 --adapter faster-whisper`
+6. `jarvis voice run-local --duration 2 --adapter faster-whisper`
+7. `jarvis voice logs`
+
+### Implemented safe local/manual behavior
+
+- `jarvis voice submit`, `status`, and `cancel` keep the existing preview,
+  approval, dispatch, and FSM lifecycle gates.
+- `record-local`, `transcribe-file`, `capture-preview`, and `run-local` require
+  explicit terminal invocation and never enable background listening.
+- `/v1/voice/ptt/submit-transcript` previews only; `/dispatch` still requires
+  `approved=true`.
+- Local transcription adapters are opt-in and local-only for the voice CLI.
+- Speech output is explicit through `jarvis voice speak` or
+  `run-local --approve-dispatch --speak-result`.
+- The hotkey bridge is disabled/print-only by default.
+- Voice logs are local structured JSONL events with redacted transcript
+  summaries by default; export and cleanup remain CLI-only and explicit.
+- Mission Control is read-only for voice setup, readiness, diagnostics,
+  checklist, filters, and recent redacted event inspection.
+
+### Optional configured behavior
+
+- `[voice_control]` may provide defaults for local transcription adapter/model,
+  record duration, API base URL, explicit speech output, printed hotkey bridge
+  command formatting, and local event logging.
+- `--recorder macos` may be used manually and may require macOS **Microphone**
+  permission.
+- `--approve-dispatch` may be supplied manually to dispatch after preview.
+- `--speak-result` may be supplied only with `--approve-dispatch` to speak the
+  explicit dispatch result.
+- Full transcript logging is available only through explicit local config and
+  affects future events only.
+
+### Deferred scope
+
+- no always-on listening
+- no wake word
+- no enabled Fn/global hotkey capture by default
+- no live Hammerspoon or Swift helper installation
+- no approval bypass
+- no automatic dispatch by default
+- no automatic speech playback by default
+- no Mission Control settings mutation controls
+- no Mission Control microphone/accessibility permission prompts
+- no Mission Control log export or cleanup controls
+- no voice-only mode; text input remains available
+
 ## Voice Control Phase 29
 
 Phase 29 adds a read-only Mission Control voice readiness summary that combines
@@ -316,7 +402,7 @@ execution behavior.
   events.
 - Recent voice events remain sanitized for the UI: raw audio is not exposed, and
   full transcript text is not shown from status-loaded event history.
-- The existing typed/mock Voice Push-to-Talk panel remains available and
+- The existing manual Voice Push-to-Talk panel remains available and
   approval-gated; this phase does not add automation or a voice-only mode.
 - `npm run check:mission-control-voice` remains the focused frontend
   verification path for the Mission Control Voice surface.
@@ -377,7 +463,7 @@ stack without changing the voice execution safety boundary.
 - The panel shows recent sanitized structured voice events when local voice
   logging is enabled, using redacted transcript previews and omitting local
   audio/path details.
-- The existing typed/mock voice preview flow remains available, but status-loaded
+- The existing manual voice preview flow remains available, but status-loaded
   latest transcripts are not displayed as full text in the panel.
 - Tests cover safe status flags, read-only voice stack fields, and redacted
   recent event summaries.
@@ -807,7 +893,7 @@ Deferred work remains intentionally untouched in this phase:
 
 ## Voice Control Phase 4
 
-Phase 4 adds a local CLI/dev bridge for the typed/mock voice flow before any
+Phase 4 adds a local CLI/dev bridge for the manual voice flow before any
 real microphone recording is introduced.
 
 - `jarvis voice submit "..."` posts the transcript to
@@ -837,7 +923,7 @@ Deferred work remains intentionally untouched in this phase:
 ## Voice Control Phase 3
 
 Phase 3 wires the explicit voice-session state machine through the backend and
-Mission Control while keeping the user flow typed/mock-transcript only.
+Mission Control while keeping the user flow manual-transcript only.
 
 - `VoiceSessionFSM` is created privately per FastAPI app instance and stored on
   `app.state`; there is no module-level/global FSM.
@@ -852,8 +938,8 @@ Mission Control while keeping the user flow typed/mock-transcript only.
   and keeps no-agent behavior compatible with the existing API contract.
 - `/v1/voice/ptt/cancel` is safe and idempotent; cancelling from `idle` returns
   `{fsm_state: "idle"}`.
-- Mission Control adds a mock transcript textarea, preview action, approval
-  dispatch action, cancel action, and clear typed/mock-only labeling while
+- Mission Control adds a manual transcript textarea, preview action, approval
+  dispatch action, cancel action, and clear manual-only labeling while
   keeping the existing PTT placeholder button visible.
 
 Deferred work remains intentionally untouched in this phase:

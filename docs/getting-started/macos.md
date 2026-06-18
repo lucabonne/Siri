@@ -23,6 +23,11 @@ xcode-select --install
 
 ## Voice permissions
 
+- Current safe workflow: run `jarvis voice doctor`, configure a local
+  transcription backend/model, then test manually with `jarvis voice
+  record-local`, `jarvis voice transcribe-file`, `jarvis voice capture-preview`,
+  `jarvis voice run-local`, and `jarvis voice logs`. None of these commands
+  enables always-on listening or global hotkey capture by default.
 - Local microphone recording, when explicitly requested with `jarvis voice record-local --recorder macos`, `jarvis voice capture-preview --recorder macos`, or `jarvis voice run-local --recorder macos`, requires macOS **Microphone** permission.
 - Local speech output, when explicitly requested with `jarvis voice speak "text"` or `jarvis voice run-local --speak-result`, uses the macOS `say` command if available. It does not enable automatic response playback.
 - `jarvis voice doctor` reports local voice configuration and dependency availability, including macOS `say` when relevant, without requesting **Microphone** permission, downloading models, dispatching, speaking, or starting hotkeys.

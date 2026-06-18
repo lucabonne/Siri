@@ -1,4 +1,4 @@
-"""``jarvis voice`` - local typed/mock voice bridge commands."""
+"""``jarvis voice`` - explicit local/manual voice bridge commands."""
 
 from __future__ import annotations
 
@@ -647,7 +647,7 @@ def _format_voice_doctor(data: dict[str, Any]) -> None:
 
 @click.group("voice")
 def voice() -> None:
-    """Local typed/mock voice flow over /v1/voice/ptt."""
+    """Explicit local/manual voice flow over /v1/voice/ptt."""
 
 
 @voice.command("doctor")
@@ -1788,7 +1788,7 @@ def cancel(
     timeout: float,
     as_json: bool,
 ) -> None:
-    """Cancel the current typed/mock voice session."""
+    """Cancel the current manual voice session."""
     data = _post_json(
         "/v1/voice/ptt/cancel",
         {},
@@ -1836,7 +1836,7 @@ def status(
     timeout: float,
     as_json: bool,
 ) -> None:
-    """Show push-to-talk and typed/mock session state."""
+    """Show push-to-talk and manual session state."""
     data = _get_json(
         "/v1/voice/ptt/status",
         base_url=_base_url(base_url),

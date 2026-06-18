@@ -3042,7 +3042,7 @@ function VoiceSection() {
   const canApprove = busy === 'idle' && fsmState === 'awaiting_approval' && Boolean(preview?.transcript.trim());
   const canCancel = busy === 'idle' && fsmState !== 'idle';
   const textDisabled = fsmState !== 'idle' || busy !== 'idle';
-  const buttonLabel = 'PTT deferred';
+  const buttonLabel = 'Mic deferred';
   const stateLabel = busy === 'submitting'
     ? 'Previewing'
     : busy === 'dispatching'
@@ -3373,13 +3373,13 @@ function VoiceSection() {
       </ShellPanel>
 
       <div className="grid gap-4 xl:grid-cols-[0.9fr_1.1fr]">
-      <ShellPanel title="Voice Push-to-Talk" action="mock transcript">
+        <ShellPanel title="Voice Push-to-Talk" action="manual transcript">
         <div className="grid gap-3 md:grid-cols-3">
           <ContextTile
             icon={<Mic2 size={15} />}
             label="FSM"
             value={stateLabel}
-            detail="Typed mock transcript only"
+            detail="Manual transcript preview"
           />
           <ContextTile
             icon={<ShieldCheck size={15} />}
@@ -3424,16 +3424,16 @@ function VoiceSection() {
             <RefreshCw size={16} />
           </button>
           <StatusPill tone={recording ? 'busy' : status?.privacy_mode ? 'watch' : 'quiet'}>
-            {recording ? 'Live capture' : status?.privacy_mode ? 'Privacy gate' : 'Mock flow'}
+            {recording ? 'Live capture' : status?.privacy_mode ? 'Privacy gate' : 'Manual flow'}
           </StatusPill>
           <StatusPill tone={fsmState === 'awaiting_approval' ? 'watch' : dispatchResult?.dispatched ? 'good' : 'quiet'}>
-            {fsmState === 'awaiting_approval' ? 'Awaiting approval' : dispatchResult?.dispatched ? 'Completed' : 'Typed only'}
+            {fsmState === 'awaiting_approval' ? 'Awaiting approval' : dispatchResult?.dispatched ? 'Completed' : 'Preview only'}
           </StatusPill>
         </div>
 
         <div className="mt-5 grid gap-3">
           <label className="grid gap-2 text-sm font-medium" style={{ color: 'var(--color-text)' }}>
-            Mock transcript
+            Manual transcript
             <textarea
               value={transcript}
               onChange={(event) => setTranscript(event.target.value)}
@@ -3445,7 +3445,7 @@ function VoiceSection() {
                 background: 'var(--color-bg-secondary)',
                 color: 'var(--color-text)',
               }}
-              placeholder="Type the transcript to preview. No microphone, local recorder, or transcription runs in Phase 3."
+              placeholder="Type a transcript to preview. Mission Control does not start the microphone, recorder, transcription, dispatch, or speech."
             />
           </label>
           <div className="flex flex-wrap gap-2">
@@ -3512,14 +3512,14 @@ function VoiceSection() {
             color: displayedTranscript ? 'var(--color-text)' : 'var(--color-text-tertiary)',
           }}
         >
-          {displayedTranscript || 'No mock transcript preview yet'}
+          {displayedTranscript || 'No manual transcript preview yet'}
         </div>
         <div className="mt-4 grid gap-3 md:grid-cols-3">
           <ContextTile
             icon={<Clock3 size={15} />}
             label="Phase"
-            value="Phase 3"
-            detail="Typed/mock only"
+            value="Manual"
+            detail="Preview first"
           />
           <ContextTile
             icon={<Package size={15} />}

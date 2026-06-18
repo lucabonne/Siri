@@ -541,6 +541,57 @@ default_agent = "simple"
 
 ---
 
+### `[voice_control]` — Explicit Local Voice Defaults
+
+Controls safe defaults for explicit `jarvis voice` commands. These settings do
+not enable always-on listening, Fn/global hotkey capture, approval bypass,
+automatic dispatch, or automatic speech playback.
+
+```toml
+[voice_control]
+transcription_adapter = ""       # faster-whisper or whisper.cpp; empty = disabled
+model_path = ""                  # optional local model path/name override
+default_record_duration = 0.0    # 0 means --duration is still required
+default_api_base_url = ""        # e.g. "http://127.0.0.1:8000"
+speech_output_adapter = ""       # macos-say; used only by explicit speak flags
+speech_voice = ""
+speech_rate = 0
+hotkey_bridge_format = "command" # command, hammerspoon, json
+hotkey_bridge_jarvis_bin = "jarvis"
+hotkey_bridge_recorder = "macos"
+hotkey_bridge_input_device = ":0"
+hotkey_bridge_session_id = ""
+voice_logs_enabled = true
+voice_logs_path = "~/.openjarvis/voice-events.jsonl"
+voice_logs_include_full_transcripts = false
+voice_logs_preview_chars = 80
+```
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `transcription_adapter` | string | `""` | Local adapter for explicit transcription commands. Supported values: `"faster-whisper"` and `"whisper.cpp"`. Empty keeps local voice transcription disabled until a CLI flag selects an adapter. |
+| `model_path` | string | `""` | Optional model name or existing local model path override for the selected local adapter. |
+| `default_record_duration` | float | `0.0` | Default fixed recording duration for explicit recorder commands. `0.0` keeps `--duration` required. |
+| `default_api_base_url` | string | `""` | Optional OpenJarvis API base URL for `jarvis voice`; CLI flags and `OPENJARVIS_BASE_URL` override it. |
+| `speech_output_adapter` | string | `""` | Optional local speech adapter for explicit `voice speak` or `run-local --speak-result`. |
+| `speech_voice` | string | `""` | Optional local speech voice name, currently used by `macos-say`. |
+| `speech_rate` | int | `0` | Optional local speech rate. `0` uses the adapter default. |
+| `hotkey_bridge_format` | string | `"command"` | Output format for the print-only hotkey bridge helper: `"command"`, `"hammerspoon"`, or `"json"`. |
+| `hotkey_bridge_jarvis_bin` | string | `"jarvis"` | Executable name/path printed in the bridge command. |
+| `hotkey_bridge_recorder` | string | `"macos"` | Recorder name printed in the bridge command; this does not start a listener. |
+| `hotkey_bridge_input_device` | string | `":0"` | macOS avfoundation input device printed in the bridge command. |
+| `hotkey_bridge_session_id` | string | `""` | Optional session id printed in the bridge command. |
+| `voice_logs_enabled` | bool | `true` | Whether explicit voice CLI commands write local structured event logs. |
+| `voice_logs_path` | string | `"~/.openjarvis/voice-events.jsonl"` | Local JSONL path for voice event logs. |
+| `voice_logs_include_full_transcripts` | bool | `false` | Store full transcript text for future events only when explicitly enabled; redacted summaries are the default. |
+| `voice_logs_preview_chars` | int | `80` | Maximum redacted transcript preview length in local voice logs. |
+
+For the current safe workflow, use `jarvis voice doctor`, configure a local
+adapter/model, then test manually with `record-local`, `transcribe-file`,
+`capture-preview`, `run-local`, and `logs`.
+
+---
+
 ### `[security]` — Security Guardrails
 
 Controls the security scanning pipeline for input/output content.

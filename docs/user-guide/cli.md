@@ -465,11 +465,11 @@ When an agent is configured (e.g., `--agent orchestrator`), non-streaming reques
 
 ## `jarvis voice`
 
-Run the local typed/mock voice flow against an already running OpenJarvis API
-server. This is a development bridge for future Hammerspoon/Fn push-to-talk
-automation: an external hotkey/transcription script can submit a transcript
-here, while OpenJarvis keeps the same preview, approval, dispatch, and cancel
-API gates.
+Run the explicit local/manual voice flow against an already running OpenJarvis
+API server. This is the current safe bridge before real microphone or global
+hotkey activation: a terminal command can record or transcribe only when you
+invoke it, while OpenJarvis keeps the same preview, approval, dispatch, and
+cancel API gates.
 
 ```bash
 jarvis voice submit "open notes"                         # Preview only
@@ -511,6 +511,51 @@ jarvis voice cancel
 | `voice logs`           | Inspect, export, or explicitly clean up local structured voice command events |
 | `voice status`          | GET `/v1/voice/ptt/status`, including the same read-only voice stack fields Mission Control uses |
 | `voice cancel`          | POST `/v1/voice/ptt/cancel`                      |
+
+Current safe workflow:
+
+1. `jarvis voice doctor`
+2. Configure a local transcription backend/model with
+   `[voice_control].transcription_adapter` and `[voice_control].model_path`, or
+   pass `--adapter` on transcription commands.
+3. `jarvis voice record-local --duration 2`
+4. `jarvis voice transcribe-file ./voice-sample.wav --adapter faster-whisper`
+5. `jarvis voice capture-preview --duration 2 --adapter faster-whisper`
+6. `jarvis voice run-local --duration 2 --adapter faster-whisper`
+7. `jarvis voice logs`
+
+Implemented safe local/manual behavior:
+
+- `submit`, `status`, and `cancel` exercise the preview/approval/session API
+  gates with typed transcripts.
+- `record-local`, `transcribe-file`, `capture-preview`, and `run-local` run only
+  after an explicit terminal command and fixed duration or existing file input.
+- `doctor` and Mission Control status/readiness views inspect setup without
+  starting capture, hotkeys, dispatch, speech, model downloads, or settings
+  mutation.
+- `logs` inspects, exports, or confirmation-cleans local structured voice events
+  without storing raw audio.
+
+Optional configured behavior:
+
+- `[voice_control]` can set safe defaults for local adapter/model selection,
+  record duration, API base URL, explicit speech output, printed hotkey bridge
+  command formatting, and local event logging.
+- `--approve-dispatch` explicitly calls `/v1/voice/ptt/dispatch` after preview
+  and sends `approved=true`.
+- `voice speak` and `run-local --approve-dispatch --speak-result` explicitly use
+  the selected local speech-output adapter.
+- `--recorder macos` explicitly uses local macOS recording tools and may request
+  macOS **Microphone** permission.
+
+Deferred real activation behavior:
+
+- Always-on listening, wake words, Fn/global hotkey capture, live Hammerspoon or
+  Swift helper installation, voice-only mode, approval bypass, automatic
+  dispatch, and automatic speech playback remain out of scope.
+- Mission Control remains read-only for voice setup and does not run CLI
+  commands, mutate settings, request permissions, export/clean logs, approve,
+  dispatch, or speak.
 
 This command does not listen in the background, capture Fn hotkeys, call a cloud
 speech API, automatically dispatch a transcript, or automatically play TTS for
