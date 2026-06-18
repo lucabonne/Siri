@@ -1,5 +1,28 @@
 # Customization Plan
 
+## Voice Control Mic Phase 4
+
+Mic Phase 4 adds an explicit bounded microphone-to-transcript smoke command
+without submission, dispatch, hotkeys, always-on listening, or speech.
+
+- `jarvis voice mic-transcribe-smoke --duration 1 --recorder sounddevice
+  --adapter faster-whisper` records one local WAV and transcribes it with an
+  explicitly selected or configured local adapter/model.
+- The duration is required and limited to 0.1-30 seconds. The recorder must be
+  the real `macos` or `sounddevice` backend selected by CLI or configuration;
+  `dev-silent` is rejected.
+- Recorder and WAV metadata, transcription metadata, and transcript text are
+  printed locally. The WAV is deleted by default after success or failure and
+  retained only with `--keep-file`.
+- Missing microphone permission, recorder/device dependencies, transcription
+  dependencies, and invalid model paths return the existing local setup
+  guidance. Tests use mocked recorder and transcription boundaries and require
+  no microphone hardware or model download.
+- The command never calls `/v1/voice/ptt/submit-transcript` or `/dispatch` and
+  never speaks. Mission Control remains read-only. Fn/global hotkey capture,
+  always-on listening, voice-only mode, approval bypass, automatic dispatch,
+  and automatic speech remain deferred.
+
 ## Voice Control Mic Phase 3
 
 Mic Phase 3 adds an explicit bounded microphone recording smoke test without
@@ -124,24 +147,30 @@ Control stack before Fn/global hotkey activation and always-on listening.
   auto-dispatch, and auto-speech deferred.
 - Mic Phase 3 adds a bounded real-microphone smoke command that validates WAV
   metadata and deletes its local recording by default.
+- Mic Phase 4 adds a bounded real-microphone transcription smoke command that
+  prints local transcript metadata/text, deletes audio by default, and never
+  submits, dispatches, or speaks.
 
 ### Current safe workflow
 
 1. `jarvis voice doctor`
 2. `jarvis voice mic-smoke --recorder sounddevice --duration 1`
 3. Configure a local transcription backend/model.
-4. `jarvis voice record-local --duration 2`
-5. `jarvis voice transcribe-file ./voice-sample.wav --adapter faster-whisper`
-6. `jarvis voice capture-preview --duration 2 --adapter faster-whisper`
-7. `jarvis voice run-local --duration 2 --adapter faster-whisper`
-8. `jarvis voice logs`
+4. `jarvis voice mic-transcribe-smoke --duration 1 --recorder sounddevice
+   --adapter faster-whisper`
+5. `jarvis voice record-local --duration 2`
+6. `jarvis voice transcribe-file ./voice-sample.wav --adapter faster-whisper`
+7. `jarvis voice capture-preview --duration 2 --adapter faster-whisper`
+8. `jarvis voice run-local --duration 2 --adapter faster-whisper`
+9. `jarvis voice logs`
 
 ### Implemented safe local/manual behavior
 
 - `jarvis voice submit`, `status`, and `cancel` keep the existing preview,
   approval, dispatch, and FSM lifecycle gates.
-- `record-local`, `transcribe-file`, `capture-preview`, and `run-local` require
-  explicit terminal invocation and never enable background listening.
+- `record-local`, `mic-transcribe-smoke`, `transcribe-file`, `capture-preview`,
+  and `run-local` require explicit terminal invocation and never enable
+  background listening.
 - `/v1/voice/ptt/submit-transcript` previews only; `/dispatch` still requires
   `approved=true`.
 - Local transcription adapters are opt-in and local-only for the voice CLI.

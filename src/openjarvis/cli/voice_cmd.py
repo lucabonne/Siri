@@ -1270,6 +1270,138 @@ def mic_smoke(
     click.echo("  speech: skipped")
 
 
+@voice.command("mic-transcribe-smoke")
+@click.option(
+    "--duration",
+    type=click.FloatRange(min=0.1, max=30.0),
+    required=True,
+    help="Explicit recording duration in seconds (0.1 to 30).",
+)
+@click.option(
+    "--output-dir",
+    type=click.Path(file_okay=False, path_type=Path),
+    default=None,
+    help="Directory for the temporary WAV. Defaults to the system temp directory.",
+)
+@click.option(
+    "--recorder",
+    "recorder_kind",
+    type=click.Choice(MICROPHONE_RECORDER_KINDS),
+    default=None,
+    help=(
+        "Real microphone recorder. Required unless macos or sounddevice is set "
+        "in [voice_control].default_recorder."
+    ),
+)
+@click.option(
+    "--input-device",
+    default=":0",
+    show_default=True,
+    help="Input device for the selected recorder backend.",
+)
+@click.option(
+    "--adapter",
+    type=click.Choice(LOCAL_TRANSCRIPTION_ADAPTERS),
+    default=None,
+    help=(
+        "Local transcription adapter. Required unless configured in "
+        "[voice_control].transcription_adapter."
+    ),
+)
+@click.option("--language", default=None, help="Optional language code hint.")
+@click.option(
+    "--keep-file",
+    is_flag=True,
+    default=False,
+    help="Keep the recorded WAV instead of deleting it after transcription.",
+)
+def mic_transcribe_smoke(
+    duration: float,
+    output_dir: Path | None,
+    recorder_kind: str | None,
+    input_device: str,
+    adapter: str | None,
+    language: str | None,
+    keep_file: bool,
+) -> None:
+    """Record and transcribe one bounded sample without API or speech actions."""
+    resolved_recorder = _configured_microphone_recorder_kind(recorder_kind)
+    adapter_id, transcriber = _build_transcriber(adapter)
+    handle = _record_local_audio(
+        duration=duration,
+        output_dir=output_dir,
+        recorder_kind=resolved_recorder,
+        input_device=input_device,
+        cleanup_on_error=True,
+    )
+
+    try:
+        wav_metadata = inspect_wav_file(handle.path)
+        transcription = transcriber.transcribe_file(handle.path, language=language)
+    except (OSError, TranscriptionUnavailableError, VoiceRecordingError) as exc:
+        if not keep_file:
+            try:
+                handle.path.unlink(missing_ok=True)
+            except OSError as cleanup_exc:
+                raise click.ClickException(
+                    f"{exc} The temporary WAV also could not be deleted: {cleanup_exc}"
+                ) from cleanup_exc
+        raise click.ClickException(str(exc)) from exc
+
+    transcription_data = transcription.to_dict()
+    if not keep_file:
+        try:
+            handle.path.unlink()
+        except OSError as exc:
+            raise click.ClickException(
+                f"transcription succeeded but the temporary WAV could not be "
+                f"deleted: {exc}"
+            ) from exc
+
+    transcript = str(transcription_data.get("text") or "")
+    _log_voice_event(
+        "mic-transcribe-smoke",
+        "microphone_transcription_smoke_result",
+        transcript=transcript,
+        details={
+            "path": str(handle.path),
+            "recorder": resolved_recorder,
+            "requested_duration_seconds": duration,
+            "file_kept": keep_file,
+            "adapter": transcription_data.get("backend") or adapter_id,
+            "language": transcription_data.get("language") or "",
+            "transcription_duration_seconds": transcription_data.get(
+                "duration_seconds"
+            ),
+            "submitted": False,
+            "dispatched": False,
+            "spoken": False,
+            **wav_metadata,
+        },
+    )
+
+    click.echo("Microphone transcription smoke test")
+    click.echo(f"  recorder: {resolved_recorder}")
+    click.echo(f"  requested_duration_seconds: {duration}")
+    click.echo(f"  path: {handle.path}")
+    for key, value in wav_metadata.items():
+        click.echo(f"  {key}: {value}")
+    click.echo(f"  file_kept: {keep_file}")
+    click.echo(f"  adapter: {transcription_data.get('backend') or adapter_id}")
+    if transcription_data.get("language"):
+        click.echo(f"  language: {transcription_data['language']}")
+    if transcription_data.get("confidence") is not None:
+        click.echo(f"  confidence: {transcription_data['confidence']}")
+    click.echo(
+        "  transcription_duration_seconds: "
+        f"{transcription_data.get('duration_seconds', 0.0)}"
+    )
+    click.echo(f"  transcript: {transcript}")
+    click.echo("  submission: skipped")
+    click.echo("  dispatch: skipped")
+    click.echo("  speech: skipped")
+
+
 @voice.command("capture-preview")
 @click.option(
     "--duration",
