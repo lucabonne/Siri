@@ -138,6 +138,75 @@ def test_voice_status_includes_safe_stack_config(client: TestClient) -> None:
         "speech": 0,
     }
     assert stack["recent_events"]["events"] == []
+    assert stack["readiness"]["state"] == "needs_setup"
+    assert stack["readiness"]["preview_only_local_pipeline_available"] is False
+    assert stack["readiness"]["approval_gated_dispatch_available"] is False
+    assert stack["readiness"]["optional_speech_output_available"] in {True, False}
+    assert "No supported local transcription adapter is selected." in stack[
+        "readiness"
+    ]["blocking_issues"]
+    assert stack["readiness"]["next_safe_manual_step"].startswith(
+        "Run `jarvis voice doctor`"
+    )
+
+
+def test_voice_status_readiness_reports_unsafe_approval_config(
+    tmp_path: Path,
+) -> None:
+    app = FastAPI()
+    config = JarvisConfig()
+    config.speech.require_explicit_voice_approval = False
+    config.voice_control.voice_logs_enabled = False
+    config.voice_control.voice_logs_path = str(tmp_path / "voice-events.jsonl")
+    service = VoicePushToTalkService(
+        config=config,
+        speech_backend=FakeBackend(),
+        recorder=FakeRecorder(tmp_path),
+        permission_middleware=FakePermissionMiddleware(),
+    )
+    app.state.voice_ptt_service = service
+    app.include_router(voice_router)
+
+    resp = TestClient(app).get("/v1/voice/ptt/status")
+
+    assert resp.status_code == 200
+    readiness = resp.json()["voice_stack"]["readiness"]
+    assert readiness["state"] == "unsafe_config"
+    assert readiness["preview_only_local_pipeline_available"] is False
+    assert readiness["approval_gated_dispatch_available"] is False
+    assert "Explicit approval before dispatch is not enforced." in readiness[
+        "blocking_issues"
+    ]
+
+
+def test_voice_status_readiness_reports_ready_preview_pipeline(
+    tmp_path: Path,
+) -> None:
+    app = FastAPI()
+    config = JarvisConfig()
+    config.voice_control.transcription_adapter = "faster-whisper"
+    config.voice_control.voice_logs_enabled = False
+    config.voice_control.voice_logs_path = str(tmp_path / "voice-events.jsonl")
+    service = VoicePushToTalkService(
+        config=config,
+        speech_backend=FakeBackend(),
+        recorder=FakeRecorder(tmp_path),
+        permission_middleware=FakePermissionMiddleware(),
+    )
+    app.state.voice_ptt_service = service
+    app.include_router(voice_router)
+
+    resp = TestClient(app).get("/v1/voice/ptt/status")
+
+    assert resp.status_code == 200
+    readiness = resp.json()["voice_stack"]["readiness"]
+    assert readiness["state"] == "ready"
+    assert readiness["blocking_issues"] == []
+    assert readiness["preview_only_local_pipeline_available"] is True
+    assert readiness["approval_gated_dispatch_available"] is True
+    assert "jarvis voice run-local --duration 2 --adapter faster-whisper" in (
+        readiness["next_safe_manual_step"]
+    )
 
 
 def test_voice_status_includes_configured_api_base_url(tmp_path: Path) -> None:

@@ -603,18 +603,22 @@ panel showing the FSM state, configured/effective API base URL, configured
 transcription adapter, model path status, default record duration, speech output
 backend, macOS `say` availability, disabled/print-only hotkey bridge state,
 approval requirement, and recent redacted voice events when local voice logging
-is enabled. It also shows a read-only diagnostics summary mirroring the safe
-`voice doctor` data plus local voice logging and full transcript logging state;
-Mission Control does not run `jarvis voice doctor`. A separate read-only
-safety/audit summary shows approval required, auto-dispatch disabled,
-auto-speech disabled, always-on listening disabled, the hotkey bridge
-disabled/print-only state, raw audio non-storage, transcript redaction defaults,
-full transcript logging state, local-only event logging state, and recent
-approval/dispatch/speech event counts when safe event data is available. The
-setup checklist remains read-only for API base URL configuration, transcription
-adapter selection, model path configuration and existence, recorder boundary
-availability, speech output backend, macOS `say`, hotkey bridge state, approval
-requirement, and full transcript logging state.
+is enabled. It also shows a read-only readiness summary from that same status
+payload with an overall `ready`, `needs setup`, or `unsafe config` state,
+blocking issues, warnings, the next safe manual step, and whether the
+preview-only local pipeline, approval-gated dispatch, and optional speech output
+are available. Mission Control does not run those steps. The diagnostics summary
+continues to mirror the safe `voice doctor` data plus local voice logging and
+full transcript logging state; Mission Control does not run `jarvis voice
+doctor`. A separate read-only safety/audit summary shows approval required,
+auto-dispatch disabled, auto-speech disabled, always-on listening disabled, the
+hotkey bridge disabled/print-only state, raw audio non-storage, transcript
+redaction defaults, full transcript logging state, local-only event logging
+state, and recent approval/dispatch/speech event counts when safe event data is
+available. The setup checklist remains read-only for API base URL configuration,
+transcription adapter selection, model path configuration and existence,
+recorder boundary availability, speech output backend, macOS `say`, hotkey
+bridge state, approval requirement, and full transcript logging state.
 Mission Control also shows a read-only setup troubleshooting section derived
 from those same status fields. It explains why setup items are missing or unsafe,
 including no local transcription adapter selected, missing model path,

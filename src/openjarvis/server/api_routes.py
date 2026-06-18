@@ -1289,6 +1289,152 @@ def _voice_stack_status(request: Request) -> dict[str, Any]:
     }
 
 
+def _voice_readiness_status(
+    status: dict[str, Any],
+    stack: dict[str, Any],
+) -> dict[str, Any]:
+    adapter = stack["transcription_adapter"]
+    model_path = stack["model_path"]
+    speech_output = stack["speech_output"]
+    macos_say = stack["macos_say"]
+    hotkey_bridge = stack["hotkey_bridge"]
+    approval = stack["approval"]
+    recent_events = stack["recent_events"]
+    safety = stack["safety"]
+
+    recorder_boundary_available = (
+        status.get("push_to_talk_only") is True
+        and status.get("passive_listening") is False
+        and status.get("wake_word_enabled") is False
+    )
+    hotkey_bridge_safe = (
+        hotkey_bridge["print_only"] is True
+        and hotkey_bridge["enabled"] is False
+        and hotkey_bridge["listener_started"] is False
+        and hotkey_bridge["global_key_capture"] is False
+    )
+    local_transcription_ready = (
+        bool(adapter["effective"])
+        and adapter["effective"] != "disabled"
+        and adapter["supported"] is True
+    )
+    model_ready = (
+        not model_path["required"]
+        or (bool(model_path["value"]) and model_path["exists"] is True)
+    )
+    optional_speech_available = (
+        bool(speech_output["effective"])
+        and speech_output["supported"] is True
+        and (not macos_say["relevant"] or macos_say["available"] is True)
+    )
+
+    blocking_issues: list[str] = []
+    warnings: list[str] = []
+    safety_issues: list[str] = []
+
+    if not stack["api_base_url"]["value"]:
+        blocking_issues.append("Effective API base URL is missing.")
+    if not local_transcription_ready:
+        blocking_issues.append("No supported local transcription adapter is selected.")
+    if model_path["required"] and not model_path["value"]:
+        blocking_issues.append("Selected transcription adapter requires a model path.")
+    elif model_path["required"] and model_path["exists"] is False:
+        blocking_issues.append("Configured transcription model path was not found.")
+    if not recorder_boundary_available:
+        blocking_issues.append("Push-to-talk-only recorder boundary is not confirmed.")
+
+    if status.get("push_to_talk_only") is not True:
+        safety_issues.append("Push-to-talk-only mode is not confirmed.")
+    if status.get("passive_listening") is not False:
+        safety_issues.append("Passive listening is not disabled.")
+    if status.get("wake_word_enabled") is not False:
+        safety_issues.append("Wake-word listening is not disabled.")
+    if safety["always_on_listening"] is not False:
+        safety_issues.append("Always-on listening is not disabled.")
+    if (
+        safety["auto_dispatch_enabled"] is not False
+        or safety["dispatch_called"] is not False
+    ):
+        safety_issues.append("Automatic dispatch is not disabled.")
+    if (
+        safety["auto_speech_enabled"] is not False
+        or safety["speech_called"] is not False
+    ):
+        safety_issues.append("Automatic speech output is not disabled.")
+    if not hotkey_bridge_safe or safety["hotkeys_started"] is not False:
+        safety_issues.append("Hotkey bridge is not disabled/print-only.")
+    if approval["required"] is not True or safety["approval_bypassed"] is not False:
+        safety_issues.append("Explicit approval before dispatch is not enforced.")
+    if (
+        safety["raw_audio_stored"] is not False
+        or recent_events["raw_audio_stored"] is not False
+    ):
+        safety_issues.append("Raw audio non-storage is not confirmed.")
+    if safety["voice_only_mode"] is not False:
+        safety_issues.append("Voice-only mode is enabled.")
+
+    if not optional_speech_available:
+        warnings.append(
+            "Optional speech output is not available for explicit manual use."
+        )
+    if not recent_events["enabled"]:
+        warnings.append(
+            "Local voice event logging is disabled, so recent event history is "
+            "unavailable."
+        )
+    if recent_events["include_full_transcripts"]:
+        warnings.append(
+            "Full transcript logging is enabled for future opted-in local events."
+        )
+    elif recent_events["counts"]["total"] > 0:
+        warnings.append(
+            f"{recent_events['counts']['total']} recent redacted voice event(s) "
+            "are available."
+        )
+
+    preview_available = (
+        not safety_issues
+        and not blocking_issues
+        and local_transcription_ready
+        and model_ready
+        and recorder_boundary_available
+    )
+    dispatch_available = preview_available and approval["required"] is True
+
+    if safety_issues:
+        state = "unsafe_config"
+        next_safe_manual_step = (
+            "Run `jarvis voice doctor` in a terminal and restore explicit approval, "
+            "disabled hotkeys/listening, no auto-dispatch, and no auto-speech "
+            "before testing."
+        )
+    elif blocking_issues:
+        state = "needs_setup"
+        next_safe_manual_step = (
+            "Run `jarvis voice doctor` in a terminal, then fix the first blocking "
+            "setup item."
+        )
+    else:
+        state = "ready"
+        adapter_flag = (
+            f" --adapter {adapter['effective']}" if adapter["effective"] else ""
+        )
+        next_safe_manual_step = (
+            f"Run `jarvis voice run-local --duration 2{adapter_flag}` in a terminal "
+            "for a preview-only manual check."
+        )
+
+    return {
+        "state": state,
+        "blocking_issues": safety_issues + blocking_issues,
+        "warnings": warnings,
+        "next_safe_manual_step": next_safe_manual_step,
+        "preview_only_local_pipeline_available": preview_available,
+        "approval_gated_dispatch_available": dispatch_available,
+        "optional_speech_output_available": optional_speech_available,
+    }
+
+
 def _voice_error(exc: Exception) -> HTTPException:
     from openjarvis.voice import VoicePermissionError, VoiceRecordingError
 
@@ -1343,6 +1489,10 @@ async def voice_recording_status(request: Request):
     fsm = _get_voice_session_fsm(request)
     data["fsm_state"] = fsm.state.value
     data["voice_stack"] = _voice_stack_status(request)
+    data["voice_stack"]["readiness"] = _voice_readiness_status(
+        data,
+        data["voice_stack"],
+    )
     return data
 
 

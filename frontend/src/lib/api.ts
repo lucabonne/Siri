@@ -879,6 +879,15 @@ export interface VoiceSession {
 }
 
 export interface VoiceStackStatus {
+  readiness: {
+    state: 'ready' | 'needs_setup' | 'unsafe_config' | string;
+    blocking_issues: string[];
+    warnings: string[];
+    next_safe_manual_step: string;
+    preview_only_local_pipeline_available: boolean;
+    approval_gated_dispatch_available: boolean;
+    optional_speech_output_available: boolean;
+  };
   api_base_url: {
     value: string;
     source: string;

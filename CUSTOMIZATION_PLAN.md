@@ -1,5 +1,41 @@
 # Customization Plan
 
+## Voice Control Phase 29
+
+Phase 29 adds a read-only Mission Control voice readiness summary that combines
+the existing diagnostics, safety audit, setup checklist, troubleshooting, and
+recent redacted event status into one ready/not-ready view without enabling new
+behavior.
+
+- `/v1/voice/ptt/status` now includes a read-only `voice_stack.readiness`
+  summary with an overall `ready`, `needs_setup`, or `unsafe_config` state,
+  blocking issues, warnings, the next safe manual step, and availability flags
+  for the preview-only local pipeline, approval-gated dispatch, and optional
+  speech output.
+- Mission Control renders that readiness summary above the existing diagnostics,
+  safety/audit, local pipeline command helper, setup checklist, troubleshooting,
+  and recent redacted event sections.
+- The summary is display-only. Mission Control does not run CLI commands, mutate
+  settings, request microphone or accessibility permissions, approve, dispatch,
+  speak, export/clean logs, show raw audio, or reveal full transcript text from
+  status-loaded events.
+- The Phase 28 troubleshooting section and Phase 27 local pipeline command
+  helper remain intact. Preview-only remains the default; approve-dispatch and
+  speak-result variants stay explicit manual terminal commands.
+- `npm run check:mission-control-voice` remains the focused frontend
+  verification path for the Mission Control Voice surface.
+
+Deferred work remains intentionally untouched in this phase:
+
+- no always-on listening
+- no enabled Fn/global hotkey capture by default
+- no approval bypass
+- no automatic dispatch by default
+- no automatic speech playback by default
+- no settings mutation controls in Mission Control
+- no destructive voice log cleanup/export controls in Mission Control
+- no voice-only mode; text input remains available
+
 ## Voice Control Phase 28
 
 Phase 28 adds read-only Mission Control setup troubleshooting hints for local

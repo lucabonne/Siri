@@ -348,6 +348,20 @@ type VoiceSetupTroubleshootingItem = {
   manualReference?: string;
 };
 
+function voiceReadinessTone(state: string | undefined): StatusTone {
+  if (state === 'ready') return 'good';
+  if (state === 'unsafe_config') return 'watch';
+  if (state === 'needs_setup') return 'busy';
+  return 'quiet';
+}
+
+function voiceReadinessLabel(state: string | undefined): string {
+  if (state === 'ready') return 'Ready';
+  if (state === 'needs_setup') return 'Needs setup';
+  if (state === 'unsafe_config') return 'Unsafe config';
+  return 'Unknown';
+}
+
 function voiceChecklistTone(ready: boolean, pendingTone: StatusTone = 'watch'): StatusTone {
   return ready ? 'good' : pendingTone;
 }
@@ -933,6 +947,102 @@ function VoiceDiagnosticsSummary({ items }: { items: VoiceDiagnosticsSummaryItem
           </div>
         );
       })}
+    </div>
+  );
+}
+
+function VoiceReadinessSummary({ stack }: { stack: VoiceStackStatus | undefined }) {
+  const readiness = stack?.readiness;
+  const tone = voiceReadinessTone(readiness?.state);
+  const style = toneStyle(tone);
+  const blockers = readiness?.blocking_issues ?? [];
+  const warnings = readiness?.warnings ?? [];
+  const capabilities = [
+    {
+      label: 'Preview-only local pipeline',
+      available: readiness?.preview_only_local_pipeline_available,
+    },
+    {
+      label: 'Approval-gated dispatch',
+      available: readiness?.approval_gated_dispatch_available,
+    },
+    {
+      label: 'Optional speech output',
+      available: readiness?.optional_speech_output_available,
+    },
+  ];
+
+  return (
+    <div
+      className="grid gap-3 rounded-md border p-3 xl:grid-cols-[1.1fr_1fr]"
+      style={{ borderColor: style.border, background: style.bg }}
+    >
+      <div className="min-w-0">
+        <div className="flex flex-wrap items-center gap-2">
+          <StatusPill tone={tone}>{voiceReadinessLabel(readiness?.state)}</StatusPill>
+          <span className="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+            Read-only summary from voice status
+          </span>
+        </div>
+        <div className="mt-3 text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--color-text-tertiary)' }}>
+          Blocking issues
+        </div>
+        {blockers.length ? (
+          <ul className="mt-2 grid gap-1 text-xs leading-5" style={{ color: 'var(--color-text)' }}>
+            {blockers.map((issue) => (
+              <li key={issue}>{issue}</li>
+            ))}
+          </ul>
+        ) : (
+          <div className="mt-2 text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+            No blocking issue reported.
+          </div>
+        )}
+        <div className="mt-3 text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--color-text-tertiary)' }}>
+          Next safe manual step
+        </div>
+        <div className="mt-2 text-xs leading-5" style={{ color: 'var(--color-text)' }}>
+          {readiness?.next_safe_manual_step || 'Load voice status before taking a manual setup step.'}
+        </div>
+      </div>
+
+      <div className="grid gap-3">
+        <div className="grid gap-2 sm:grid-cols-3 xl:grid-cols-1">
+          {capabilities.map((item) => (
+            <div
+              key={item.label}
+              className="rounded-md border px-3 py-2"
+              style={{
+                borderColor: 'var(--color-border)',
+                background: 'var(--color-bg)',
+              }}
+            >
+              <div className="text-[11px] font-medium uppercase tracking-wide" style={{ color: 'var(--color-text-tertiary)' }}>
+                {item.label}
+              </div>
+              <div className="mt-1 text-xs font-semibold" style={{ color: item.available ? 'var(--color-success)' : 'var(--color-warning)' }}>
+                {yesNoLabel(item.available)}
+              </div>
+            </div>
+          ))}
+        </div>
+        <div>
+          <div className="text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--color-text-tertiary)' }}>
+            Warnings
+          </div>
+          {warnings.length ? (
+            <ul className="mt-2 grid gap-1 text-xs leading-5" style={{ color: 'var(--color-text-secondary)' }}>
+              {warnings.map((warning) => (
+                <li key={warning}>{warning}</li>
+              ))}
+            </ul>
+          ) : (
+            <div className="mt-2 text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+              No warning reported.
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
@@ -3015,6 +3125,18 @@ function VoiceSection() {
             value={stack?.safety.always_on_listening ? 'Listening' : 'Passive'}
             detail="No auto dispatch or speech"
           />
+        </div>
+
+        <div className="mt-5">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <h3 className="text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--color-text-tertiary)' }}>
+              Voice readiness summary
+            </h3>
+            <StatusPill tone={voiceReadinessTone(stack?.readiness.state)}>
+              {voiceReadinessLabel(stack?.readiness.state)}
+            </StatusPill>
+          </div>
+          <VoiceReadinessSummary stack={stack} />
         </div>
 
         <div className="mt-5">
