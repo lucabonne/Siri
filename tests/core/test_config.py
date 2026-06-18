@@ -33,6 +33,7 @@ class TestDefaults:
         assert isinstance(cfg.voice_control, VoiceControlConfig)
         assert cfg.voice_control.transcription_adapter == ""
         assert cfg.voice_control.default_record_duration == 0.0
+        assert cfg.voice_control.default_recorder == "dev-silent"
         assert cfg.voice_control.default_api_base_url == ""
         assert cfg.voice_control.speech_output_adapter == ""
         assert cfg.voice_control.voice_logs_enabled is True
@@ -111,6 +112,7 @@ class TestTomlLoading:
                     'transcription_adapter = "faster-whisper"',
                     'model_path = "/models/fw-base"',
                     "default_record_duration = 1.5",
+                    'default_recorder = "sounddevice"',
                     'default_api_base_url = "http://127.0.0.1:9000"',
                     'speech_output_adapter = "macos-say"',
                     'speech_voice = "Alex"',
@@ -133,6 +135,7 @@ class TestTomlLoading:
         assert cfg.voice_control.transcription_adapter == "faster-whisper"
         assert cfg.voice_control.model_path == "/models/fw-base"
         assert cfg.voice_control.default_record_duration == 1.5
+        assert cfg.voice_control.default_recorder == "sounddevice"
         assert cfg.voice_control.default_api_base_url == "http://127.0.0.1:9000"
         assert cfg.voice_control.speech_output_adapter == "macos-say"
         assert cfg.voice_control.speech_voice == "Alex"

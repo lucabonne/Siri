@@ -1,9 +1,46 @@
 # Customization Plan
 
+## Voice Control Mic Phase 1
+
+Mic Phase 1 adds the first optional real local microphone recorder adapter
+behind explicit CLI/config selection only. It does not enable always-on
+listening, Fn/global hotkey capture, approval bypass, automatic dispatch, or
+automatic speech playback.
+
+- `SoundDeviceRecorder` uses the optional `sounddevice` package to capture
+  local microphone audio only between explicit `start()` and `stop()` calls.
+- `jarvis voice record-local --recorder sounddevice --duration N` writes a
+  local WAV file and prints its path. It does not transcribe, submit, dispatch,
+  approve, or speak.
+- `jarvis voice capture-preview --recorder sounddevice --duration N` and
+  `jarvis voice run-local --recorder sounddevice --duration N` may use the same
+  recorder, but still follow the existing explicit transcription, preview,
+  approval, dispatch, and speech gates.
+- `[voice_control].default_recorder = "sounddevice"` can opt explicit voice
+  CLI commands into the real mic adapter. The default remains `dev-silent`.
+- The optional dependency is installed with `uv sync --extra voice-mic` or
+  `pip install sounddevice`.
+- Missing `sounddevice` and microphone startup failures return clear CLI
+  errors. On macOS, microphone failures point users to System Settings >
+  Privacy & Security > Microphone.
+- Tests use mocked recorder and `sounddevice` modules, so test runs do not
+  require microphone hardware or macOS permissions.
+
+Deferred work remains intentionally untouched:
+
+- no always-on listening
+- no wake word
+- no enabled Fn/global hotkey capture
+- no live Hammerspoon or Swift helper installation
+- no approval bypass
+- no automatic dispatch
+- no automatic speech playback
+- no voice-only mode; text input remains available
+
 ## Voice Control Phase 30
 
 Phase 30 is a consolidation and release-readiness pass for the safe Voice
-Control stack before real microphone or Fn/global hotkey activation.
+Control stack before Fn/global hotkey activation and always-on listening.
 
 ### Voice Control Phase 1-30 summary
 
@@ -28,9 +65,12 @@ Control stack before real microphone or Fn/global hotkey activation.
   checklist, manual command suggestions, diagnostics, safety/audit summary,
   copy-only local pipeline helper, troubleshooting, and readiness summary from
   `/v1/voice/ptt/status`.
-- Phase 30 keeps the behavior unchanged and cleans release-facing docs and
-  labels so the implemented safe/manual workflow, optional configured behavior,
-  and deferred real activation scope are clearly separated.
+- Phase 30 cleaned release-facing docs and labels so the implemented
+  safe/manual workflow, optional configured behavior, and deferred activation
+  scope are clearly separated.
+- Mic Phase 1 adds an optional `sounddevice` real microphone recorder behind
+  explicit CLI/config selection while keeping hotkeys, always-on listening,
+  auto-dispatch, and auto-speech deferred.
 
 ### Current safe workflow
 
@@ -62,10 +102,12 @@ Control stack before real microphone or Fn/global hotkey activation.
 ### Optional configured behavior
 
 - `[voice_control]` may provide defaults for local transcription adapter/model,
-  record duration, API base URL, explicit speech output, printed hotkey bridge
-  command formatting, and local event logging.
+  record duration, recorder selection, API base URL, explicit speech output,
+  printed hotkey bridge command formatting, and local event logging.
 - `--recorder macos` may be used manually and may require macOS **Microphone**
   permission.
+- `--recorder sounddevice` may be used manually after installing the optional
+  `voice-mic` dependency and may require OS microphone permission.
 - `--approve-dispatch` may be supplied manually to dispatch after preview.
 - `--speak-result` may be supplied only with `--approve-dispatch` to speak the
   explicit dispatch result.

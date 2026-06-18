@@ -40,6 +40,7 @@ def _safe_config(**voice_overrides: Any) -> SimpleNamespace:
         "transcription_adapter": "",
         "model_path": "",
         "default_record_duration": 0.0,
+        "default_recorder": "dev-silent",
         "default_api_base_url": "",
         "speech_output_adapter": "",
         "speech_voice": "",
@@ -565,6 +566,12 @@ def test_voice_doctor_json_reports_available_configured_setup(
     assert data["model_path"]["exists"] is True
     assert data["record_duration"]["effective_default_seconds"] == 2.5
     assert data["record_duration"]["duration_flag_required"] is False
+    assert data["recorder"] == {
+        "configured_default": "dev-silent",
+        "supported": True,
+        "sounddevice_available": None,
+        "requires_explicit_command": True,
+    }
     assert data["speech_output"]["effective"] == "macos-say"
     assert data["macos_say"]["available"] is True
     assert data["hotkey_bridge"]["print_only"] is True
@@ -1083,6 +1090,93 @@ def test_voice_record_local_writes_dev_file_without_dispatch(
         assert wav.getnchannels() == 1
         assert wav.getframerate() == 16000
     assert post_calls == []
+
+
+def test_voice_record_local_accepts_explicit_sounddevice_recorder(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    recorder_kinds: list[str] = []
+    post_calls: list[tuple[str, dict[str, Any] | None]] = []
+
+    def fake_build_recorder(recorder_kind: str, *, output_dir: Path | None, **kwargs):
+        recorder_kinds.append(recorder_kind)
+        return voice_cmd.SilentWavRecorder(temp_dir=output_dir)
+
+    def fake_post(endpoint: str, payload: dict[str, Any] | None, **kwargs):
+        post_calls.append((endpoint, payload))
+        return {}
+
+    monkeypatch.setattr(voice_cmd, "_sleep", lambda seconds: None)
+    monkeypatch.setattr(voice_cmd, "_build_recorder", fake_build_recorder)
+    monkeypatch.setattr(voice_cmd, "_post_json", fake_post)
+    monkeypatch.setattr(voice_cmd, "load_config", lambda: _safe_config())
+
+    result = CliRunner().invoke(
+        voice_cmd.voice,
+        [
+            "record-local",
+            "--duration",
+            "0.1",
+            "--recorder",
+            "sounddevice",
+            "--output-dir",
+            str(tmp_path),
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert recorder_kinds == ["sounddevice"]
+    assert Path(result.output.strip()).exists()
+    assert post_calls == []
+
+
+def test_voice_record_local_uses_configured_sounddevice_recorder(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    recorder_kinds: list[str] = []
+
+    def fake_build_recorder(recorder_kind: str, *, output_dir: Path | None, **kwargs):
+        recorder_kinds.append(recorder_kind)
+        return voice_cmd.SilentWavRecorder(temp_dir=output_dir)
+
+    monkeypatch.setattr(voice_cmd, "_sleep", lambda seconds: None)
+    monkeypatch.setattr(voice_cmd, "_build_recorder", fake_build_recorder)
+    monkeypatch.setattr(
+        voice_cmd,
+        "load_config",
+        lambda: _safe_config(
+            default_record_duration=0.1, default_recorder="sounddevice"
+        ),
+    )
+
+    result = CliRunner().invoke(
+        voice_cmd.voice,
+        ["record-local", "--output-dir", str(tmp_path)],
+    )
+
+    assert result.exit_code == 0
+    assert recorder_kinds == ["sounddevice"]
+
+
+def test_voice_record_local_rejects_unsupported_configured_recorder(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(
+        voice_cmd,
+        "load_config",
+        lambda: _safe_config(default_record_duration=0.1, default_recorder="always-on"),
+    )
+
+    result = CliRunner().invoke(
+        voice_cmd.voice,
+        ["record-local", "--output-dir", str(tmp_path)],
+    )
+
+    assert result.exit_code != 0
+    assert "[voice_control].default_recorder" in result.output
 
 
 def test_voice_capture_preview_requires_explicit_duration(monkeypatch) -> None:

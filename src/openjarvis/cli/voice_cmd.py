@@ -10,6 +10,7 @@ import time
 import uuid
 from dataclasses import replace
 from datetime import datetime, timezone
+from importlib.util import find_spec
 from pathlib import Path
 from typing import Any
 
@@ -25,7 +26,13 @@ from openjarvis.voice.event_log import (
     voice_log_settings_from_config,
 )
 from openjarvis.voice.models import TranscriptionUnavailableError, VoiceRecordingError
-from openjarvis.voice.recorder import LocalMacOSRecorder, Recorder, SilentWavRecorder
+from openjarvis.voice.recorder import (
+    RECORDER_KINDS,
+    LocalMacOSRecorder,
+    Recorder,
+    SilentWavRecorder,
+    SoundDeviceRecorder,
+)
 from openjarvis.voice.speech_output import (
     LOCAL_SPEECH_OUTPUT_ADAPTERS,
     LocalSpeechOutput,
@@ -283,7 +290,23 @@ def _build_recorder(
 ) -> Recorder:
     if recorder_kind == "macos":
         return LocalMacOSRecorder(temp_dir=output_dir, input_device=input_device)
+    if recorder_kind == "sounddevice":
+        device = None if input_device == ":0" else input_device
+        return SoundDeviceRecorder(temp_dir=output_dir, input_device=device)
     return SilentWavRecorder(temp_dir=output_dir)
+
+
+def _configured_recorder_kind(recorder_kind: str | None) -> str:
+    if recorder_kind:
+        return recorder_kind
+    voice_control = _voice_control_config(load_config())
+    configured = str(getattr(voice_control, "default_recorder", "") or "dev-silent")
+    if configured not in RECORDER_KINDS:
+        raise click.ClickException(
+            f"unsupported local recorder configured in "
+            f"[voice_control].default_recorder: {configured}"
+        )
+    return configured
 
 
 def _voice_control_config(config: Any) -> Any:
@@ -552,6 +575,11 @@ def _voice_doctor_data() -> dict[str, Any]:
     except (TypeError, ValueError):
         configured_duration = 0.0
 
+    configured_recorder = str(
+        getattr(voice_control, "default_recorder", "") or "dev-silent"
+    )
+    sounddevice_relevant = configured_recorder == "sounddevice"
+
     speech_adapter = str(getattr(voice_control, "speech_output_adapter", "") or "")
     effective_speech_adapter = speech_adapter or "macos-say"
     say_path = shutil.which("say")
@@ -572,6 +600,14 @@ def _voice_doctor_data() -> dict[str, Any]:
             if configured_duration > 0
             else None,
             "duration_flag_required": configured_duration <= 0,
+        },
+        "recorder": {
+            "configured_default": configured_recorder,
+            "supported": configured_recorder in RECORDER_KINDS,
+            "sounddevice_available": find_spec("sounddevice") is not None
+            if sounddevice_relevant
+            else None,
+            "requires_explicit_command": True,
         },
         "speech_output": {
             "configured": speech_adapter,
@@ -629,6 +665,14 @@ def _format_voice_doctor(data: dict[str, Any]) -> None:
         "  record_duration: "
         f"{default_duration if default_duration is not None else 'requires --duration'}"
     )
+    recorder = data["recorder"]
+    click.echo(
+        "  recorder: "
+        f"{recorder['configured_default']} "
+        f"(supported={recorder['supported']})"
+    )
+    if recorder["sounddevice_available"] is not None:
+        click.echo(f"  sounddevice_available: {recorder['sounddevice_available']}")
     speech_output = data["speech_output"]
     click.echo(f"  speech_output: {speech_output['effective']}")
     macos_say = data["macos_say"]
@@ -692,7 +736,7 @@ def doctor(as_json: bool) -> None:
 @click.option(
     "--recorder",
     "recorder_kind",
-    type=click.Choice(["dev-silent", "macos"]),
+    type=click.Choice(RECORDER_KINDS),
     default=None,
     help="Recorder to include in the printed run-local command.",
 )
@@ -762,7 +806,7 @@ def hotkey_bridge(
         "hotkey_bridge_recorder",
         "macos",
     )
-    if bridge_recorder not in {"dev-silent", "macos"}:
+    if bridge_recorder not in RECORDER_KINDS:
         raise click.ClickException(
             f"unsupported hotkey bridge recorder: {bridge_recorder}"
         )
@@ -1061,10 +1105,12 @@ def speak(
 @click.option(
     "--recorder",
     "recorder_kind",
-    type=click.Choice(["dev-silent", "macos"]),
-    default="dev-silent",
-    show_default=True,
-    help="Local recorder implementation.",
+    type=click.Choice(RECORDER_KINDS),
+    default=None,
+    help=(
+        "Local recorder implementation. Defaults to "
+        "[voice_control].default_recorder or dev-silent."
+    ),
 )
 @click.option(
     "--input-device",
@@ -1075,27 +1121,24 @@ def speak(
 def record_local(
     duration: float | None,
     output_dir: Path | None,
-    recorder_kind: str,
+    recorder_kind: str | None,
     input_device: str,
 ) -> None:
     """Record to a local WAV file only; never transcribe or dispatch."""
     resolved_duration = _record_duration(duration)
-    recorder = _build_recorder(
-        recorder_kind,
+    resolved_recorder = _configured_recorder_kind(recorder_kind)
+    handle = _record_local_audio(
+        duration=resolved_duration,
         output_dir=output_dir,
+        recorder_kind=resolved_recorder,
         input_device=input_device,
     )
-    handle = recorder.start(uuid.uuid4().hex)
-    try:
-        _sleep(resolved_duration)
-    finally:
-        recorder.stop(handle)
     _log_voice_event(
         "record-local",
         "recording_result",
         details={
             "path": str(handle.path),
-            "recorder": recorder_kind,
+            "recorder": resolved_recorder,
             "duration": resolved_duration,
             "transcribed": False,
             "dispatch_skipped": True,
@@ -1123,10 +1166,12 @@ def record_local(
 @click.option(
     "--recorder",
     "recorder_kind",
-    type=click.Choice(["dev-silent", "macos"]),
-    default="dev-silent",
-    show_default=True,
-    help="Local recorder implementation.",
+    type=click.Choice(RECORDER_KINDS),
+    default=None,
+    help=(
+        "Local recorder implementation. Defaults to "
+        "[voice_control].default_recorder or dev-silent."
+    ),
 )
 @click.option(
     "--input-device",
@@ -1171,7 +1216,7 @@ def record_local(
 def capture_preview(
     duration: float | None,
     output_dir: Path | None,
-    recorder_kind: str,
+    recorder_kind: str | None,
     input_device: str,
     adapter: str | None,
     language: str | None,
@@ -1183,25 +1228,22 @@ def capture_preview(
 ) -> None:
     """Record, transcribe, and submit a preview; never dispatch automatically."""
     resolved_duration = _record_duration(duration)
+    resolved_recorder = _configured_recorder_kind(recorder_kind)
     adapter_id, transcriber = _build_transcriber(adapter)
-    recorder = _build_recorder(
-        recorder_kind,
-        output_dir=output_dir,
-        input_device=input_device,
-    )
 
     if not as_json:
         click.echo("Voice capture preview")
         click.echo(
             f"  stage: recording local WAV "
-            f"(recorder={recorder_kind}, duration={resolved_duration:g}s)"
+            f"(recorder={resolved_recorder}, duration={resolved_duration:g}s)"
         )
 
-    handle = recorder.start(uuid.uuid4().hex)
-    try:
-        _sleep(resolved_duration)
-    finally:
-        recorder.stop(handle)
+    handle = _record_local_audio(
+        duration=resolved_duration,
+        output_dir=output_dir,
+        recorder_kind=resolved_recorder,
+        input_device=input_device,
+    )
 
     if not as_json:
         click.echo(f"    path: {handle.path}")
@@ -1231,7 +1273,7 @@ def capture_preview(
     preview_details.update(
         {
             "recording_path": str(handle.path),
-            "recorder": recorder_kind,
+            "recorder": resolved_recorder,
             "duration": resolved_duration,
             "adapter": adapter_id,
             "language": transcription.get("language") or "",
@@ -1251,7 +1293,7 @@ def capture_preview(
             {
                 "recording": {
                     "path": str(handle.path),
-                    "recorder": recorder_kind,
+                    "recorder": resolved_recorder,
                     "duration": resolved_duration,
                 },
                 "transcription": transcription,
@@ -1285,10 +1327,12 @@ def capture_preview(
 @click.option(
     "--recorder",
     "recorder_kind",
-    type=click.Choice(["dev-silent", "macos"]),
-    default="dev-silent",
-    show_default=True,
-    help="Local recorder implementation.",
+    type=click.Choice(RECORDER_KINDS),
+    default=None,
+    help=(
+        "Local recorder implementation. Defaults to "
+        "[voice_control].default_recorder or dev-silent."
+    ),
 )
 @click.option(
     "--input-device",
@@ -1364,7 +1408,7 @@ def capture_preview(
 def run_local(
     duration: float | None,
     output_dir: Path | None,
-    recorder_kind: str,
+    recorder_kind: str | None,
     input_device: str,
     adapter: str | None,
     language: str | None,
@@ -1385,6 +1429,7 @@ def run_local(
         raise click.UsageError("--speak-result requires --approve-dispatch")
 
     resolved_duration = _record_duration(duration)
+    resolved_recorder = _configured_recorder_kind(recorder_kind)
     adapter_id, transcriber = _build_transcriber(adapter)
     resolved_base = _base_url(base_url)
     resolved_key = _api_key(api_key)
@@ -1393,13 +1438,13 @@ def run_local(
         click.echo("Voice local run")
         click.echo(
             f"  stage: recording local WAV "
-            f"(recorder={recorder_kind}, duration={resolved_duration:g}s)"
+            f"(recorder={resolved_recorder}, duration={resolved_duration:g}s)"
         )
 
     handle = _record_local_audio(
         duration=resolved_duration,
         output_dir=output_dir,
-        recorder_kind=recorder_kind,
+        recorder_kind=resolved_recorder,
         input_device=input_device,
     )
 
@@ -1431,7 +1476,7 @@ def run_local(
     run_details.update(
         {
             "recording_path": str(handle.path),
-            "recorder": recorder_kind,
+            "recorder": resolved_recorder,
             "duration": resolved_duration,
             "adapter": adapter_id,
             "language": transcription_data.get("language") or "",
@@ -1513,7 +1558,7 @@ def run_local(
         output_data: dict[str, Any] = {
             "recording": {
                 "path": str(handle.path),
-                "recorder": recorder_kind,
+                "recorder": resolved_recorder,
                 "duration": resolved_duration,
             },
             "transcription": transcription_data,

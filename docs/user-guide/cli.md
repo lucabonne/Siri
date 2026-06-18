@@ -466,16 +466,17 @@ When an agent is configured (e.g., `--agent orchestrator`), non-streaming reques
 ## `jarvis voice`
 
 Run the explicit local/manual voice flow against an already running OpenJarvis
-API server. This is the current safe bridge before real microphone or global
-hotkey activation: a terminal command can record or transcribe only when you
-invoke it, while OpenJarvis keeps the same preview, approval, dispatch, and
-cancel API gates.
+API server. This is the current safe bridge before global hotkey or always-on
+activation: a terminal command can record or transcribe only when you invoke
+it, while OpenJarvis keeps the same preview, approval, dispatch, and cancel API
+gates.
 
 ```bash
 jarvis voice submit "open notes"                         # Preview only
 jarvis voice submit "open notes" --approve-dispatch      # Preview, then dispatch
 jarvis voice submit "run tests" --agent-id agent-123 --approve-dispatch
 jarvis voice record-local --duration 2                   # Local WAV only
+jarvis voice record-local --recorder sounddevice --duration 2
 jarvis voice transcribe-file ./clip.wav --adapter faster-whisper
 jarvis voice capture-preview --duration 2 --adapter faster-whisper
 jarvis voice run-local --duration 2 --adapter faster-whisper
@@ -502,6 +503,7 @@ jarvis voice cancel
 | `voice submit TEXT`     | POST to `/v1/voice/ptt/submit-transcript` and show the intent preview/session state |
 | `voice submit --approve-dispatch` | Explicitly approve and then POST to `/v1/voice/ptt/dispatch` |
 | `voice record-local --duration N` | Write a local WAV file and print its path; defaults to the dev silent recorder |
+| `voice record-local --recorder sounddevice --duration N` | Use the optional real local microphone adapter and write a local WAV file only |
 | `voice transcribe-file AUDIO` | Transcribe an existing local audio file with a local adapter and print the transcript only |
 | `voice capture-preview --duration N` | Record a local WAV, transcribe it locally, POST the transcript to `/v1/voice/ptt/submit-transcript`, and print the preview only |
 | `voice run-local --duration N` | Record, transcribe, submit preview, and print session state; dispatch and TTS require separate opt-in flags |
@@ -539,8 +541,8 @@ Implemented safe local/manual behavior:
 Optional configured behavior:
 
 - `[voice_control]` can set safe defaults for local adapter/model selection,
-  record duration, API base URL, explicit speech output, printed hotkey bridge
-  command formatting, and local event logging.
+  record duration, recorder selection, API base URL, explicit speech output,
+  printed hotkey bridge command formatting, and local event logging.
 - `--approve-dispatch` explicitly calls `/v1/voice/ptt/dispatch` after preview
   and sends `approved=true`.
 - `voice speak` and `run-local --approve-dispatch --speak-result` explicitly use
@@ -582,6 +584,7 @@ Safe local defaults can be set in `~/.openjarvis/config.toml`:
 transcription_adapter = "faster-whisper"   # or "whisper.cpp"; empty disables it
 model_path = "base"                        # model name or existing local path
 default_record_duration = 2.0              # 0 keeps --duration required
+default_recorder = "dev-silent"            # dev-silent, macos, or sounddevice
 default_api_base_url = "http://127.0.0.1:8000"
 speech_output_adapter = "macos-say"        # used only by speak/--speak-result
 speech_voice = "Alex"
@@ -637,7 +640,8 @@ available only for events that were originally written after
 
 `voice doctor` reports the effective API base URL, configured local
 transcription adapter, model path existence when a local path is required,
-default record duration, configured speech-output adapter, macOS `say`
+default record duration, configured recorder, optional `sounddevice` package
+availability when relevant, configured speech-output adapter, macOS `say`
 availability when relevant, print-only/disabled hotkey bridge state, and whether
 explicit voice approval is still required. Apart from optional local structured
 logging, it does not request microphone access, download models, call dispatch,
@@ -715,10 +719,21 @@ anything, or speak results. The printed command intentionally omits
 default as `voice run-local`.
 
 `voice record-local` defaults to `--recorder dev-silent` for safe development.
+`--recorder sounddevice` uses the optional Python `sounddevice` package as a
+real local microphone adapter and writes only a local WAV file unless you
+separately call an explicit transcription pipeline command. Install it with:
+
+```bash
+uv sync --extra voice-mic
+```
+
 On macOS, `--recorder macos` uses local command-line recording tools and may
-prompt for **Microphone** permission. A future Hammerspoon or Swift Fn/hotkey
-helper will require macOS **Accessibility** permission, but this CLI does not
-install, enable, or run that helper. Voice-only mode remains deferred.
+prompt for **Microphone** permission. `--recorder sounddevice` may also require
+Microphone permission for the terminal app running `jarvis`; grant it in System
+Settings > Privacy & Security > Microphone, then restart that terminal. A future
+Hammerspoon or Swift Fn/hotkey helper will require macOS **Accessibility**
+permission, but this CLI does not install, enable, or run that helper.
+Voice-only mode remains deferred.
 
 Local transcription is disabled unless you explicitly select a local adapter
 with `--adapter`, set `[voice_control].transcription_adapter`, or set

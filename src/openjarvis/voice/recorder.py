@@ -9,10 +9,14 @@ import subprocess
 import tempfile
 import time
 import wave
+from importlib import import_module
 from pathlib import Path
-from typing import Protocol
+from types import ModuleType
+from typing import Callable, Protocol
 
 from openjarvis.voice.models import RecordingHandle, VoiceRecordingError
+
+RECORDER_KINDS = ("dev-silent", "macos", "sounddevice")
 
 
 class Recorder(Protocol):
@@ -83,7 +87,10 @@ class LocalMacOSRecorder:
                 process.kill()
                 process.wait(timeout=3)
         if not handle.path.exists():
-            raise VoiceRecordingError("recording did not produce an audio file")
+            message = "recording did not produce an audio file"
+            if platform.system() == "Darwin":
+                message = f"{message}. {_macos_microphone_guidance()}"
+            raise VoiceRecordingError(message)
 
     def _record_command(self, path: Path) -> list[str]:
         ffmpeg = shutil.which("ffmpeg")
@@ -116,6 +123,97 @@ class LocalMacOSRecorder:
                 str(self._sample_rate),
             ]
         return []
+
+
+def _macos_microphone_guidance() -> str:
+    return (
+        "On macOS, grant Microphone access to the terminal app running jarvis "
+        "in System Settings > Privacy & Security > Microphone, then restart "
+        "that terminal."
+    )
+
+
+class SoundDeviceRecorder:
+    """Optional local microphone recorder using the ``sounddevice`` package."""
+
+    def __init__(
+        self,
+        *,
+        temp_dir: str | os.PathLike[str] | None = None,
+        input_device: str | None = None,
+        sample_rate: int = 16000,
+        channels: int = 1,
+        module_loader: Callable[[str], ModuleType] = import_module,
+    ) -> None:
+        self._temp_dir = Path(temp_dir) if temp_dir else Path(tempfile.gettempdir())
+        self._input_device = input_device
+        self._sample_rate = sample_rate
+        self._channels = channels
+        self._module_loader = module_loader
+        self._frames: list[bytes] = []
+
+    def start(self, recording_id: str) -> RecordingHandle:
+        self._temp_dir.mkdir(parents=True, exist_ok=True)
+        path = self._temp_dir / f"openjarvis-ptt-{recording_id}.wav"
+        try:
+            sounddevice = self._module_loader("sounddevice")
+        except ImportError as exc:
+            raise VoiceRecordingError(
+                "sounddevice recorder requires the optional 'sounddevice' "
+                "dependency. Install it with `uv sync --extra voice-mic` or "
+                "`pip install sounddevice`."
+            ) from exc
+
+        self._frames = []
+
+        def callback(indata, frames, time_info, status) -> None:
+            del frames, time_info
+            if status:
+                # PortAudio status flags are diagnostic only; keep recording.
+                pass
+            self._frames.append(indata.copy().tobytes())
+
+        try:
+            stream = sounddevice.InputStream(
+                samplerate=self._sample_rate,
+                channels=self._channels,
+                dtype="int16",
+                device=self._input_device,
+                callback=callback,
+            )
+            stream.start()
+        except Exception as exc:
+            raise VoiceRecordingError(self._format_start_error(exc)) from exc
+
+        return RecordingHandle(
+            recording_id=recording_id,
+            path=path,
+            format="wav",
+            process=stream,
+            started_at=time.monotonic(),
+        )
+
+    def stop(self, handle: RecordingHandle) -> None:
+        stream = handle.process
+        try:
+            if stream is not None:
+                stream.stop()
+                stream.close()
+        except Exception as exc:
+            raise VoiceRecordingError(str(exc)) from exc
+
+        handle.path.parent.mkdir(parents=True, exist_ok=True)
+        with wave.open(str(handle.path), "wb") as wav:
+            wav.setnchannels(self._channels)
+            wav.setsampwidth(2)
+            wav.setframerate(self._sample_rate)
+            wav.writeframes(b"".join(self._frames))
+
+    def _format_start_error(self, exc: Exception) -> str:
+        message = f"could not start sounddevice microphone recording: {exc}"
+        if platform.system() == "Darwin":
+            return f"{message}. {_macos_microphone_guidance()}"
+        return message
 
 
 class SilentWavRecorder:
@@ -151,4 +249,10 @@ class SilentWavRecorder:
             wav.writeframes(b"\x00\x00" * frames)
 
 
-__all__ = ["LocalMacOSRecorder", "Recorder", "SilentWavRecorder"]
+__all__ = [
+    "LocalMacOSRecorder",
+    "Recorder",
+    "RECORDER_KINDS",
+    "SilentWavRecorder",
+    "SoundDeviceRecorder",
+]

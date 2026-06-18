@@ -1300,6 +1300,7 @@ class VoiceControlConfig:
     transcription_adapter: str = ""  # faster-whisper, whisper.cpp; empty = disabled
     model_path: str = ""  # Optional local transcription model path/name override
     default_record_duration: float = 0.0  # 0 = require --duration
+    default_recorder: str = "dev-silent"  # dev-silent, macos, sounddevice
     default_api_base_url: str = ""
     speech_output_adapter: str = ""  # Optional adapter for explicit speak flags
     speech_voice: str = ""
@@ -1992,6 +1993,7 @@ macos_input_device = ":0" # ffmpeg avfoundation input, e.g. ":0"
 transcription_adapter = ""       # faster-whisper or whisper.cpp; empty = disabled
 model_path = ""                  # optional local model path/name override
 default_record_duration = 0.0    # 0 means --duration is still required
+default_recorder = "dev-silent"  # dev-silent, macos, or sounddevice
 default_api_base_url = ""        # e.g. "http://127.0.0.1:8000"
 speech_output_adapter = ""       # macos-say; used only by explicit speak flags
 speech_voice = ""
