@@ -490,6 +490,7 @@ function buildVoiceSetupChecklist(
   const modelExistsReady = !stack?.model_path.required || stack.model_path.exists === true;
   const recorderBoundaryAvailable = Boolean(status?.push_to_talk_only)
     && status?.passive_listening === false;
+  const recorderBackendAvailable = stack?.recorder.backend_available === true;
   const speechBackendReady = Boolean(
     stack?.speech_output.effective && stack.speech_output.supported,
   );
@@ -536,11 +537,13 @@ function buildVoiceSetupChecklist(
         : undefined,
     },
     {
-      label: 'Recorder boundary available',
-      value: recorderBoundaryAvailable ? 'Available' : 'Pending',
-      detail: status ? 'Live capture remains deferred' : 'Voice status not loaded',
-      tone: voiceChecklistTone(recorderBoundaryAvailable),
-      manualCommands: recorderBoundaryAvailable ? undefined : [commands.recordLocal],
+      label: 'Recorder backend ready',
+      value: recorderBackendAvailable ? 'Available' : 'Pending',
+      detail: stack
+        ? `${stack.recorder.configured_default}; configuration-only check`
+        : 'Voice status not loaded',
+      tone: voiceChecklistTone(recorderBoundaryAvailable && recorderBackendAvailable),
+      manualCommands: recorderBoundaryAvailable && recorderBackendAvailable ? undefined : [commands.recordLocal],
     },
     {
       label: 'Speech output backend configured',
@@ -631,6 +634,28 @@ function buildVoiceDiagnosticsSummary(
         ? stack.record_duration.duration_flag_required ? 'CLI flag required' : 'Configured default'
         : 'Voice status not loaded',
       tone: stack?.record_duration.duration_flag_required ? 'watch' : stack ? 'good' : 'watch',
+    },
+    {
+      label: 'Recorder backend',
+      value: stack?.recorder.configured_default || 'Unknown',
+      detail: stack?.recorder.backend_available ? 'Static dependencies available' : 'Dependency or platform unavailable',
+      tone: stack?.recorder.backend_available ? 'good' : 'watch',
+    },
+    {
+      label: 'Microphone configured',
+      value: yesNoLabel(stack?.recorder.microphone_recording_configured),
+      detail: stack?.recorder.microphone_permission_checked
+        ? 'Permission checked'
+        : 'Permission and hardware not probed',
+      tone: stack?.recorder.microphone_configuration_ready ? 'good' : 'quiet',
+    },
+    {
+      label: 'sounddevice importable',
+      value: yesNoLabel(stack?.recorder.sounddevice_importable),
+      detail: stack?.recorder.configured_default === 'sounddevice' ? 'Selected recorder dependency' : 'Optional recorder dependency',
+      tone: stack?.recorder.configured_default === 'sounddevice'
+        ? voiceChecklistTone(stack.recorder.sounddevice_importable)
+        : 'quiet',
     },
     {
       label: 'Speech output backend',
@@ -748,6 +773,16 @@ function buildVoiceSetupTroubleshooting(
       hint: 'Use explicit fixed-duration recorder commands manually; Mission Control does not start microphone capture.',
       tone: 'watch',
       manualReference: commands.recordLocal.command,
+    });
+  }
+
+  if (!stack.recorder.backend_available) {
+    items.push({
+      label: 'Recorder backend unavailable',
+      reason: `The configured ${stack.recorder.configured_default} recorder did not pass its configuration-only dependency check.`,
+      hint: 'Review `jarvis voice doctor` output in a terminal. Mission Control will not open the microphone or change recorder settings.',
+      tone: 'watch',
+      manualReference: commands.doctor.command,
     });
   }
 
@@ -969,6 +1004,10 @@ function VoiceReadinessSummary({ stack }: { stack: VoiceStackStatus | undefined 
     {
       label: 'Optional speech output',
       available: readiness?.optional_speech_output_available,
+    },
+    {
+      label: 'Recorder backend',
+      available: readiness?.recorder_backend_available,
     },
   ];
 
@@ -3094,6 +3133,14 @@ function VoiceSection() {
             label="Default Duration"
             value={formatVoiceDuration(stack?.record_duration.effective_default_seconds)}
             detail={stack?.record_duration.duration_flag_required ? 'CLI flag required' : 'Configured default'}
+          />
+          <ContextTile
+            icon={<Mic2 size={15} />}
+            label="Recorder"
+            value={stack?.recorder.configured_default || 'Unknown'}
+            detail={stack?.recorder.microphone_recording_configured
+              ? stack.recorder.microphone_configuration_ready ? 'Mic config ready; permission untested' : 'Mic config needs setup'
+              : 'Real microphone not configured'}
           />
           <ContextTile
             icon={<Activity size={15} />}

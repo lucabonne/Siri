@@ -566,12 +566,15 @@ def test_voice_doctor_json_reports_available_configured_setup(
     assert data["model_path"]["exists"] is True
     assert data["record_duration"]["effective_default_seconds"] == 2.5
     assert data["record_duration"]["duration_flag_required"] is False
-    assert data["recorder"] == {
-        "configured_default": "dev-silent",
-        "supported": True,
-        "sounddevice_available": None,
-        "requires_explicit_command": True,
-    }
+    assert data["recorder"]["configured_default"] == "dev-silent"
+    assert data["recorder"]["supported"] is True
+    assert data["recorder"]["backend_available"] is True
+    assert data["recorder"]["microphone_recording_configured"] is False
+    assert data["recorder"]["microphone_configuration_ready"] is False
+    assert isinstance(data["recorder"]["sounddevice_importable"], bool)
+    assert data["recorder"]["microphone_permission_checked"] is False
+    assert data["recorder"]["status_check"] == "configuration_only"
+    assert data["recorder"]["requires_explicit_command"] is True
     assert data["speech_output"]["effective"] == "macos-say"
     assert data["macos_say"]["available"] is True
     assert data["hotkey_bridge"]["print_only"] is True
@@ -613,6 +616,10 @@ def test_voice_doctor_reports_missing_dependencies_without_side_effects(
     assert "model_path: -" in result.output
     assert "required=True, exists=False" in result.output
     assert "record_duration: requires --duration" in result.output
+    assert "sounddevice_importable:" in result.output
+    assert "microphone_recording_configured: False" in result.output
+    assert "permission not checked" in result.output
+    assert "System Settings > Privacy & Security > Microphone" in result.output
     assert "macos_say_available: False" in result.output
     assert "hotkey_bridge: print_only=True, enabled=False" in result.output
     assert "approval_required: True" in result.output

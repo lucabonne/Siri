@@ -7,7 +7,48 @@ from types import SimpleNamespace
 import pytest
 
 from openjarvis.voice.models import VoiceRecordingError
-from openjarvis.voice.recorder import SilentWavRecorder, SoundDeviceRecorder
+from openjarvis.voice.recorder import (
+    SilentWavRecorder,
+    SoundDeviceRecorder,
+    recorder_diagnostics,
+)
+
+
+def test_recorder_diagnostics_are_configuration_only() -> None:
+    executable_checks: list[str] = []
+
+    diagnostics = recorder_diagnostics(
+        "sounddevice",
+        sounddevice_importable=True,
+        system_name="Darwin",
+        executable_finder=lambda name: executable_checks.append(name) or None,
+    )
+
+    assert diagnostics["configured_default"] == "sounddevice"
+    assert diagnostics["sounddevice_importable"] is True
+    assert diagnostics["microphone_recording_configured"] is True
+    assert diagnostics["microphone_configuration_ready"] is True
+    assert diagnostics["microphone_permission_checked"] is False
+    assert diagnostics["status_check"] == "configuration_only"
+    assert (
+        "System Settings > Privacy & Security > Microphone"
+        in diagnostics["macos_microphone_permission_guidance"]
+    )
+    assert executable_checks == []
+
+
+def test_macos_recorder_diagnostics_use_mocked_tool_lookup() -> None:
+    diagnostics = recorder_diagnostics(
+        "macos",
+        sounddevice_importable=False,
+        system_name="Darwin",
+        executable_finder=lambda name: (
+            "/opt/homebrew/bin/ffmpeg" if name == "ffmpeg" else None
+        ),
+    )
+
+    assert diagnostics["backend_available"] is True
+    assert diagnostics["macos_recording_tool"] == "/opt/homebrew/bin/ffmpeg"
 
 
 def test_silent_wav_recorder_requires_explicit_start_stop(tmp_path: Path) -> None:

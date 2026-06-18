@@ -10,7 +10,6 @@ import time
 import uuid
 from dataclasses import replace
 from datetime import datetime, timezone
-from importlib.util import find_spec
 from pathlib import Path
 from typing import Any
 
@@ -32,6 +31,7 @@ from openjarvis.voice.recorder import (
     Recorder,
     SilentWavRecorder,
     SoundDeviceRecorder,
+    recorder_diagnostics,
 )
 from openjarvis.voice.speech_output import (
     LOCAL_SPEECH_OUTPUT_ADAPTERS,
@@ -578,8 +578,6 @@ def _voice_doctor_data() -> dict[str, Any]:
     configured_recorder = str(
         getattr(voice_control, "default_recorder", "") or "dev-silent"
     )
-    sounddevice_relevant = configured_recorder == "sounddevice"
-
     speech_adapter = str(getattr(voice_control, "speech_output_adapter", "") or "")
     effective_speech_adapter = speech_adapter or "macos-say"
     say_path = shutil.which("say")
@@ -601,14 +599,7 @@ def _voice_doctor_data() -> dict[str, Any]:
             else None,
             "duration_flag_required": configured_duration <= 0,
         },
-        "recorder": {
-            "configured_default": configured_recorder,
-            "supported": configured_recorder in RECORDER_KINDS,
-            "sounddevice_available": find_spec("sounddevice") is not None
-            if sounddevice_relevant
-            else None,
-            "requires_explicit_command": True,
-        },
+        "recorder": recorder_diagnostics(configured_recorder),
         "speech_output": {
             "configured": speech_adapter,
             "effective": effective_speech_adapter,
@@ -669,10 +660,23 @@ def _format_voice_doctor(data: dict[str, Any]) -> None:
     click.echo(
         "  recorder: "
         f"{recorder['configured_default']} "
-        f"(supported={recorder['supported']})"
+        f"(supported={recorder['supported']}, "
+        f"available={recorder['backend_available']})"
     )
-    if recorder["sounddevice_available"] is not None:
-        click.echo(f"  sounddevice_available: {recorder['sounddevice_available']}")
+    click.echo(f"  sounddevice_importable: {recorder['sounddevice_importable']}")
+    click.echo(
+        "  microphone_recording_configured: "
+        f"{recorder['microphone_recording_configured']}"
+    )
+    click.echo(
+        "  microphone_configuration_ready: "
+        f"{recorder['microphone_configuration_ready']} "
+        "(permission not checked)"
+    )
+    click.echo(
+        "  macos_microphone_permission: "
+        f"{recorder['macos_microphone_permission_guidance']}"
+    )
     speech_output = data["speech_output"]
     click.echo(f"  speech_output: {speech_output['effective']}")
     macos_say = data["macos_say"]

@@ -1,5 +1,35 @@
 # Customization Plan
 
+## Voice Control Mic Phase 2
+
+Mic Phase 2 adds configuration-only microphone diagnostics to the existing
+safe CLI and Mission Control status surfaces. Diagnostics never open an input
+stream, request permission, record audio, start hotkeys, dispatch, or speak.
+
+- `jarvis voice doctor` reports the configured recorder backend, backend
+  dependency availability, whether `sounddevice` is importable, whether a real
+  microphone recorder is explicitly configured, and whether that configuration
+  is ready based only on static dependencies.
+- macOS output includes guidance for System Settings > Privacy & Security >
+  Microphone and explicitly reports that permission was not checked.
+- `/v1/voice/ptt/status` exposes the same read-only recorder diagnostics and
+  configuration readiness for Mission Control.
+- Mission Control shows recorder and microphone configuration readiness but
+  cannot record, probe hardware, mutate settings, or execute commands.
+- Tests inject dependency and executable lookup results and do not require
+  microphone hardware or macOS permissions.
+
+Deferred work remains intentionally untouched:
+
+- no always-on listening
+- no wake word
+- no enabled Fn/global hotkey capture
+- no live Hammerspoon or Swift helper installation
+- no approval bypass
+- no automatic dispatch
+- no automatic speech playback
+- no voice-only mode; text input remains available
+
 ## Voice Control Mic Phase 1
 
 Mic Phase 1 adds the first optional real local microphone recorder adapter

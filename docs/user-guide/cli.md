@@ -507,7 +507,7 @@ jarvis voice cancel
 | `voice transcribe-file AUDIO` | Transcribe an existing local audio file with a local adapter and print the transcript only |
 | `voice capture-preview --duration N` | Record a local WAV, transcribe it locally, POST the transcript to `/v1/voice/ptt/submit-transcript`, and print the preview only |
 | `voice run-local --duration N` | Record, transcribe, submit preview, and print session state; dispatch and TTS require separate opt-in flags |
-| `voice doctor`        | Inspect configured voice defaults and local dependency paths without recording, dispatching, speaking, or starting hotkeys |
+| `voice doctor`        | Inspect voice, recorder, microphone configuration, and local dependencies without probing hardware, recording, dispatching, speaking, or starting hotkeys |
 | `voice hotkey-bridge` | Print the disabled macOS hotkey bridge command/example that an external helper can call later |
 | `voice speak TEXT`     | Speak text through an explicit local speech-output adapter; defaults to macOS `say` when available |
 | `voice logs`           | Inspect, export, or explicitly clean up local structured voice command events |
@@ -640,12 +640,14 @@ available only for events that were originally written after
 
 `voice doctor` reports the effective API base URL, configured local
 transcription adapter, model path existence when a local path is required,
-default record duration, configured recorder, optional `sounddevice` package
-availability when relevant, configured speech-output adapter, macOS `say`
+default record duration, configured recorder and static backend availability,
+whether `sounddevice` is importable, whether real microphone recording is
+explicitly configured, and that microphone permission and hardware were not
+probed. It also reports the configured speech-output adapter and macOS `say`
 availability when relevant, print-only/disabled hotkey bridge state, and whether
 explicit voice approval is still required. Apart from optional local structured
-logging, it does not request microphone access, download models, call dispatch,
-speak text, or start a hotkey listener.
+logging, it does not request microphone access, open an input stream, download
+models, call dispatch, speak text, or start a hotkey listener.
 
 Mission Control's Voice tab reads `/v1/voice/ptt/status` for a read-only status
 panel showing the FSM state, configured/effective API base URL, configured

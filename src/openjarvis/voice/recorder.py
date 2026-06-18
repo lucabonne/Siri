@@ -10,6 +10,7 @@ import tempfile
 import time
 import wave
 from importlib import import_module
+from importlib.util import find_spec
 from pathlib import Path
 from types import ModuleType
 from typing import Callable, Protocol
@@ -17,6 +18,7 @@ from typing import Callable, Protocol
 from openjarvis.voice.models import RecordingHandle, VoiceRecordingError
 
 RECORDER_KINDS = ("dev-silent", "macos", "sounddevice")
+MICROPHONE_RECORDER_KINDS = ("macos", "sounddevice")
 
 
 class Recorder(Protocol):
@@ -89,7 +91,7 @@ class LocalMacOSRecorder:
         if not handle.path.exists():
             message = "recording did not produce an audio file"
             if platform.system() == "Darwin":
-                message = f"{message}. {_macos_microphone_guidance()}"
+                message = f"{message}. {macos_microphone_guidance()}"
             raise VoiceRecordingError(message)
 
     def _record_command(self, path: Path) -> list[str]:
@@ -125,12 +127,55 @@ class LocalMacOSRecorder:
         return []
 
 
-def _macos_microphone_guidance() -> str:
+def macos_microphone_guidance() -> str:
     return (
         "On macOS, grant Microphone access to the terminal app running jarvis "
         "in System Settings > Privacy & Security > Microphone, then restart "
         "that terminal."
     )
+
+
+def recorder_diagnostics(
+    configured_backend: str,
+    *,
+    sounddevice_importable: bool | None = None,
+    system_name: str | None = None,
+    executable_finder: Callable[[str], str | None] = shutil.which,
+) -> dict[str, object]:
+    """Return configuration-only recorder diagnostics without opening a device."""
+    if sounddevice_importable is None:
+        try:
+            sounddevice_importable = find_spec("sounddevice") is not None
+        except (ImportError, ValueError):
+            sounddevice_importable = False
+
+    system_name = system_name or platform.system()
+    recording_tool = ""
+    if configured_backend == "macos" and system_name == "Darwin":
+        recording_tool = executable_finder("ffmpeg") or executable_finder("rec") or ""
+
+    supported = configured_backend in RECORDER_KINDS
+    if configured_backend == "sounddevice":
+        backend_available = sounddevice_importable
+    elif configured_backend == "macos":
+        backend_available = system_name == "Darwin" and bool(recording_tool)
+    else:
+        backend_available = configured_backend == "dev-silent"
+
+    microphone_configured = configured_backend in MICROPHONE_RECORDER_KINDS
+    return {
+        "configured_default": configured_backend,
+        "supported": supported,
+        "backend_available": backend_available,
+        "microphone_recording_configured": microphone_configured,
+        "microphone_configuration_ready": microphone_configured and backend_available,
+        "sounddevice_importable": sounddevice_importable,
+        "macos_recording_tool": recording_tool,
+        "microphone_permission_checked": False,
+        "macos_microphone_permission_guidance": macos_microphone_guidance(),
+        "status_check": "configuration_only",
+        "requires_explicit_command": True,
+    }
 
 
 class SoundDeviceRecorder:
@@ -212,7 +257,7 @@ class SoundDeviceRecorder:
     def _format_start_error(self, exc: Exception) -> str:
         message = f"could not start sounddevice microphone recording: {exc}"
         if platform.system() == "Darwin":
-            return f"{message}. {_macos_microphone_guidance()}"
+            return f"{message}. {macos_microphone_guidance()}"
         return message
 
 

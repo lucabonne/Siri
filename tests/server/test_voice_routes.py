@@ -120,6 +120,11 @@ def test_voice_status_includes_safe_stack_config(client: TestClient) -> None:
     assert stack["transcription_adapter"]["effective"] == "disabled"
     assert stack["model_path"]["source"] == "[speech].model"
     assert stack["record_duration"]["duration_flag_required"] is True
+    assert stack["recorder"]["configured_default"] == "dev-silent"
+    assert stack["recorder"]["backend_available"] is True
+    assert stack["recorder"]["microphone_recording_configured"] is False
+    assert stack["recorder"]["microphone_permission_checked"] is False
+    assert stack["recorder"]["status_check"] == "configuration_only"
     assert stack["speech_output"]["backend"] == "macos-say"
     assert "path" in stack["macos_say"]
     assert stack["safety"]["auto_dispatch_enabled"] is False
@@ -142,9 +147,13 @@ def test_voice_status_includes_safe_stack_config(client: TestClient) -> None:
     assert stack["readiness"]["preview_only_local_pipeline_available"] is False
     assert stack["readiness"]["approval_gated_dispatch_available"] is False
     assert stack["readiness"]["optional_speech_output_available"] in {True, False}
-    assert "No supported local transcription adapter is selected." in stack[
-        "readiness"
-    ]["blocking_issues"]
+    assert stack["readiness"]["recorder_backend_available"] is True
+    assert stack["readiness"]["microphone_recording_configured"] is False
+    assert stack["readiness"]["microphone_configuration_ready"] is False
+    assert (
+        "No supported local transcription adapter is selected."
+        in stack["readiness"]["blocking_issues"]
+    )
     assert stack["readiness"]["next_safe_manual_step"].startswith(
         "Run `jarvis voice doctor`"
     )
@@ -174,9 +183,56 @@ def test_voice_status_readiness_reports_unsafe_approval_config(
     assert readiness["state"] == "unsafe_config"
     assert readiness["preview_only_local_pipeline_available"] is False
     assert readiness["approval_gated_dispatch_available"] is False
-    assert "Explicit approval before dispatch is not enforced." in readiness[
-        "blocking_issues"
-    ]
+    assert (
+        "Explicit approval before dispatch is not enforced."
+        in readiness["blocking_issues"]
+    )
+
+
+def test_voice_status_reports_unavailable_configured_microphone_backend(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    app = FastAPI()
+    config = JarvisConfig()
+    config.voice_control.default_recorder = "sounddevice"
+    config.voice_control.voice_logs_enabled = False
+    config.voice_control.voice_logs_path = str(tmp_path / "voice-events.jsonl")
+    service = VoicePushToTalkService(
+        config=config,
+        speech_backend=FakeBackend(),
+        recorder=FakeRecorder(tmp_path),
+        permission_middleware=FakePermissionMiddleware(),
+    )
+    app.state.voice_ptt_service = service
+    app.include_router(voice_router)
+    monkeypatch.setattr(
+        "openjarvis.voice.recorder.recorder_diagnostics",
+        lambda backend: {
+            "configured_default": backend,
+            "supported": True,
+            "backend_available": False,
+            "microphone_recording_configured": True,
+            "microphone_configuration_ready": False,
+            "sounddevice_importable": False,
+            "macos_recording_tool": "",
+            "microphone_permission_checked": False,
+            "macos_microphone_permission_guidance": "macOS guidance",
+            "status_check": "configuration_only",
+            "requires_explicit_command": True,
+        },
+    )
+
+    stack = TestClient(app).get("/v1/voice/ptt/status").json()["voice_stack"]
+
+    assert stack["recorder"]["sounddevice_importable"] is False
+    assert stack["readiness"]["recorder_backend_available"] is False
+    assert stack["readiness"]["microphone_recording_configured"] is True
+    assert stack["readiness"]["microphone_configuration_ready"] is False
+    assert (
+        "Configured recorder backend dependency is unavailable."
+        in stack["readiness"]["blocking_issues"]
+    )
 
 
 def test_voice_status_readiness_reports_ready_preview_pipeline(
@@ -204,8 +260,9 @@ def test_voice_status_readiness_reports_ready_preview_pipeline(
     assert readiness["blocking_issues"] == []
     assert readiness["preview_only_local_pipeline_available"] is True
     assert readiness["approval_gated_dispatch_available"] is True
-    assert "jarvis voice run-local --duration 2 --adapter faster-whisper" in (
-        readiness["next_safe_manual_step"]
+    assert (
+        "jarvis voice run-local --duration 2 --adapter faster-whisper"
+        in (readiness["next_safe_manual_step"])
     )
 
 

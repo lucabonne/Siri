@@ -598,6 +598,13 @@ The optional real microphone recorder is selected only by explicit CLI flag
 explicit duration and writes a local audio file only; transcription, dispatch,
 and speech remain separate explicit commands/flags.
 
+`jarvis voice doctor` and Mission Control inspect this recorder configuration
+and its static dependencies without opening a microphone. They report whether
+real microphone recording is explicitly configured, but do not test hardware
+or operating-system permission. On macOS, grant permission only when an
+explicit recording command requests it in System Settings > Privacy & Security
+> Microphone.
+
 ---
 
 ### `[security]` — Security Guardrails

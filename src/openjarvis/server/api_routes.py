@@ -1206,6 +1206,7 @@ def _voice_stack_status(request: Request) -> dict[str, Any]:
     import shutil
     import sys
 
+    from openjarvis.voice.recorder import recorder_diagnostics
     from openjarvis.voice.speech_output import LOCAL_SPEECH_OUTPUT_ADAPTERS
     from openjarvis.voice.transcription import LOCAL_TRANSCRIPTION_ADAPTERS
 
@@ -1231,6 +1232,9 @@ def _voice_stack_status(request: Request) -> dict[str, Any]:
 
     speech_adapter = str(getattr(voice_control, "speech_output_adapter", "") or "")
     effective_speech_adapter = speech_adapter or "macos-say"
+    configured_recorder = str(
+        getattr(voice_control, "default_recorder", "") or "dev-silent"
+    )
 
     return {
         "api_base_url": _voice_api_base_url_status(config),
@@ -1248,6 +1252,7 @@ def _voice_stack_status(request: Request) -> dict[str, Any]:
             else None,
             "duration_flag_required": configured_duration <= 0,
         },
+        "recorder": recorder_diagnostics(configured_recorder),
         "speech_output": {
             "configured": speech_adapter,
             "effective": effective_speech_adapter,
@@ -1301,6 +1306,7 @@ def _voice_readiness_status(
     approval = stack["approval"]
     recent_events = stack["recent_events"]
     safety = stack["safety"]
+    recorder = stack["recorder"]
 
     recorder_boundary_available = (
         status.get("push_to_talk_only") is True
@@ -1318,9 +1324,8 @@ def _voice_readiness_status(
         and adapter["effective"] != "disabled"
         and adapter["supported"] is True
     )
-    model_ready = (
-        not model_path["required"]
-        or (bool(model_path["value"]) and model_path["exists"] is True)
+    model_ready = not model_path["required"] or (
+        bool(model_path["value"]) and model_path["exists"] is True
     )
     optional_speech_available = (
         bool(speech_output["effective"])
@@ -1342,6 +1347,10 @@ def _voice_readiness_status(
         blocking_issues.append("Configured transcription model path was not found.")
     if not recorder_boundary_available:
         blocking_issues.append("Push-to-talk-only recorder boundary is not confirmed.")
+    if not recorder["supported"]:
+        blocking_issues.append("Configured recorder backend is not supported.")
+    elif not recorder["backend_available"]:
+        blocking_issues.append("Configured recorder backend dependency is unavailable.")
 
     if status.get("push_to_talk_only") is not True:
         safety_issues.append("Push-to-talk-only mode is not confirmed.")
@@ -1377,6 +1386,11 @@ def _voice_readiness_status(
         warnings.append(
             "Optional speech output is not available for explicit manual use."
         )
+    if not recorder["microphone_recording_configured"]:
+        warnings.append(
+            "Real microphone recording is not explicitly configured; the safe "
+            "development recorder remains selected."
+        )
     if not recent_events["enabled"]:
         warnings.append(
             "Local voice event logging is disabled, so recent event history is "
@@ -1398,6 +1412,8 @@ def _voice_readiness_status(
         and local_transcription_ready
         and model_ready
         and recorder_boundary_available
+        and recorder["supported"] is True
+        and recorder["backend_available"] is True
     )
     dispatch_available = preview_available and approval["required"] is True
 
@@ -1432,6 +1448,9 @@ def _voice_readiness_status(
         "preview_only_local_pipeline_available": preview_available,
         "approval_gated_dispatch_available": dispatch_available,
         "optional_speech_output_available": optional_speech_available,
+        "recorder_backend_available": recorder["backend_available"],
+        "microphone_recording_configured": recorder["microphone_recording_configured"],
+        "microphone_configuration_ready": recorder["microphone_configuration_ready"],
     }
 
 

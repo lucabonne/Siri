@@ -887,6 +887,9 @@ export interface VoiceStackStatus {
     preview_only_local_pipeline_available: boolean;
     approval_gated_dispatch_available: boolean;
     optional_speech_output_available: boolean;
+    recorder_backend_available: boolean;
+    microphone_recording_configured: boolean;
+    microphone_configuration_ready: boolean;
   };
   api_base_url: {
     value: string;
@@ -908,6 +911,19 @@ export interface VoiceStackStatus {
     configured_default_seconds: number;
     effective_default_seconds: number | null;
     duration_flag_required: boolean;
+  };
+  recorder: {
+    configured_default: string;
+    supported: boolean;
+    backend_available: boolean;
+    microphone_recording_configured: boolean;
+    microphone_configuration_ready: boolean;
+    sounddevice_importable: boolean;
+    macos_recording_tool: string;
+    microphone_permission_checked: boolean;
+    macos_microphone_permission_guidance: string;
+    status_check: 'configuration_only' | string;
+    requires_explicit_command: boolean;
   };
   speech_output: {
     configured: string;
