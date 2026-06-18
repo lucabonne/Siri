@@ -26,11 +26,13 @@ from openjarvis.voice.event_log import (
 )
 from openjarvis.voice.models import TranscriptionUnavailableError, VoiceRecordingError
 from openjarvis.voice.recorder import (
+    MICROPHONE_RECORDER_KINDS,
     RECORDER_KINDS,
     LocalMacOSRecorder,
     Recorder,
     SilentWavRecorder,
     SoundDeviceRecorder,
+    inspect_wav_file,
     recorder_diagnostics,
 )
 from openjarvis.voice.speech_output import (
@@ -309,6 +311,17 @@ def _configured_recorder_kind(recorder_kind: str | None) -> str:
     return configured
 
 
+def _configured_microphone_recorder_kind(recorder_kind: str | None) -> str:
+    configured = _configured_recorder_kind(recorder_kind)
+    if configured not in MICROPHONE_RECORDER_KINDS:
+        raise click.ClickException(
+            "mic-smoke requires a real microphone recorder. Pass --recorder "
+            "macos or --recorder sounddevice, or configure one in "
+            "[voice_control].default_recorder."
+        )
+    return configured
+
+
 def _voice_control_config(config: Any) -> Any:
     return getattr(config, "voice_control", None)
 
@@ -444,6 +457,7 @@ def _record_local_audio(
     output_dir: Path | None,
     recorder_kind: str,
     input_device: str,
+    cleanup_on_error: bool = False,
 ) -> Any:
     recorder = _build_recorder(
         recorder_kind,
@@ -463,6 +477,11 @@ def _record_local_audio(
         except (OSError, VoiceRecordingError) as exc:
             stop_error = exc
     if stop_error is not None:
+        if cleanup_on_error:
+            try:
+                handle.path.unlink(missing_ok=True)
+            except OSError:
+                pass
         raise click.ClickException(str(stop_error)) from stop_error
     return handle
 
@@ -1149,6 +1168,106 @@ def record_local(
         },
     )
     click.echo(str(handle.path))
+
+
+@voice.command("mic-smoke")
+@click.option(
+    "--duration",
+    type=click.FloatRange(min=0.1, max=30.0),
+    required=True,
+    help="Explicit recording duration in seconds (0.1 to 30).",
+)
+@click.option(
+    "--output-dir",
+    type=click.Path(file_okay=False, path_type=Path),
+    default=None,
+    help="Directory for the temporary WAV. Defaults to the system temp directory.",
+)
+@click.option(
+    "--recorder",
+    "recorder_kind",
+    type=click.Choice(MICROPHONE_RECORDER_KINDS),
+    default=None,
+    help=(
+        "Real microphone recorder. Required unless macos or sounddevice is set "
+        "in [voice_control].default_recorder."
+    ),
+)
+@click.option(
+    "--input-device",
+    default=":0",
+    show_default=True,
+    help="Input device for the selected recorder backend.",
+)
+@click.option(
+    "--keep-file",
+    is_flag=True,
+    default=False,
+    help="Keep the recorded WAV instead of deleting it after inspection.",
+)
+def mic_smoke(
+    duration: float,
+    output_dir: Path | None,
+    recorder_kind: str | None,
+    input_device: str,
+    keep_file: bool,
+) -> None:
+    """Record and inspect a bounded microphone sample without further actions."""
+    resolved_recorder = _configured_microphone_recorder_kind(recorder_kind)
+    handle = _record_local_audio(
+        duration=duration,
+        output_dir=output_dir,
+        recorder_kind=resolved_recorder,
+        input_device=input_device,
+        cleanup_on_error=True,
+    )
+    try:
+        metadata = inspect_wav_file(handle.path)
+    except VoiceRecordingError as exc:
+        if not keep_file:
+            try:
+                handle.path.unlink(missing_ok=True)
+            except OSError as cleanup_exc:
+                raise click.ClickException(
+                    f"{exc} The invalid recording also could not be deleted: "
+                    f"{cleanup_exc}"
+                ) from cleanup_exc
+        raise click.ClickException(str(exc)) from exc
+
+    if not keep_file:
+        try:
+            handle.path.unlink()
+        except OSError as exc:
+            raise click.ClickException(
+                f"recording passed inspection but could not be deleted: {exc}"
+            ) from exc
+
+    _log_voice_event(
+        "mic-smoke",
+        "microphone_smoke_result",
+        details={
+            "path": str(handle.path),
+            "recorder": resolved_recorder,
+            "requested_duration_seconds": duration,
+            "file_kept": keep_file,
+            "transcribed": False,
+            "submitted": False,
+            "dispatched": False,
+            "spoken": False,
+            **metadata,
+        },
+    )
+    click.echo("Microphone smoke test")
+    click.echo(f"  recorder: {resolved_recorder}")
+    click.echo(f"  requested_duration_seconds: {duration}")
+    click.echo(f"  path: {handle.path}")
+    for key, value in metadata.items():
+        click.echo(f"  {key}: {value}")
+    click.echo(f"  file_kept: {keep_file}")
+    click.echo("  transcription: skipped")
+    click.echo("  submission: skipped")
+    click.echo("  dispatch: skipped")
+    click.echo("  speech: skipped")
 
 
 @voice.command("capture-preview")

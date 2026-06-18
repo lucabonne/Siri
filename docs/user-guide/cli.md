@@ -477,6 +477,8 @@ jarvis voice submit "open notes" --approve-dispatch      # Preview, then dispatc
 jarvis voice submit "run tests" --agent-id agent-123 --approve-dispatch
 jarvis voice record-local --duration 2                   # Local WAV only
 jarvis voice record-local --recorder sounddevice --duration 2
+jarvis voice mic-smoke --recorder sounddevice --duration 1
+jarvis voice mic-smoke --recorder macos --duration 1 --keep-file
 jarvis voice transcribe-file ./clip.wav --adapter faster-whisper
 jarvis voice capture-preview --duration 2 --adapter faster-whisper
 jarvis voice run-local --duration 2 --adapter faster-whisper
@@ -504,6 +506,7 @@ jarvis voice cancel
 | `voice submit --approve-dispatch` | Explicitly approve and then POST to `/v1/voice/ptt/dispatch` |
 | `voice record-local --duration N` | Write a local WAV file and print its path; defaults to the dev silent recorder |
 | `voice record-local --recorder sounddevice --duration N` | Use the optional real local microphone adapter and write a local WAV file only |
+| `voice mic-smoke --duration N` | Record with an explicitly selected/configured real microphone backend, inspect WAV metadata, and delete the file unless `--keep-file` is passed |
 | `voice transcribe-file AUDIO` | Transcribe an existing local audio file with a local adapter and print the transcript only |
 | `voice capture-preview --duration N` | Record a local WAV, transcribe it locally, POST the transcript to `/v1/voice/ptt/submit-transcript`, and print the preview only |
 | `voice run-local --duration N` | Record, transcribe, submit preview, and print session state; dispatch and TTS require separate opt-in flags |
@@ -517,21 +520,23 @@ jarvis voice cancel
 Current safe workflow:
 
 1. `jarvis voice doctor`
-2. Configure a local transcription backend/model with
+2. `jarvis voice mic-smoke --recorder sounddevice --duration 1`
+3. Configure a local transcription backend/model with
    `[voice_control].transcription_adapter` and `[voice_control].model_path`, or
    pass `--adapter` on transcription commands.
-3. `jarvis voice record-local --duration 2`
-4. `jarvis voice transcribe-file ./voice-sample.wav --adapter faster-whisper`
-5. `jarvis voice capture-preview --duration 2 --adapter faster-whisper`
-6. `jarvis voice run-local --duration 2 --adapter faster-whisper`
-7. `jarvis voice logs`
+4. `jarvis voice record-local --duration 2`
+5. `jarvis voice transcribe-file ./voice-sample.wav --adapter faster-whisper`
+6. `jarvis voice capture-preview --duration 2 --adapter faster-whisper`
+7. `jarvis voice run-local --duration 2 --adapter faster-whisper`
+8. `jarvis voice logs`
 
 Implemented safe local/manual behavior:
 
 - `submit`, `status`, and `cancel` exercise the preview/approval/session API
   gates with typed transcripts.
-- `record-local`, `transcribe-file`, `capture-preview`, and `run-local` run only
-  after an explicit terminal command and fixed duration or existing file input.
+- `record-local`, `mic-smoke`, `transcribe-file`, `capture-preview`, and
+  `run-local` run only after an explicit terminal command and fixed duration or
+  existing file input.
 - `doctor` and Mission Control status/readiness views inspect setup without
   starting capture, hotkeys, dispatch, speech, model downloads, or settings
   mutation.
@@ -568,6 +573,14 @@ results. Speech output runs only through explicit commands/flags such as
 and the existing preview endpoint, then stops before dispatch. Text input
 remains available; dispatch is skipped unless `--approve-dispatch` is present on
 `voice submit` or `voice run-local`.
+
+`voice mic-smoke --duration N` is a narrower real-microphone check. Its duration
+must be supplied explicitly and must be between 0.1 and 30 seconds. It accepts
+only the `macos` or `sounddevice` recorder from `--recorder` or
+`[voice_control].default_recorder`; the default `dev-silent` recorder is not a
+valid microphone smoke backend. The command records a local WAV, verifies basic
+non-empty WAV metadata, and deletes the file by default. Pass `--keep-file` to
+retain it. It never transcribes, submits, approves, dispatches, or speaks.
 
 `voice run-local --duration N` is the explicit manual end-to-end local pipeline:
 it records a local WAV, transcribes with the selected/configured local adapter,
@@ -608,8 +621,8 @@ auto-dispatch, or automatic speech playback. Dispatch still requires
 
 `voice logs` reads recent JSONL events from the local `voice_logs_path`.
 Logging is local-only and records command activity such as submit, status,
-cancel, transcribe-file, record-local, capture-preview, run-local, speak,
-doctor, and hotkey-bridge. The command is inspection-only: it does not record,
+cancel, transcribe-file, record-local, mic-smoke, capture-preview, run-local,
+speak, doctor, and hotkey-bridge. The command is inspection-only: it does not record,
 dispatch, approve, speak, call the API, or start hotkeys. Use `--limit N` to
 show the last N matching events, repeat `--event TYPE` or `--status STATUS` to
 filter exact event/status values, use `--success` or `--failure` for outcome

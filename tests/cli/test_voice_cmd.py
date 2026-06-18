@@ -116,6 +116,7 @@ def test_voice_command_help_lists_subcommands() -> None:
     assert "transcribe-file" in result.output
     assert "speak" in result.output
     assert "record-local" in result.output
+    assert "mic-smoke" in result.output
     assert "capture-preview" in result.output
     assert "run-local" in result.output
     assert "doctor" in result.output
@@ -1184,6 +1185,161 @@ def test_voice_record_local_rejects_unsupported_configured_recorder(
 
     assert result.exit_code != 0
     assert "[voice_control].default_recorder" in result.output
+
+
+def test_voice_mic_smoke_requires_explicit_duration(monkeypatch) -> None:
+    recorder_calls: list[str] = []
+    monkeypatch.setattr(voice_cmd, "load_config", lambda: _safe_config())
+    monkeypatch.setattr(
+        voice_cmd,
+        "_build_recorder",
+        lambda *args, **kwargs: recorder_calls.append("record"),
+    )
+
+    result = CliRunner().invoke(voice_cmd.voice, ["mic-smoke"])
+
+    assert result.exit_code != 0
+    assert "Missing option '--duration'" in result.output
+    assert recorder_calls == []
+
+
+def test_voice_mic_smoke_requires_real_microphone_backend(monkeypatch) -> None:
+    monkeypatch.setattr(voice_cmd, "load_config", lambda: _safe_config())
+
+    result = CliRunner().invoke(
+        voice_cmd.voice,
+        ["mic-smoke", "--duration", "0.1"],
+    )
+
+    assert result.exit_code != 0
+    assert "--recorder macos" in result.output
+    assert "--recorder sounddevice" in result.output
+
+
+def test_voice_mic_smoke_inspects_and_deletes_mocked_recording(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    post_calls: list[str] = []
+    recorded_paths: list[Path] = []
+
+    def fake_build_recorder(
+        recorder_kind: str,
+        *,
+        output_dir: Path | None,
+        **kwargs,
+    ):
+        assert recorder_kind == "sounddevice"
+        recorder = voice_cmd.SilentWavRecorder(temp_dir=output_dir, sample_rate=8000)
+        original_start = recorder.start
+
+        def start(recording_id: str):
+            handle = original_start(recording_id)
+            recorded_paths.append(handle.path)
+            return handle
+
+        recorder.start = start
+        return recorder
+
+    monkeypatch.setattr(voice_cmd, "_sleep", lambda seconds: None)
+    monkeypatch.setattr(voice_cmd, "_build_recorder", fake_build_recorder)
+    monkeypatch.setattr(
+        voice_cmd,
+        "_post_json",
+        lambda *args, **kwargs: post_calls.append("post"),
+    )
+    monkeypatch.setattr(
+        voice_cmd,
+        "load_config",
+        lambda: _safe_config(default_recorder="sounddevice"),
+    )
+
+    result = CliRunner().invoke(
+        voice_cmd.voice,
+        ["mic-smoke", "--duration", "0.1", "--output-dir", str(tmp_path)],
+    )
+
+    assert result.exit_code == 0
+    assert "Microphone smoke test" in result.output
+    assert "recorder: sounddevice" in result.output
+    assert "sample_rate_hz: 8000" in result.output
+    assert "file_kept: False" in result.output
+    assert "transcription: skipped" in result.output
+    assert "dispatch: skipped" in result.output
+    assert "speech: skipped" in result.output
+    assert len(recorded_paths) == 1
+    assert not recorded_paths[0].exists()
+    assert post_calls == []
+
+
+def test_voice_mic_smoke_keeps_file_only_when_requested(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(voice_cmd, "_sleep", lambda seconds: None)
+    monkeypatch.setattr(
+        voice_cmd,
+        "_build_recorder",
+        lambda recorder_kind, *, output_dir, **kwargs: voice_cmd.SilentWavRecorder(
+            temp_dir=output_dir
+        ),
+    )
+    monkeypatch.setattr(voice_cmd, "load_config", lambda: _safe_config())
+
+    result = CliRunner().invoke(
+        voice_cmd.voice,
+        [
+            "mic-smoke",
+            "--duration",
+            "0.1",
+            "--recorder",
+            "sounddevice",
+            "--output-dir",
+            str(tmp_path),
+            "--keep-file",
+        ],
+    )
+
+    assert result.exit_code == 0
+    path_line = next(
+        line for line in result.output.splitlines() if line.strip().startswith("path:")
+    )
+    recorded_path = Path(path_line.split(":", 1)[1].strip())
+    assert recorded_path.exists()
+    assert "file_kept: True" in result.output
+
+
+def test_voice_mic_smoke_invalid_wav_is_clear_and_deleted(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    recorded_path = tmp_path / "invalid.wav"
+
+    class InvalidWavRecorder:
+        def start(self, recording_id: str):
+            return SimpleNamespace(path=recorded_path)
+
+        def stop(self, handle) -> None:
+            handle.path.write_bytes(b"not a wav")
+
+    monkeypatch.setattr(voice_cmd, "_sleep", lambda seconds: None)
+    monkeypatch.setattr(
+        voice_cmd,
+        "_build_recorder",
+        lambda *args, **kwargs: InvalidWavRecorder(),
+    )
+    monkeypatch.setattr(voice_cmd, "load_config", lambda: _safe_config())
+
+    result = CliRunner().invoke(
+        voice_cmd.voice,
+        ["mic-smoke", "--recorder", "sounddevice", "--duration", "0.1"],
+    )
+
+    assert result.exit_code != 0
+    assert "readable WAV" in result.output
+    assert "microphone permission" in result.output
+    assert "input device access" in result.output
+    assert not recorded_path.exists()
 
 
 def test_voice_capture_preview_requires_explicit_duration(monkeypatch) -> None:

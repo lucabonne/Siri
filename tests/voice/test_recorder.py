@@ -10,6 +10,7 @@ from openjarvis.voice.models import VoiceRecordingError
 from openjarvis.voice.recorder import (
     SilentWavRecorder,
     SoundDeviceRecorder,
+    inspect_wav_file,
     recorder_diagnostics,
 )
 
@@ -64,6 +65,41 @@ def test_silent_wav_recorder_requires_explicit_start_stop(tmp_path: Path) -> Non
         assert wav.getnchannels() == 1
         assert wav.getframerate() == 8000
         assert wav.getnframes() > 0
+
+
+def test_inspect_wav_file_returns_basic_metadata(tmp_path: Path) -> None:
+    path = tmp_path / "sample.wav"
+    with wave.open(str(path), "wb") as wav:
+        wav.setnchannels(1)
+        wav.setsampwidth(2)
+        wav.setframerate(8000)
+        wav.writeframes(b"\x00\x00" * 800)
+
+    metadata = inspect_wav_file(path)
+
+    assert metadata == {
+        "size_bytes": path.stat().st_size,
+        "channels": 1,
+        "sample_width_bytes": 2,
+        "sample_rate_hz": 8000,
+        "frame_count": 800,
+        "audio_duration_seconds": 0.1,
+    }
+
+
+def test_inspect_wav_file_rejects_invalid_recording_with_guidance(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "invalid.wav"
+    path.write_bytes(b"not a wav")
+
+    with pytest.raises(VoiceRecordingError) as exc_info:
+        inspect_wav_file(path)
+
+    message = str(exc_info.value)
+    assert "readable WAV" in message
+    assert "microphone permission" in message
+    assert "input device access" in message
 
 
 def test_sounddevice_recorder_writes_wav_with_mocked_stream(tmp_path: Path) -> None:

@@ -135,6 +135,38 @@ def macos_microphone_guidance() -> str:
     )
 
 
+def inspect_wav_file(path: Path) -> dict[str, int | float]:
+    """Read basic metadata from a non-empty local WAV recording."""
+    try:
+        size_bytes = path.stat().st_size
+        with wave.open(str(path), "rb") as wav:
+            channels = wav.getnchannels()
+            sample_width_bytes = wav.getsampwidth()
+            sample_rate_hz = wav.getframerate()
+            frame_count = wav.getnframes()
+    except (OSError, EOFError, wave.Error) as exc:
+        raise VoiceRecordingError(
+            f"recording did not produce a readable WAV file: {exc}. "
+            "Verify the recorder dependency, microphone permission, and input "
+            f"device access. {macos_microphone_guidance()}"
+        ) from exc
+
+    if min(channels, sample_width_bytes, sample_rate_hz, frame_count) <= 0:
+        raise VoiceRecordingError(
+            "recording produced an empty or invalid WAV file. Verify microphone "
+            f"permission and input device access. {macos_microphone_guidance()}"
+        )
+
+    return {
+        "size_bytes": size_bytes,
+        "channels": channels,
+        "sample_width_bytes": sample_width_bytes,
+        "sample_rate_hz": sample_rate_hz,
+        "frame_count": frame_count,
+        "audio_duration_seconds": frame_count / sample_rate_hz,
+    }
+
+
 def recorder_diagnostics(
     configured_backend: str,
     *,
@@ -296,8 +328,10 @@ class SilentWavRecorder:
 
 __all__ = [
     "LocalMacOSRecorder",
+    "MICROPHONE_RECORDER_KINDS",
     "Recorder",
     "RECORDER_KINDS",
     "SilentWavRecorder",
     "SoundDeviceRecorder",
+    "inspect_wav_file",
 ]
