@@ -685,6 +685,9 @@ def _format_voice_doctor(data: dict[str, Any]) -> None:
     )
     click.echo(f"  sounddevice_importable: {recorder['sounddevice_importable']}")
     click.echo(
+        f"  dev_silent_recorder_available: {recorder['dev_silent_recorder_available']}"
+    )
+    click.echo(
         "  microphone_recording_configured: "
         f"{recorder['microphone_recording_configured']}"
     )
@@ -1148,7 +1151,7 @@ def record_local(
     recorder_kind: str | None,
     input_device: str,
 ) -> None:
-    """Record to a local WAV file only; never transcribe or dispatch."""
+    """Record only to a local WAV; do not transcribe, preview, or dispatch."""
     resolved_duration = _record_duration(duration)
     resolved_recorder = _configured_recorder_kind(recorder_kind)
     handle = _record_local_audio(
@@ -1213,7 +1216,7 @@ def mic_smoke(
     input_device: str,
     keep_file: bool,
 ) -> None:
-    """Record and inspect a bounded microphone sample without further actions."""
+    """Record only from a real mic and inspect the bounded local WAV."""
     resolved_recorder = _configured_microphone_recorder_kind(recorder_kind)
     handle = _record_local_audio(
         duration=duration,
@@ -1325,7 +1328,7 @@ def mic_transcribe_smoke(
     language: str | None,
     keep_file: bool,
 ) -> None:
-    """Record and transcribe one bounded sample without API or speech actions."""
+    """Record from a real mic and transcribe locally; do not preview/dispatch."""
     resolved_recorder = _configured_microphone_recorder_kind(recorder_kind)
     adapter_id, transcriber = _build_transcriber(adapter)
     handle = _record_local_audio(
@@ -1486,7 +1489,7 @@ def mic_preview(
     keep_file: bool,
     as_json: bool,
 ) -> None:
-    """Record one bounded mic sample and submit its transcript for preview only."""
+    """Record and transcribe from a real mic, then submit a preview only."""
     resolved_recorder = _configured_microphone_recorder_kind(recorder_kind)
     adapter_id, transcriber = _build_transcriber(adapter)
     handle = _record_local_audio(
@@ -1712,7 +1715,7 @@ def mic_run(
     keep_file: bool,
     as_json: bool,
 ) -> None:
-    """Run one bounded microphone command; dispatch and speech are opt-in."""
+    """Record, transcribe, and preview a real mic; approved dispatch is opt-in."""
     if speak_result and not approve_dispatch:
         raise click.UsageError("--speak-result requires --approve-dispatch")
 
@@ -2165,7 +2168,7 @@ def run_local(
     timeout: float,
     as_json: bool,
 ) -> None:
-    """Run the explicit local voice pipeline; dispatch/TTS are opt-in."""
+    """Record, transcribe, and preview locally; approved dispatch is opt-in."""
     if speak_result and not approve_dispatch:
         raise click.UsageError("--speak-result requires --approve-dispatch")
 

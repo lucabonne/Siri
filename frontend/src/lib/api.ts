@@ -888,6 +888,11 @@ export interface VoiceStackStatus {
     approval_gated_dispatch_available: boolean;
     optional_speech_output_available: boolean;
     recorder_backend_available: boolean;
+    dev_silent_recorder_available: boolean;
+    real_microphone_recorder_configured: boolean;
+    sounddevice_dependency_available: boolean;
+    preview_only_microphone_pipeline_available: boolean;
+    approval_gated_microphone_dispatch_available: boolean;
     microphone_recording_configured: boolean;
     microphone_configuration_ready: boolean;
   };
@@ -916,9 +921,12 @@ export interface VoiceStackStatus {
     configured_default: string;
     supported: boolean;
     backend_available: boolean;
+    dev_silent_recorder_available: boolean;
     microphone_recording_configured: boolean;
+    real_microphone_recorder_configured: boolean;
     microphone_configuration_ready: boolean;
     sounddevice_importable: boolean;
+    sounddevice_dependency_available: boolean;
     macos_recording_tool: string;
     microphone_permission_checked: boolean;
     macos_microphone_permission_guidance: string;

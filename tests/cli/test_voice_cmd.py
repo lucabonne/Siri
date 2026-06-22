@@ -128,6 +128,23 @@ def test_voice_command_help_lists_subcommands() -> None:
     assert "cancel" in result.output
 
 
+def test_voice_microphone_command_help_separates_pipeline_stages() -> None:
+    expected_descriptions = [
+        ("record-local", "Record only to a local WAV"),
+        ("mic-smoke", "Record only from a real mic"),
+        ("mic-transcribe-smoke", "Record from a real mic and transcribe locally"),
+        ("mic-preview", "Record and transcribe from a real mic"),
+        ("mic-run", "approved dispatch is opt-in"),
+        ("run-local", "approved dispatch is opt-in"),
+    ]
+
+    for command, description in expected_descriptions:
+        result = CliRunner().invoke(voice_cmd.voice, [command, "--help"])
+
+        assert result.exit_code == 0
+        assert description in result.output
+
+
 def test_voice_logs_command_outputs_recent_events(monkeypatch, tmp_path: Path) -> None:
     log_path = tmp_path / "voice-events.jsonl"
     logger = voice_cmd.VoiceEventLogger(

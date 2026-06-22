@@ -525,6 +525,21 @@ jarvis voice cancel
 | `voice status`          | GET `/v1/voice/ptt/status`, including the same read-only voice stack fields Mission Control uses |
 | `voice cancel`          | POST `/v1/voice/ptt/cancel`                      |
 
+The recording command family progresses without changing existing command
+behavior:
+
+| Command | Recording | Local transcription | Preview submission | Dispatch |
+|---------|-----------|---------------------|--------------------|----------|
+| `record-local` | Local recorder (`dev-silent`, `macos`, or `sounddevice`) | No | No | No |
+| `mic-smoke` | Real microphone only; validates WAV | No | No | No |
+| `mic-transcribe-smoke` | Real microphone only | Yes | No | No |
+| `mic-preview` | Real microphone only | Yes | Yes | Never |
+| `mic-run` | Real microphone only | Yes | Yes | Only with `--approve-dispatch` |
+| `run-local` | Local recorder (`dev-silent`, `macos`, or `sounddevice`) | Yes | Yes | Only with `--approve-dispatch` |
+
+Speech is never automatic. For `mic-run` and `run-local`, it additionally
+requires `--speak-result` after approved dispatch.
+
 Current safe workflow:
 
 1. `jarvis voice doctor`
@@ -691,9 +706,10 @@ available only for events that were originally written after
 `voice doctor` reports the effective API base URL, configured local
 transcription adapter, model path existence when a local path is required,
 default record duration, configured recorder and static backend availability,
-whether `sounddevice` is importable, whether real microphone recording is
-explicitly configured, and that microphone permission and hardware were not
-probed. It also reports the configured speech-output adapter and macOS `say`
+whether the `dev-silent` recorder is available, whether `sounddevice` is
+importable, whether a real microphone recorder is explicitly configured, and
+that microphone permission and hardware were not probed. It also reports the
+configured speech-output adapter and macOS `say`
 availability when relevant, print-only/disabled hotkey bridge state, and whether
 explicit voice approval is still required. Apart from optional local structured
 logging, it does not request microphone access, open an input stream, download
@@ -707,8 +723,9 @@ approval requirement, and recent redacted voice events when local voice logging
 is enabled. It also shows a read-only readiness summary from that same status
 payload with an overall `ready`, `needs setup`, or `unsafe config` state,
 blocking issues, warnings, the next safe manual step, and whether the
-preview-only local pipeline, approval-gated dispatch, and optional speech output
-are available. Mission Control does not run those steps. The diagnostics summary
+preview-only real-microphone pipeline, approval-gated microphone dispatch,
+`dev-silent` recorder, `sounddevice` dependency, and optional speech output are
+available. Mission Control does not run those steps. The diagnostics summary
 continues to mirror the safe `voice doctor` data plus local voice logging and
 full transcript logging state; Mission Control does not run `jarvis voice
 doctor`. A separate read-only safety/audit summary shows approval required,

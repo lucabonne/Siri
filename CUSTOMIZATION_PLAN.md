@@ -1,5 +1,32 @@
 # Customization Plan
 
+## Voice Control Mic Phase 7
+
+Mic Phase 7 consolidates the explicit microphone command family and makes
+readiness describe the real-microphone pipeline rather than treating the
+`dev-silent` development recorder as microphone readiness.
+
+- The command stages are explicit and unchanged: `record-local` and
+  `mic-smoke` record only; `mic-transcribe-smoke` records and transcribes;
+  `mic-preview` records, transcribes, and previews; `mic-run` records,
+  transcribes, previews, and dispatches only with `--approve-dispatch`.
+  `run-local` remains the compatible general pipeline, including its safe
+  `dev-silent` default and explicit dispatch/speech flags.
+- `jarvis voice doctor` and `/v1/voice/ptt/status` separately expose
+  `dev-silent` availability, real microphone configuration, and the optional
+  `sounddevice` dependency. These checks remain configuration-only and never
+  open microphone hardware or request permission.
+- Status readiness reports real-microphone preview and approval-gated dispatch
+  availability only when a real recorder backend and its static dependency,
+  local transcription, model requirements, and safety gates are ready.
+- Mission Control displays those distinctions read-only. It adds no recording
+  controls, command execution, settings mutation, permission requests, or
+  automatic behavior.
+- Tests mock recorder/dependency boundaries and require no microphone hardware
+  or model downloads. All Mic Phase 1-6 commands and behavior remain intact.
+- Fn/global hotkey listening, always-on listening, voice-only mode, approval
+  bypass, automatic dispatch, and automatic speech remain deferred.
+
 ## Voice Control Mic Phase 6
 
 Mic Phase 6 adds an explicit bounded microphone-to-preview-and-optional-approved-

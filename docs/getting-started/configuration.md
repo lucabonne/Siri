@@ -599,9 +599,12 @@ explicit duration and writes a local audio file only; transcription, dispatch,
 and speech remain separate explicit commands/flags.
 
 `jarvis voice doctor` and Mission Control inspect this recorder configuration
-and its static dependencies without opening a microphone. They report whether
-real microphone recording is explicitly configured, but do not test hardware
-or operating-system permission. On macOS, grant permission only when an
+and its static dependencies without opening a microphone. They distinguish the
+available `dev-silent` development recorder, real microphone configuration,
+and `sounddevice` dependency availability. Mission Control reports real-mic
+preview and approval-gated dispatch readiness separately; `dev-silent` alone
+does not make either mic pipeline ready. These checks do not test hardware or
+operating-system permission. On macOS, grant permission only when an
 explicit recording command requests it in System Settings > Privacy & Security
 > Microphone.
 

@@ -994,20 +994,28 @@ function VoiceReadinessSummary({ stack }: { stack: VoiceStackStatus | undefined 
   const warnings = readiness?.warnings ?? [];
   const capabilities = [
     {
-      label: 'Preview-only local pipeline',
-      available: readiness?.preview_only_local_pipeline_available,
+      label: 'Dev-silent recorder',
+      available: readiness?.dev_silent_recorder_available,
     },
     {
-      label: 'Approval-gated dispatch',
-      available: readiness?.approval_gated_dispatch_available,
+      label: 'Real microphone configured',
+      available: readiness?.real_microphone_recorder_configured,
+    },
+    {
+      label: 'sounddevice dependency',
+      available: readiness?.sounddevice_dependency_available,
+    },
+    {
+      label: 'Preview-only microphone pipeline',
+      available: readiness?.preview_only_microphone_pipeline_available,
+    },
+    {
+      label: 'Approval-gated microphone dispatch',
+      available: readiness?.approval_gated_microphone_dispatch_available,
     },
     {
       label: 'Optional speech output',
       available: readiness?.optional_speech_output_available,
-    },
-    {
-      label: 'Recorder backend',
-      available: readiness?.recorder_backend_available,
     },
   ];
 

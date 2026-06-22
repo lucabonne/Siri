@@ -27,7 +27,10 @@ def test_recorder_diagnostics_are_configuration_only() -> None:
 
     assert diagnostics["configured_default"] == "sounddevice"
     assert diagnostics["sounddevice_importable"] is True
+    assert diagnostics["sounddevice_dependency_available"] is True
+    assert diagnostics["dev_silent_recorder_available"] is True
     assert diagnostics["microphone_recording_configured"] is True
+    assert diagnostics["real_microphone_recorder_configured"] is True
     assert diagnostics["microphone_configuration_ready"] is True
     assert diagnostics["microphone_permission_checked"] is False
     assert diagnostics["status_check"] == "configuration_only"

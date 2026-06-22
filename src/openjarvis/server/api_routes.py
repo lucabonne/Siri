@@ -1332,6 +1332,8 @@ def _voice_readiness_status(
         and speech_output["supported"] is True
         and (not macos_say["relevant"] or macos_say["available"] is True)
     )
+    real_microphone_configured = recorder["microphone_recording_configured"] is True
+    real_microphone_ready = recorder["microphone_configuration_ready"] is True
 
     blocking_issues: list[str] = []
     warnings: list[str] = []
@@ -1351,6 +1353,8 @@ def _voice_readiness_status(
         blocking_issues.append("Configured recorder backend is not supported.")
     elif not recorder["backend_available"]:
         blocking_issues.append("Configured recorder backend dependency is unavailable.")
+    elif not real_microphone_configured:
+        blocking_issues.append("No real microphone recorder is configured.")
 
     if status.get("push_to_talk_only") is not True:
         safety_issues.append("Push-to-talk-only mode is not confirmed.")
@@ -1386,11 +1390,6 @@ def _voice_readiness_status(
         warnings.append(
             "Optional speech output is not available for explicit manual use."
         )
-    if not recorder["microphone_recording_configured"]:
-        warnings.append(
-            "Real microphone recording is not explicitly configured; the safe "
-            "development recorder remains selected."
-        )
     if not recent_events["enabled"]:
         warnings.append(
             "Local voice event logging is disabled, so recent event history is "
@@ -1406,16 +1405,20 @@ def _voice_readiness_status(
             "are available."
         )
 
-    preview_available = (
+    local_preview_available = (
         not safety_issues
-        and not blocking_issues
         and local_transcription_ready
         and model_ready
         and recorder_boundary_available
         and recorder["supported"] is True
         and recorder["backend_available"] is True
+        and bool(stack["api_base_url"]["value"])
     )
-    dispatch_available = preview_available and approval["required"] is True
+    local_dispatch_available = local_preview_available and approval["required"] is True
+    microphone_preview_available = local_preview_available and real_microphone_ready
+    microphone_dispatch_available = (
+        microphone_preview_available and approval["required"] is True
+    )
 
     if safety_issues:
         state = "unsafe_config"
@@ -1436,8 +1439,8 @@ def _voice_readiness_status(
             f" --adapter {adapter['effective']}" if adapter["effective"] else ""
         )
         next_safe_manual_step = (
-            f"Run `jarvis voice run-local --duration 2{adapter_flag}` in a terminal "
-            "for a preview-only manual check."
+            f"Run `jarvis voice mic-preview --duration 2{adapter_flag}` in a "
+            "terminal for a preview-only real-microphone check."
         )
 
     return {
@@ -1445,10 +1448,19 @@ def _voice_readiness_status(
         "blocking_issues": safety_issues + blocking_issues,
         "warnings": warnings,
         "next_safe_manual_step": next_safe_manual_step,
-        "preview_only_local_pipeline_available": preview_available,
-        "approval_gated_dispatch_available": dispatch_available,
+        "preview_only_local_pipeline_available": local_preview_available,
+        "approval_gated_dispatch_available": local_dispatch_available,
         "optional_speech_output_available": optional_speech_available,
         "recorder_backend_available": recorder["backend_available"],
+        "dev_silent_recorder_available": recorder.get(
+            "dev_silent_recorder_available", True
+        ),
+        "real_microphone_recorder_configured": real_microphone_configured,
+        "sounddevice_dependency_available": recorder.get(
+            "sounddevice_dependency_available", recorder["sounddevice_importable"]
+        ),
+        "preview_only_microphone_pipeline_available": microphone_preview_available,
+        "approval_gated_microphone_dispatch_available": microphone_dispatch_available,
         "microphone_recording_configured": recorder["microphone_recording_configured"],
         "microphone_configuration_ready": recorder["microphone_configuration_ready"],
     }
