@@ -1,5 +1,34 @@
 # Customization Plan
 
+## Voice Control Hotkey Phase 1
+
+Hotkey Phase 1 refines the existing disabled macOS bridge around the hardened
+real-microphone stack without activating global key capture.
+
+- `jarvis voice hotkey-bridge` remains print-only and now generates the bounded
+  `jarvis voice mic-run` path with a real `macos` or `sounddevice` recorder.
+- The default command and disabled Hammerspoon F18 example stop at preview.
+  They omit `--approve-dispatch` and `--speak-result`; approved dispatch and
+  result speech remain separate, explicit manual `mic-run` terminal variants.
+- The helper keeps `enable_openjarvis_voice_hotkey = false`, does not install or
+  execute the example, does not start a listener, and does not capture Fn/F18.
+- Duration and recorder validation reuse the 0.1-30 second real-microphone
+  boundary. Tests inspect generated text only and require no microphone,
+  Accessibility permission, or global key capture.
+- Mission Control remains read-only and can report only disabled/print-only
+  hotkey readiness/status. It does not run bridge or microphone commands.
+- Existing Voice Control Phase 1-30 and Mic Phase 1-8 commands and safety gates
+  remain intact.
+
+Deferred work remains intentionally untouched:
+
+- no always-on listening or enabled Fn/global hotkey capture
+- no LaunchAgent or Hammerspoon/Swift helper installation
+- no programmatic Accessibility permission request
+- no approval bypass or automatic dispatch
+- no automatic speech playback
+- no voice-only mode; text input remains available
+
 ## Voice Control Mic Phase 8
 
 Mic Phase 8 is the final microphone-stack hardening pass before any Fn/global

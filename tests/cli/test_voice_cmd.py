@@ -651,7 +651,7 @@ def test_voice_doctor_reports_missing_dependencies_without_side_effects(
     )
 
 
-def test_voice_hotkey_bridge_prints_disabled_run_local_command(monkeypatch) -> None:
+def test_voice_hotkey_bridge_prints_disabled_mic_run_command(monkeypatch) -> None:
     def fake_post(*args, **kwargs):
         raise AssertionError("hotkey bridge must not call the API")
 
@@ -676,7 +676,7 @@ def test_voice_hotkey_bridge_prints_disabled_run_local_command(monkeypatch) -> N
         for line in result.output.splitlines()
         if line.strip().startswith("command:")
     )
-    assert "jarvis voice run-local --duration 1.5" in command_line
+    assert "jarvis voice mic-run --duration 1.5" in command_line
     assert "--recorder macos" in command_line
     assert "--adapter faster-whisper" in command_line
     assert "--approve-dispatch" not in command_line
@@ -714,7 +714,7 @@ def test_voice_hotkey_bridge_hammerspoon_snippet_is_disabled(monkeypatch) -> Non
     assert result.exit_code == 0
     assert "local enable_openjarvis_voice_hotkey = false" in result.output
     assert "hs.hotkey.bind" in result.output
-    assert "jarvis voice run-local" in result.output
+    assert "jarvis voice mic-run" in result.output
     assert "--adapter faster-whisper" in result.output
     assert "--approve-dispatch" not in result.output
 
@@ -729,7 +729,7 @@ def test_voice_hotkey_bridge_uses_configured_preview_defaults(monkeypatch) -> No
             default_api_base_url="http://configured:9000",
             hotkey_bridge_format="json",
             hotkey_bridge_jarvis_bin="/opt/bin/jarvis",
-            hotkey_bridge_recorder="dev-silent",
+            hotkey_bridge_recorder="sounddevice",
             hotkey_bridge_input_device=":2",
             hotkey_bridge_session_id="voice-session",
         ),
@@ -746,11 +746,11 @@ def test_voice_hotkey_bridge_uses_configured_preview_defaults(monkeypatch) -> No
     assert data["argv"] == [
         "/opt/bin/jarvis",
         "voice",
-        "run-local",
+        "mic-run",
         "--duration",
         "1.25",
         "--recorder",
-        "dev-silent",
+        "sounddevice",
         "--input-device",
         ":2",
         "--adapter",
@@ -774,7 +774,7 @@ def test_voice_hotkey_bridge_cli_flags_override_config(monkeypatch) -> None:
             default_api_base_url="http://configured:9000",
             hotkey_bridge_format="json",
             hotkey_bridge_jarvis_bin="/opt/bin/jarvis",
-            hotkey_bridge_recorder="dev-silent",
+            hotkey_bridge_recorder="sounddevice",
         ),
     )
 
@@ -802,7 +802,7 @@ def test_voice_hotkey_bridge_cli_flags_override_config(monkeypatch) -> None:
     assert data["argv"][:9] == [
         "jarvis-cli",
         "voice",
-        "run-local",
+        "mic-run",
         "--duration",
         "1.5",
         "--recorder",
@@ -813,6 +813,32 @@ def test_voice_hotkey_bridge_cli_flags_override_config(monkeypatch) -> None:
     assert "--adapter" in data["argv"]
     assert "faster-whisper" in data["argv"]
     assert "http://cli:8000" in data["argv"]
+
+
+def test_voice_hotkey_bridge_rejects_non_microphone_config(monkeypatch) -> None:
+    monkeypatch.setattr(
+        voice_cmd,
+        "load_config",
+        lambda: _safe_config(hotkey_bridge_recorder="dev-silent"),
+    )
+
+    result = CliRunner().invoke(voice_cmd.voice, ["hotkey-bridge"])
+
+    assert result.exit_code != 0
+    assert "requires a real microphone recorder" in result.output
+
+
+def test_voice_hotkey_bridge_rejects_unbounded_configured_duration(monkeypatch) -> None:
+    monkeypatch.setattr(
+        voice_cmd,
+        "load_config",
+        lambda: _safe_config(default_record_duration=31.0),
+    )
+
+    result = CliRunner().invoke(voice_cmd.voice, ["hotkey-bridge"])
+
+    assert result.exit_code != 0
+    assert "duration must be between 0.1 and 30 seconds" in result.output
 
 
 def test_voice_submit_previews_without_dispatch(monkeypatch) -> None:

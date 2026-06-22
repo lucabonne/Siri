@@ -23,7 +23,7 @@ class MacOSHotkeyBridgeCommand:
         command = [
             self.jarvis_bin,
             "voice",
-            "run-local",
+            "mic-run",
             "--duration",
             f"{self.duration:g}",
             "--recorder",
@@ -47,8 +47,8 @@ class MacOSHotkeyBridgeCommand:
     def hammerspoon_snippet(self) -> str:
         command = self.shell_command()
         return f"""-- OpenJarvis voice hotkey bridge example.
--- Disabled by default: flip this only after granting macOS permissions and
--- confirming `openjarvis_voice_command` is the preview-only flow you want.
+-- Preview-only and disabled by default. This example does not request macOS
+-- permissions; review them manually before enabling an external helper.
 local enable_openjarvis_voice_hotkey = false
 local openjarvis_voice_command = {command!r}
 

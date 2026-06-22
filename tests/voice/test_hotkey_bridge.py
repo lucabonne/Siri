@@ -10,7 +10,7 @@ from openjarvis.hotkeys.macos_bridge import (
 )
 
 
-def test_macos_hotkey_bridge_formats_preview_only_run_local_command() -> None:
+def test_macos_hotkey_bridge_formats_preview_only_mic_run_command() -> None:
     bridge = MacOSHotkeyBridgeCommand(
         duration=1.5,
         recorder="macos",
@@ -22,7 +22,7 @@ def test_macos_hotkey_bridge_formats_preview_only_run_local_command() -> None:
 
     argv = bridge.argv()
 
-    assert argv[:3] == ["jarvis", "voice", "run-local"]
+    assert argv[:3] == ["jarvis", "voice", "mic-run"]
     assert "--duration" in argv
     assert "--recorder" in argv
     assert "--adapter" in argv
@@ -37,7 +37,7 @@ def test_macos_hotkey_bridge_hammerspoon_example_is_disabled() -> None:
 
     assert "local enable_openjarvis_voice_hotkey = false" in snippet
     assert "hs.hotkey.bind" in snippet
-    assert "jarvis voice run-local" in snippet
+    assert "jarvis voice mic-run" in snippet
     assert "--adapter faster-whisper" in snippet
     assert "--approve-dispatch" not in snippet
     assert "--speak-result" not in snippet

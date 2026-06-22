@@ -781,19 +781,22 @@ def doctor(as_json: bool) -> None:
 )
 @click.option(
     "--duration",
-    type=click.FloatRange(min=0.1),
+    type=click.FloatRange(
+        min=MICROPHONE_MIN_DURATION_SECONDS,
+        max=MICROPHONE_MAX_DURATION_SECONDS,
+    ),
     default=None,
     help=(
-        "Duration to include in the printed run-local command. Defaults to "
+        "Duration to include in the printed mic-run command. Defaults to "
         "[voice_control].default_record_duration or 2.0."
     ),
 )
 @click.option(
     "--recorder",
     "recorder_kind",
-    type=click.Choice(RECORDER_KINDS),
+    type=click.Choice(MICROPHONE_RECORDER_KINDS),
     default=None,
-    help="Recorder to include in the printed run-local command.",
+    help="Real microphone recorder to include in the printed mic-run command.",
 )
 @click.option(
     "--input-device",
@@ -805,8 +808,8 @@ def doctor(as_json: bool) -> None:
     type=click.Choice(LOCAL_TRANSCRIPTION_ADAPTERS),
     default=None,
     help=(
-        "Local transcription adapter to include. If omitted, run-local still "
-        "requires [speech].backend to be explicitly configured later."
+        "Local transcription adapter to include. If omitted, mic-run still "
+        "requires a configured local adapter before manual execution."
     ),
 )
 @click.option("--language", default=None, help="Optional language code hint.")
@@ -849,6 +852,16 @@ def hotkey_bridge(
             raise click.ClickException(
                 "[voice_control].default_record_duration must be a positive number"
             ) from exc
+    if not (
+        MICROPHONE_MIN_DURATION_SECONDS
+        <= bridge_duration
+        <= MICROPHONE_MAX_DURATION_SECONDS
+    ):
+        raise click.ClickException(
+            "hotkey bridge duration must be between "
+            f"{MICROPHONE_MIN_DURATION_SECONDS:g} and "
+            f"{MICROPHONE_MAX_DURATION_SECONDS:g} seconds"
+        )
     bridge_format = output_format or getattr(
         defaults,
         "hotkey_bridge_format",
@@ -861,9 +874,9 @@ def hotkey_bridge(
         "hotkey_bridge_recorder",
         "macos",
     )
-    if bridge_recorder not in RECORDER_KINDS:
+    if bridge_recorder not in MICROPHONE_RECORDER_KINDS:
         raise click.ClickException(
-            f"unsupported hotkey bridge recorder: {bridge_recorder}"
+            "hotkey bridge requires a real microphone recorder: macos or sounddevice"
         )
     resolved_adapter = adapter or getattr(defaults, "transcription_adapter", "") or None
     if resolved_adapter and resolved_adapter not in LOCAL_TRANSCRIPTION_ADAPTERS:
