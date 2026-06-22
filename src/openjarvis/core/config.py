@@ -1307,7 +1307,7 @@ class VoiceControlConfig:
     speech_rate: int = 0  # 0 = adapter default
     hotkey_bridge_format: str = "command"  # command, hammerspoon, json
     hotkey_bridge_jarvis_bin: str = "jarvis"
-    hotkey_bridge_recorder: str = "macos"
+    hotkey_bridge_recorder: str = "macos"  # macos, sounddevice
     hotkey_bridge_input_device: str = ":0"
     hotkey_bridge_session_id: str = ""
     voice_logs_enabled: bool = True

@@ -580,7 +580,7 @@ voice_logs_preview_chars = 80
 | `speech_rate` | int | `0` | Optional local speech rate. `0` uses the adapter default. |
 | `hotkey_bridge_format` | string | `"command"` | Output format for the print-only hotkey bridge helper: `"command"`, `"hammerspoon"`, or `"json"`. |
 | `hotkey_bridge_jarvis_bin` | string | `"jarvis"` | Executable name/path printed in the bridge command. |
-| `hotkey_bridge_recorder` | string | `"macos"` | Recorder name printed in the bridge command; this does not start a listener. |
+| `hotkey_bridge_recorder` | string | `"macos"` | Real microphone recorder (`"macos"` or `"sounddevice"`) printed in the preview-only `mic-run` bridge command; this does not start a listener. |
 | `hotkey_bridge_input_device` | string | `":0"` | macOS avfoundation input device printed in the bridge command. |
 | `hotkey_bridge_session_id` | string | `""` | Optional session id printed in the bridge command. |
 | `voice_logs_enabled` | bool | `true` | Whether explicit voice CLI commands write local structured event logs. |

@@ -4,7 +4,7 @@ Phase 1 — interface only. Actual macOS Fn / CGEvent listener is deferred.
 Phase 4 adds ``jarvis voice submit`` as the typed/mock transcript bridge that
 future Hammerspoon/Fn automation can call after it obtains a transcript.
 Phase 11 adds a disabled macOS bridge formatter that can show the
-``jarvis voice run-local`` command an explicitly enabled helper may call later.
+``jarvis voice mic-run`` command an explicitly enabled helper may call later.
 
 Intended flow when implemented:
     Fn key down  → FnKeyPushToTalkListener.on_press()
