@@ -119,6 +119,7 @@ def test_voice_command_help_lists_subcommands() -> None:
     assert "mic-smoke" in result.output
     assert "mic-transcribe-smoke" in result.output
     assert "mic-preview" in result.output
+    assert "mic-run" in result.output
     assert "capture-preview" in result.output
     assert "run-local" in result.output
     assert "doctor" in result.output
@@ -1829,6 +1830,245 @@ def test_voice_mic_preview_uses_configured_backends_and_keeps_file(
     )
     assert Path(path_line.split(":", 1)[1].strip()).exists()
     assert "file_kept: True" in result.output
+
+
+def test_voice_mic_run_previews_only_and_deletes_wav_by_default(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    post_calls: list[tuple[str, dict[str, Any] | None]] = []
+    recorded_paths: list[Path] = []
+    speech_calls: list[str] = []
+
+    class FakeAdapter:
+        def __init__(self, *, adapter_id, config):
+            assert adapter_id == "faster-whisper"
+
+        def transcribe_file(self, path, *, language=None):
+            recorded_paths.append(path)
+            assert path.exists()
+            return _FakeTranscriptionResult()
+
+    def fake_post(endpoint: str, payload: dict[str, Any] | None, **kwargs):
+        post_calls.append((endpoint, payload))
+        return _preview_response()
+
+    monkeypatch.setattr(voice_cmd, "_sleep", lambda seconds: None)
+    monkeypatch.setattr(
+        voice_cmd,
+        "_build_recorder",
+        lambda recorder_kind, *, output_dir, **kwargs: voice_cmd.SilentWavRecorder(
+            temp_dir=output_dir,
+            sample_rate=8000,
+        ),
+    )
+    monkeypatch.setattr(voice_cmd, "load_config", lambda: _safe_config())
+    monkeypatch.setattr(
+        voice_cmd,
+        "SpeechBackendLocalTranscriptionAdapter",
+        FakeAdapter,
+    )
+    monkeypatch.setattr(voice_cmd, "_post_json", fake_post)
+    monkeypatch.setattr(voice_cmd, "_base_url", lambda override: "http://test")
+    monkeypatch.setattr(voice_cmd, "_api_key", lambda override: "")
+    monkeypatch.setattr(
+        voice_cmd,
+        "_build_speech_output",
+        lambda *args, **kwargs: speech_calls.append("build"),
+    )
+
+    result = CliRunner().invoke(
+        voice_cmd.voice,
+        [
+            "mic-run",
+            "--duration",
+            "0.1",
+            "--output-dir",
+            str(tmp_path),
+            "--recorder",
+            "sounddevice",
+            "--adapter",
+            "faster-whisper",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert post_calls == [
+        (
+            "/v1/voice/ptt/submit-transcript",
+            {"transcript": "open notes", "session_id": ""},
+        )
+    ]
+    assert len(recorded_paths) == 1
+    assert not recorded_paths[0].exists()
+    assert speech_calls == []
+    assert "status: awaiting_approval" in result.output
+    assert "dispatch: skipped" in result.output
+    assert "speech: skipped" in result.output
+
+
+def test_voice_mic_run_dispatches_and_speaks_only_with_explicit_flags(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    post_calls: list[tuple[str, dict[str, Any] | None]] = []
+    recorded_paths: list[Path] = []
+    speak_calls: list[str] = []
+
+    class FakeAdapter:
+        def __init__(self, *, adapter_id, config):
+            pass
+
+        def transcribe_file(self, path, *, language=None):
+            recorded_paths.append(path)
+            return _FakeTranscriptionResult()
+
+    class FakeSpeechOutput:
+        def speak(self, text: str) -> None:
+            speak_calls.append(text)
+
+    def fake_post(endpoint: str, payload: dict[str, Any] | None, **kwargs):
+        post_calls.append((endpoint, payload))
+        if endpoint.endswith("/submit-transcript"):
+            return _preview_response()
+        return {
+            "dispatched": True,
+            "status": "completed",
+            "fsm_state": "idle",
+            "agent_id": "agent-1",
+            "content": "done",
+        }
+
+    monkeypatch.setattr(voice_cmd, "_sleep", lambda seconds: None)
+    monkeypatch.setattr(
+        voice_cmd,
+        "_build_recorder",
+        lambda recorder_kind, *, output_dir, **kwargs: voice_cmd.SilentWavRecorder(
+            temp_dir=output_dir,
+            sample_rate=8000,
+        ),
+    )
+    monkeypatch.setattr(voice_cmd, "load_config", lambda: _safe_config())
+    monkeypatch.setattr(
+        voice_cmd,
+        "SpeechBackendLocalTranscriptionAdapter",
+        FakeAdapter,
+    )
+    monkeypatch.setattr(voice_cmd, "_post_json", fake_post)
+    monkeypatch.setattr(voice_cmd, "_base_url", lambda override: "http://test")
+    monkeypatch.setattr(voice_cmd, "_api_key", lambda override: "")
+    monkeypatch.setattr(
+        voice_cmd,
+        "_build_speech_output",
+        lambda *args, **kwargs: FakeSpeechOutput(),
+    )
+
+    result = CliRunner().invoke(
+        voice_cmd.voice,
+        [
+            "mic-run",
+            "--duration",
+            "0.1",
+            "--output-dir",
+            str(tmp_path),
+            "--recorder",
+            "sounddevice",
+            "--adapter",
+            "faster-whisper",
+            "--agent-id",
+            "agent-1",
+            "--approve-dispatch",
+            "--speak-result",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert post_calls == [
+        (
+            "/v1/voice/ptt/submit-transcript",
+            {"transcript": "open notes", "session_id": ""},
+        ),
+        (
+            "/v1/voice/ptt/dispatch",
+            {"transcript": "open notes", "agent_id": "agent-1", "approved": True},
+        ),
+    ]
+    assert speak_calls == ["done"]
+    assert len(recorded_paths) == 1
+    assert not recorded_paths[0].exists()
+    assert "speech: spoken" in result.output
+
+
+def test_voice_mic_run_speak_result_requires_dispatch_approval() -> None:
+    result = CliRunner().invoke(
+        voice_cmd.voice,
+        ["mic-run", "--duration", "0.1", "--speak-result"],
+    )
+
+    assert result.exit_code != 0
+    assert "--speak-result requires --approve-dispatch" in result.output
+
+
+def test_voice_mic_run_deletes_wav_when_dispatch_fails(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    recorded_paths: list[Path] = []
+
+    class FakeAdapter:
+        def __init__(self, *, adapter_id, config):
+            pass
+
+        def transcribe_file(self, path, *, language=None):
+            recorded_paths.append(path)
+            return _FakeTranscriptionResult()
+
+    def fake_post(endpoint: str, payload: dict[str, Any] | None, **kwargs):
+        if endpoint.endswith("/submit-transcript"):
+            return _preview_response()
+        raise voice_cmd.click.ClickException(
+            "/v1/voice/ptt/dispatch returned HTTP 500: dispatch failed"
+        )
+
+    monkeypatch.setattr(voice_cmd, "_sleep", lambda seconds: None)
+    monkeypatch.setattr(
+        voice_cmd,
+        "_build_recorder",
+        lambda recorder_kind, *, output_dir, **kwargs: voice_cmd.SilentWavRecorder(
+            temp_dir=output_dir,
+            sample_rate=8000,
+        ),
+    )
+    monkeypatch.setattr(voice_cmd, "load_config", lambda: _safe_config())
+    monkeypatch.setattr(
+        voice_cmd,
+        "SpeechBackendLocalTranscriptionAdapter",
+        FakeAdapter,
+    )
+    monkeypatch.setattr(voice_cmd, "_post_json", fake_post)
+    monkeypatch.setattr(voice_cmd, "_base_url", lambda override: "http://test")
+    monkeypatch.setattr(voice_cmd, "_api_key", lambda override: "")
+
+    result = CliRunner().invoke(
+        voice_cmd.voice,
+        [
+            "mic-run",
+            "--duration",
+            "0.1",
+            "--output-dir",
+            str(tmp_path),
+            "--recorder",
+            "sounddevice",
+            "--adapter",
+            "faster-whisper",
+            "--approve-dispatch",
+        ],
+    )
+
+    assert result.exit_code != 0
+    assert "dispatch returned HTTP 500: dispatch failed" in result.output
+    assert len(recorded_paths) == 1
+    assert not recorded_paths[0].exists()
 
 
 def test_voice_capture_preview_requires_adapter_before_recording(

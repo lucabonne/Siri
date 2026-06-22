@@ -315,7 +315,8 @@ def _configured_microphone_recorder_kind(recorder_kind: str | None) -> str:
     configured = _configured_recorder_kind(recorder_kind)
     if configured not in MICROPHONE_RECORDER_KINDS:
         raise click.ClickException(
-            "mic-smoke requires a real microphone recorder. Pass --recorder "
+            "This microphone command requires a real microphone recorder. Pass "
+            "--recorder "
             "macos or --recorder sounddevice, or configure one in "
             "[voice_control].default_recorder."
         )
@@ -1589,6 +1590,302 @@ def mic_preview(
     _format_preview(preview)
     click.echo("  dispatch: skipped (mic-preview is preview-only)")
     click.echo("  speech: skipped (mic-preview never speaks)")
+
+
+@voice.command("mic-run")
+@click.option(
+    "--duration",
+    type=click.FloatRange(min=0.1, max=30.0),
+    required=True,
+    help="Explicit recording duration in seconds (0.1 to 30).",
+)
+@click.option(
+    "--output-dir",
+    type=click.Path(file_okay=False, path_type=Path),
+    default=None,
+    help="Directory for the temporary WAV. Defaults to the system temp directory.",
+)
+@click.option(
+    "--recorder",
+    "recorder_kind",
+    type=click.Choice(MICROPHONE_RECORDER_KINDS),
+    default=None,
+    help=(
+        "Real microphone recorder. Required unless macos or sounddevice is set "
+        "in [voice_control].default_recorder."
+    ),
+)
+@click.option(
+    "--input-device",
+    default=":0",
+    show_default=True,
+    help="Input device for the selected recorder backend.",
+)
+@click.option(
+    "--adapter",
+    type=click.Choice(LOCAL_TRANSCRIPTION_ADAPTERS),
+    default=None,
+    help=(
+        "Local transcription adapter. Required unless configured in "
+        "[voice_control].transcription_adapter."
+    ),
+)
+@click.option("--language", default=None, help="Optional language code hint.")
+@click.option(
+    "--session-id",
+    default="",
+    help="Optional client-side session id for the preview request.",
+)
+@click.option("--agent-id", default="", help="Agent id to dispatch to after approval.")
+@click.option(
+    "--approve-dispatch",
+    is_flag=True,
+    default=False,
+    help="Explicitly approve and call /dispatch after preview.",
+)
+@click.option(
+    "--speak-result",
+    is_flag=True,
+    default=False,
+    help="Speak the dispatch result through an explicit local TTS adapter.",
+)
+@click.option(
+    "--speech-adapter",
+    type=click.Choice(LOCAL_SPEECH_OUTPUT_ADAPTERS),
+    default=None,
+    help="Explicit local speech-output adapter for --speak-result.",
+)
+@click.option(
+    "--voice",
+    "voice_name",
+    default=None,
+    help="Optional macOS say voice name for --speak-result.",
+)
+@click.option(
+    "--rate",
+    type=click.IntRange(min=80, max=500),
+    default=None,
+    help="Optional macOS say speaking rate for --speak-result.",
+)
+@click.option(
+    "--base-url",
+    envvar="OPENJARVIS_BASE_URL",
+    default=None,
+    help="OpenJarvis API base URL. Defaults to configured local server.",
+)
+@click.option(
+    "--api-key",
+    envvar="OPENJARVIS_API_KEY",
+    default=None,
+    help="API key for an authenticated local server.",
+)
+@click.option(
+    "--timeout",
+    default=10.0,
+    show_default=True,
+    help="HTTP timeout seconds.",
+)
+@click.option(
+    "--keep-file",
+    is_flag=True,
+    default=False,
+    help="Keep the recorded WAV instead of deleting it after the run.",
+)
+@click.option("--json", "as_json", is_flag=True, help="Print raw JSON response.")
+def mic_run(
+    duration: float,
+    output_dir: Path | None,
+    recorder_kind: str | None,
+    input_device: str,
+    adapter: str | None,
+    language: str | None,
+    session_id: str,
+    agent_id: str,
+    approve_dispatch: bool,
+    speak_result: bool,
+    speech_adapter: str | None,
+    voice_name: str | None,
+    rate: int | None,
+    base_url: str | None,
+    api_key: str | None,
+    timeout: float,
+    keep_file: bool,
+    as_json: bool,
+) -> None:
+    """Run one bounded microphone command; dispatch and speech are opt-in."""
+    if speak_result and not approve_dispatch:
+        raise click.UsageError("--speak-result requires --approve-dispatch")
+
+    resolved_recorder = _configured_microphone_recorder_kind(recorder_kind)
+    adapter_id, transcriber = _build_transcriber(adapter)
+    resolved_base = _base_url(base_url)
+    resolved_key = _api_key(api_key)
+    handle = _record_local_audio(
+        duration=duration,
+        output_dir=output_dir,
+        recorder_kind=resolved_recorder,
+        input_device=input_device,
+        cleanup_on_error=True,
+    )
+
+    pipeline_error: Exception | None = None
+    dispatch: dict[str, Any] | None = None
+    speech: dict[str, Any] | None = None
+    try:
+        wav_metadata = inspect_wav_file(handle.path)
+        transcription_result = transcriber.transcribe_file(
+            handle.path,
+            language=language,
+        )
+        transcription = transcription_result.to_dict()
+        transcript = str(transcription.get("text") or "")
+        preview = _post_json(
+            "/v1/voice/ptt/submit-transcript",
+            {"transcript": transcript, "session_id": session_id},
+            base_url=resolved_base,
+            api_key=resolved_key,
+            timeout=timeout,
+        )
+        if approve_dispatch:
+            dispatch = _post_json(
+                "/v1/voice/ptt/dispatch",
+                {"transcript": transcript, "agent_id": agent_id, "approved": True},
+                base_url=resolved_base,
+                api_key=resolved_key,
+                timeout=timeout,
+            )
+            if speak_result:
+                speech_text = _dispatch_speech_text(dispatch)
+                resolved_speech_adapter = _speech_output_adapter(speech_adapter)
+                output = _build_speech_output(
+                    resolved_speech_adapter,
+                    voice_name=_speech_voice(voice_name),
+                    rate=_speech_rate(rate),
+                )
+                output.speak(speech_text)
+                speech = {"adapter": resolved_speech_adapter, "spoken": True}
+    except (
+        OSError,
+        TranscriptionUnavailableError,
+        VoiceRecordingError,
+        SpeechOutputUnavailableError,
+        ValueError,
+        click.ClickException,
+    ) as exc:
+        pipeline_error = exc
+
+    if not keep_file:
+        try:
+            handle.path.unlink(missing_ok=True)
+        except OSError as cleanup_exc:
+            message = "The temporary WAV could not be deleted"
+            if pipeline_error is not None:
+                message = f"{pipeline_error} {message}"
+            raise click.ClickException(f"{message}: {cleanup_exc}") from cleanup_exc
+
+    if pipeline_error is not None:
+        if isinstance(pipeline_error, click.ClickException):
+            raise pipeline_error
+        raise click.ClickException(str(pipeline_error)) from pipeline_error
+
+    preview_details = _preview_log_details(preview)
+    preview_details.update(
+        {
+            "recording_path": str(handle.path),
+            "recorder": resolved_recorder,
+            "requested_duration_seconds": duration,
+            "file_kept": keep_file,
+            "adapter": transcription.get("backend") or adapter_id,
+            "language": transcription.get("language") or "",
+            "dispatched": dispatch is not None,
+            "spoken": speech is not None,
+            **wav_metadata,
+        }
+    )
+    _log_voice_event(
+        "mic-run",
+        "preview_result",
+        transcript=transcript,
+        details=preview_details,
+    )
+    if dispatch is None:
+        _log_voice_event(
+            "mic-run",
+            "dispatch_decision",
+            status="skipped",
+            transcript=transcript,
+            details={
+                "approved": False,
+                "attempted": False,
+                "reason": "missing --approve-dispatch",
+            },
+        )
+    else:
+        _log_voice_event(
+            "mic-run",
+            "dispatch_result",
+            transcript=transcript,
+            details=_dispatch_log_details(dispatch, approved=True, agent_id=agent_id),
+        )
+        if speech is None:
+            _log_voice_event(
+                "mic-run",
+                "speech_decision",
+                status="skipped",
+                details={"spoken": False, "reason": "missing --speak-result"},
+            )
+        else:
+            _log_voice_event(
+                "mic-run",
+                "speech_result",
+                details={"adapter": speech["adapter"], "spoken": True},
+            )
+
+    recording = {
+        "path": str(handle.path),
+        "recorder": resolved_recorder,
+        "requested_duration_seconds": duration,
+        "file_kept": keep_file,
+        **wav_metadata,
+    }
+    if as_json:
+        output_data: dict[str, Any] = {
+            "recording": recording,
+            "transcription": transcription,
+            "preview": preview,
+        }
+        if dispatch is None:
+            output_data["dispatch_skipped"] = True
+            output_data["dispatch_reason"] = "missing --approve-dispatch"
+        else:
+            output_data["dispatch"] = dispatch
+        if speech is None:
+            output_data["speech_skipped"] = True
+            output_data["speech_reason"] = "missing --speak-result"
+        else:
+            output_data["speech"] = speech
+        _emit_json(output_data)
+        return
+
+    click.echo("Microphone run")
+    click.echo(f"  recorder: {resolved_recorder}")
+    click.echo(f"  requested_duration_seconds: {duration}")
+    click.echo(f"  path: {handle.path}")
+    click.echo(f"  file_kept: {keep_file}")
+    click.echo(f"  adapter: {transcription.get('backend') or adapter_id}")
+    if transcription.get("language"):
+        click.echo(f"  language: {transcription['language']}")
+    click.echo(f"  transcript: {transcript}")
+    _format_preview(preview)
+    if dispatch is None:
+        click.echo("  dispatch: skipped (pass --approve-dispatch to run)")
+        click.echo("  speech: skipped (pass --speak-result after dispatch)")
+        return
+    _format_dispatch(dispatch)
+    if speech is None:
+        click.echo("  speech: skipped (pass --speak-result to speak dispatch result)")
+    else:
+        click.echo(f"  speech: spoken (adapter={speech['adapter']})")
 
 
 @voice.command("capture-preview")

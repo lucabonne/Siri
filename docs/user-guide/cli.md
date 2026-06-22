@@ -481,6 +481,9 @@ jarvis voice mic-smoke --recorder sounddevice --duration 1
 jarvis voice mic-smoke --recorder macos --duration 1 --keep-file
 jarvis voice mic-transcribe-smoke --duration 1 --recorder sounddevice --adapter faster-whisper
 jarvis voice mic-preview --duration 1 --recorder sounddevice --adapter faster-whisper
+jarvis voice mic-run --duration 1 --recorder sounddevice --adapter faster-whisper
+jarvis voice mic-run --duration 1 --recorder sounddevice --adapter faster-whisper --approve-dispatch
+jarvis voice mic-run --duration 1 --recorder sounddevice --adapter faster-whisper --approve-dispatch --speak-result
 jarvis voice transcribe-file ./clip.wav --adapter faster-whisper
 jarvis voice capture-preview --duration 2 --adapter faster-whisper
 jarvis voice run-local --duration 2 --adapter faster-whisper
@@ -511,6 +514,7 @@ jarvis voice cancel
 | `voice mic-smoke --duration N` | Record with an explicitly selected/configured real microphone backend, inspect WAV metadata, and delete the file unless `--keep-file` is passed |
 | `voice mic-transcribe-smoke --duration N` | Record with a selected/configured real microphone backend, transcribe locally, print WAV/transcript metadata and text, then delete the WAV unless `--keep-file` is passed; never submit, dispatch, or speak |
 | `voice mic-preview --duration N` | Record with a selected/configured real microphone backend, transcribe locally, submit to `/v1/voice/ptt/submit-transcript`, print preview/session state, and delete the WAV unless `--keep-file` is passed; never dispatch or speak |
+| `voice mic-run --duration N` | Run the bounded real-microphone preview path and delete the WAV unless `--keep-file` is passed; dispatch requires `--approve-dispatch`, and speech additionally requires `--speak-result` |
 | `voice transcribe-file AUDIO` | Transcribe an existing local audio file with a local adapter and print the transcript only |
 | `voice capture-preview --duration N` | Record a local WAV, transcribe it locally, POST the transcript to `/v1/voice/ptt/submit-transcript`, and print the preview only |
 | `voice run-local --duration N` | Record, transcribe, submit preview, and print session state; dispatch and TTS require separate opt-in flags |
@@ -604,6 +608,15 @@ It deletes the temporary WAV by default after success or an expected failure;
 `--keep-file` retains it. It exposes no dispatch or speech option, never calls
 `/dispatch`, and leaves the existing approval gate unchanged.
 
+`voice mic-run --duration N` extends that bounded real-microphone path through
+the existing optional approval gate. Its default behavior records, transcribes
+locally, submits only to `/v1/voice/ptt/submit-transcript`, prints the
+preview/session state, and deletes the WAV. It calls the existing
+`/v1/voice/ptt/dispatch` endpoint only with `--approve-dispatch`, sending
+`approved=true`. `--speak-result` is rejected without that dispatch flag and is
+the only way for this command to speak. `--keep-file` is the only way to retain
+the WAV. The command does not start a hotkey listener or background capture.
+
 `voice run-local --duration N` is the explicit manual end-to-end local pipeline:
 it records a local WAV, transcribes with the selected/configured local adapter,
 submits the transcript to `/v1/voice/ptt/submit-transcript`, and prints the
@@ -644,7 +657,8 @@ auto-dispatch, or automatic speech playback. Dispatch still requires
 `voice logs` reads recent JSONL events from the local `voice_logs_path`.
 Logging is local-only and records command activity such as submit, status,
 cancel, transcribe-file, record-local, mic-smoke, mic-transcribe-smoke,
-mic-preview, capture-preview, run-local, speak, doctor, and hotkey-bridge. The
+mic-preview, mic-run, capture-preview, run-local, speak, doctor, and
+hotkey-bridge. The
 command is inspection-only: it does not record,
 dispatch, approve, speak, call the API, or start hotkeys. Use `--limit N` to
 show the last N matching events, repeat `--event TYPE` or `--status STATUS` to
@@ -803,13 +817,14 @@ the explicit fixed-duration recorder only, transcription runs through the
 selected local adapter, raw recordings are not persisted unless
 `[speech].persist_raw_audio = true`, and dispatch still requires the separate
 `jarvis voice submit --approve-dispatch` path or
-`voice run-local --approve-dispatch`. `voice speak` sends only the literal text
-you provide to the selected local adapter; `voice run-local --speak-result`
-speaks only the explicit dispatch result. The current speech-output adapter is
-`macos-say`, which uses the local macOS `say` command when available; Piper,
-Coqui, and other local TTS adapters remain deferred. Voice-only mode, Fn hotkey
-listening, always-on listening, and automatic speech playback of dispatch
-results remain deferred.
+`voice run-local --approve-dispatch` or `voice mic-run --approve-dispatch`.
+`voice speak` sends only the literal text you provide to the selected local
+adapter; `voice run-local --speak-result` and `voice mic-run --speak-result`
+speak only an explicitly approved dispatch result. The current speech-output
+adapter is `macos-say`, which uses the local macOS `say` command when available;
+Piper, Coqui, and other local TTS adapters remain deferred. Voice-only mode, Fn
+hotkey listening, always-on listening, and automatic speech playback of
+dispatch results remain deferred.
 
 ---
 
