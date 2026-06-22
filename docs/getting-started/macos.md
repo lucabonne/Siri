@@ -27,10 +27,11 @@ xcode-select --install
   `jarvis voice mic-smoke --recorder macos --duration 1`, configure a local
   transcription backend/model, test the bounded local pipeline with `jarvis
   voice mic-transcribe-smoke --duration 1 --recorder macos --adapter
-  faster-whisper`, then continue with `jarvis voice record-local`, `jarvis voice
-  transcribe-file`, `jarvis voice capture-preview`, `jarvis voice run-local`,
-  and `jarvis voice logs`. None of these commands enables always-on listening or
-  global hotkey capture by default.
+  faster-whisper`, preview it with `jarvis voice mic-preview --duration 1
+  --recorder macos --adapter faster-whisper`, then continue with `jarvis voice
+  record-local`, `jarvis voice transcribe-file`, `jarvis voice capture-preview`,
+  `jarvis voice run-local`, and `jarvis voice logs`. None of these commands
+  enables always-on listening or global hotkey capture by default.
 - Local microphone recording, when explicitly requested with `jarvis voice
   mic-smoke --recorder macos --duration 1`, `jarvis voice record-local
   --recorder macos`, `jarvis voice capture-preview --recorder macos`, or
@@ -46,6 +47,11 @@ xcode-select --install
   and transcript text, deletes the WAV by default even after an expected
   transcription failure, and never submits, dispatches, starts hotkeys, or
   speaks. Use `--keep-file` to retain the WAV.
+- `jarvis voice mic-preview --duration N` adds only the preview submission step:
+  it requires the same real recorder and local adapter/model, posts the local
+  transcript to `/v1/voice/ptt/submit-transcript`, prints preview/session state,
+  and deletes the WAV unless `--keep-file` is passed. It never calls `/dispatch`,
+  bypasses approval, starts hotkeys, or speaks.
 - The optional real microphone adapter can also be selected explicitly with `--recorder sounddevice` or `[voice_control].default_recorder = "sounddevice"` after installing `uv sync --extra voice-mic`. It still requires an explicit duration and writes to a local WAV file only unless you separately run an explicit transcription pipeline command.
 - If a microphone command fails on macOS, grant **Microphone** access to the terminal app running `jarvis` in System Settings > Privacy & Security > Microphone, then restart that terminal. This is separate from future **Accessibility** permission for global hotkey capture.
 - Local speech output, when explicitly requested with `jarvis voice speak "text"` or `jarvis voice run-local --speak-result`, uses the macOS `say` command if available. It does not enable automatic response playback.
