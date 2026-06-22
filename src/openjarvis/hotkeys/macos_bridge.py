@@ -46,11 +46,18 @@ class MacOSHotkeyBridgeCommand:
 
     def hammerspoon_snippet(self) -> str:
         command = self.shell_command()
+        dispatch_command = f"{command} --approve-dispatch"
+        speech_command = f"{dispatch_command} --speak-result"
         return f"""-- OpenJarvis voice hotkey bridge example.
 -- Preview-only and disabled by default. This example does not request macOS
 -- permissions; review them manually before enabling an external helper.
 local enable_openjarvis_voice_hotkey = false
 local openjarvis_voice_command = {command!r}
+
+-- Manual opt-in examples only. Keep these commented unless you explicitly
+-- want approved dispatch or approved dispatch followed by result speech.
+-- local openjarvis_voice_command = {dispatch_command!r}
+-- local openjarvis_voice_command = {speech_command!r}
 
 if enable_openjarvis_voice_hotkey then
   hs.hotkey.bind({{}}, "F18", function()

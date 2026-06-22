@@ -193,6 +193,44 @@ def _write_voice_logs_export(
         raise click.ClickException(f"Could not write voice log export: {exc}") from exc
 
 
+def _write_hammerspoon_bridge(path: Path, content: str) -> Path:
+    path = path.expanduser()
+    if "://" in str(path):
+        raise click.ClickException("Hammerspoon bridge path must be local")
+    if path.suffix.lower() != ".lua":
+        raise click.ClickException("Hammerspoon bridge path must end in .lua")
+
+    resolved_path = path.resolve(strict=False)
+    active_init = (Path.home() / ".hammerspoon" / "init.lua").resolve(strict=False)
+    if resolved_path == active_init:
+        raise click.ClickException(
+            "Refusing to modify the active ~/.hammerspoon/init.lua; "
+            "write an example file elsewhere and install it manually"
+        )
+    if path.exists() and path.is_dir():
+        raise click.ClickException(f"Hammerspoon bridge path is a directory: {path}")
+    if path.exists() or path.is_symlink():
+        raise click.ClickException(f"Hammerspoon bridge path already exists: {path}")
+    if not path.parent.exists():
+        raise click.ClickException(
+            f"Hammerspoon bridge parent directory does not exist: {path.parent}. "
+            "Create it first, then rerun the command."
+        )
+    if not path.parent.is_dir():
+        raise click.ClickException(
+            f"Hammerspoon bridge parent path is not a directory: {path.parent}"
+        )
+
+    try:
+        with path.open("x", encoding="utf-8") as bridge_file:
+            bridge_file.write(content)
+    except OSError as exc:
+        raise click.ClickException(
+            f"Could not write Hammerspoon bridge: {exc}"
+        ) from exc
+    return path
+
+
 def _parse_voice_logs_clear_before(value: str | None) -> datetime | None:
     if value is None:
         return None
@@ -829,6 +867,15 @@ def doctor(as_json: bool) -> None:
     default=None,
     help="Executable name/path to include in the printed command.",
 )
+@click.option(
+    "--write-hammerspoon",
+    type=click.Path(path_type=Path),
+    default=None,
+    help=(
+        "Write a disabled Hammerspoon Lua example to an explicit new path; "
+        "never installs or enables it."
+    ),
+)
 def hotkey_bridge(
     output_format: str | None,
     duration: float | None,
@@ -839,8 +886,9 @@ def hotkey_bridge(
     base_url: str | None,
     session_id: str,
     jarvis_bin: str | None,
+    write_hammerspoon: Path | None,
 ) -> None:
-    """Print a disabled macOS hotkey bridge command/example only."""
+    """Print or explicitly write a disabled macOS hotkey bridge example."""
     defaults = _hotkey_bridge_defaults()
     if duration is not None:
         bridge_duration = duration
@@ -862,10 +910,14 @@ def hotkey_bridge(
             f"{MICROPHONE_MIN_DURATION_SECONDS:g} and "
             f"{MICROPHONE_MAX_DURATION_SECONDS:g} seconds"
         )
-    bridge_format = output_format or getattr(
-        defaults,
-        "hotkey_bridge_format",
-        "command",
+    if write_hammerspoon is not None and output_format not in {None, "hammerspoon"}:
+        raise click.UsageError(
+            "--write-hammerspoon cannot be combined with a non-Hammerspoon --format"
+        )
+    bridge_format = (
+        "hammerspoon"
+        if write_hammerspoon is not None
+        else output_format or getattr(defaults, "hotkey_bridge_format", "command")
     )
     if bridge_format not in {"command", "hammerspoon", "json"}:
         raise click.ClickException(f"unsupported hotkey bridge format: {bridge_format}")
@@ -929,7 +981,12 @@ def hotkey_bridge(
         return
 
     if bridge_format == "hammerspoon":
-        click.echo(bridge.hammerspoon_snippet().rstrip())
+        snippet = bridge.hammerspoon_snippet()
+        if write_hammerspoon is not None:
+            written_path = _write_hammerspoon_bridge(write_hammerspoon, snippet)
+            click.echo(f"Wrote disabled Hammerspoon bridge example: {written_path}")
+            return
+        click.echo(snippet.rstrip())
         return
 
     click.echo("macOS hotkey bridge (disabled)")

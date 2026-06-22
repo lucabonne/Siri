@@ -492,6 +492,7 @@ jarvis voice run-local --duration 2 --adapter faster-whisper --approve-dispatch 
 jarvis voice doctor                                     # Safe local setup diagnostics
 jarvis voice hotkey-bridge --adapter faster-whisper      # Print preview-only mic-run command
 jarvis voice hotkey-bridge --format hammerspoon          # Print disabled helper example
+jarvis voice hotkey-bridge --write-hammerspoon ./openjarvis-voice.lua
 jarvis voice speak "preview complete"                    # Explicit local TTS only
 jarvis voice logs                                        # Show recent local voice events
 jarvis voice logs --event dispatch_result --json         # Filter local events as JSON
@@ -519,7 +520,7 @@ jarvis voice cancel
 | `voice capture-preview --duration N` | Record a local WAV, transcribe it locally, POST the transcript to `/v1/voice/ptt/submit-transcript`, and print the preview only |
 | `voice run-local --duration N` | Record, transcribe, submit preview, and print session state; dispatch and TTS require separate opt-in flags |
 | `voice doctor`        | Inspect voice, recorder, microphone configuration, and local dependencies without probing hardware, recording, dispatching, speaking, or starting hotkeys |
-| `voice hotkey-bridge` | Print a disabled macOS bridge example around the bounded, preview-only-by-default `mic-run` pipeline |
+| `voice hotkey-bridge` | Print a disabled macOS bridge example, or write one to an explicit new `.lua` path with `--write-hammerspoon PATH`, around the bounded preview-only `mic-run` pipeline |
 | `voice speak TEXT`     | Speak text through an explicit local speech-output adapter; defaults to macOS `say` when available |
 | `voice logs`           | Inspect, export, or explicitly clean up local structured voice command events |
 | `voice status`          | GET `/v1/voice/ptt/status`, including the same read-only voice stack fields Mission Control uses |
@@ -540,12 +541,15 @@ behavior:
 Speech is never automatic. For `mic-run` and `run-local`, it additionally
 requires `--speak-result` after approved dispatch.
 
-`voice hotkey-bridge` is print-only. Its default output and disabled
-Hammerspoon example use a bounded real-microphone `voice mic-run` command and
-omit both `--approve-dispatch` and `--speak-result`. OpenJarvis does not install
-the example, bind Fn/F18, start a listener, request Accessibility permission,
-or execute the printed command. Approved-dispatch and speech remain separate
-manual terminal opt-ins on `mic-run`; they are not generated into the bridge.
+`voice hotkey-bridge` is print-only unless `--write-hammerspoon PATH` is passed.
+That option writes a disabled example to a new `.lua` file whose parent already
+exists; it refuses existing files and the active `~/.hammerspoon/init.lua`.
+The active example command uses the bounded real-microphone `voice mic-run`
+preview path and omits both `--approve-dispatch` and `--speak-result`.
+Approved-dispatch and speech variants are present only as commented manual
+opt-in examples. OpenJarvis does not install Hammerspoon or the file, bind
+Fn/F18, start a listener, request Accessibility permission, or execute any
+generated command.
 
 Current safe workflow:
 

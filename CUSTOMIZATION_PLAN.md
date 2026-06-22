@@ -1,5 +1,26 @@
 # Customization Plan
 
+## Voice Control Hotkey Phase 2
+
+Hotkey Phase 2 adds an explicit file-generation boundary without activating or
+installing a macOS hotkey helper.
+
+- `jarvis voice hotkey-bridge --write-hammerspoon PATH` writes a disabled
+  Hammerspoon Lua example only when an output path is explicitly supplied.
+- The target must be a new `.lua` file in an existing parent directory. The
+  command refuses overwrites and the active `~/.hammerspoon/init.lua`.
+- The active generated command calls bounded `jarvis voice mic-run` in preview
+  mode. Approved dispatch and result speech variants are commented manual
+  opt-in examples only.
+- Generation does not install Hammerspoon or the file, start a listener, bind
+  Fn/F18, request Accessibility permission, record, dispatch, or speak.
+- Existing print and JSON formats, Voice Control Phase 1-30, Mic Phase 1-8,
+  Hotkey Phase 1, and read-only Mission Control behavior remain intact.
+
+Deferred work remains unchanged: always-on listening, enabled Fn/global hotkey
+capture, approval bypass, automatic dispatch, automatic speech, helper
+installation, permission prompts, and voice-only mode.
+
 ## Voice Control Hotkey Phase 1
 
 Hotkey Phase 1 refines the existing disabled macOS bridge around the hardened

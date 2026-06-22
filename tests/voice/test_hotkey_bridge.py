@@ -39,8 +39,16 @@ def test_macos_hotkey_bridge_hammerspoon_example_is_disabled() -> None:
     assert "hs.hotkey.bind" in snippet
     assert "jarvis voice mic-run" in snippet
     assert "--adapter faster-whisper" in snippet
-    assert "--approve-dispatch" not in snippet
-    assert "--speak-result" not in snippet
+    active_command = next(
+        line
+        for line in snippet.splitlines()
+        if line.startswith("local openjarvis_voice_command =")
+    )
+    assert "--approve-dispatch" not in active_command
+    assert "--speak-result" not in active_command
+    assert "-- local openjarvis_voice_command" in snippet
+    assert "--approve-dispatch" in snippet
+    assert "--speak-result" in snippet
 
 
 def test_disabled_macos_hotkey_bridge_does_not_start_capture() -> None:

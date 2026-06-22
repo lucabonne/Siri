@@ -716,7 +716,112 @@ def test_voice_hotkey_bridge_hammerspoon_snippet_is_disabled(monkeypatch) -> Non
     assert "hs.hotkey.bind" in result.output
     assert "jarvis voice mic-run" in result.output
     assert "--adapter faster-whisper" in result.output
-    assert "--approve-dispatch" not in result.output
+    active_command = next(
+        line
+        for line in result.output.splitlines()
+        if line.startswith("local openjarvis_voice_command =")
+    )
+    assert "--approve-dispatch" not in active_command
+    assert "--speak-result" not in active_command
+    assert "-- local openjarvis_voice_command" in result.output
+
+
+def test_voice_hotkey_bridge_writes_disabled_hammerspoon_example(
+    monkeypatch, tmp_path
+) -> None:
+    monkeypatch.setattr(voice_cmd, "load_config", lambda: _safe_config())
+    output_path = tmp_path / "openjarvis-voice.lua"
+
+    result = CliRunner().invoke(
+        voice_cmd.voice,
+        [
+            "hotkey-bridge",
+            "--adapter",
+            "faster-whisper",
+            "--write-hammerspoon",
+            str(output_path),
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert output_path.exists()
+    content = output_path.read_text(encoding="utf-8")
+    assert "local enable_openjarvis_voice_hotkey = false" in content
+    assert "local openjarvis_voice_command =" in content
+    active_command = next(
+        line
+        for line in content.splitlines()
+        if line.startswith("local openjarvis_voice_command =")
+    )
+    assert "jarvis voice mic-run" in active_command
+    assert "--approve-dispatch" not in active_command
+    assert "--speak-result" not in active_command
+    assert "-- local openjarvis_voice_command" in content
+    assert "Wrote disabled Hammerspoon bridge example" in result.output
+
+
+def test_voice_hotkey_bridge_write_requires_existing_parent(
+    monkeypatch, tmp_path
+) -> None:
+    monkeypatch.setattr(voice_cmd, "load_config", lambda: _safe_config())
+    output_path = tmp_path / "missing" / "openjarvis-voice.lua"
+
+    result = CliRunner().invoke(
+        voice_cmd.voice,
+        ["hotkey-bridge", "--write-hammerspoon", str(output_path)],
+    )
+
+    assert result.exit_code != 0
+    assert "parent directory does not exist" in result.output
+    assert not output_path.parent.exists()
+
+
+def test_voice_hotkey_bridge_write_refuses_existing_file(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(voice_cmd, "load_config", lambda: _safe_config())
+    output_path = tmp_path / "openjarvis-voice.lua"
+    output_path.write_text("user content\n", encoding="utf-8")
+
+    result = CliRunner().invoke(
+        voice_cmd.voice,
+        ["hotkey-bridge", "--write-hammerspoon", str(output_path)],
+    )
+
+    assert result.exit_code != 0
+    assert "already exists" in result.output
+    assert output_path.read_text(encoding="utf-8") == "user content\n"
+
+
+def test_voice_hotkey_bridge_write_does_not_install_or_modify_active_init(
+    monkeypatch, tmp_path
+) -> None:
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setattr(voice_cmd, "load_config", lambda: _safe_config())
+    output_path = tmp_path / "openjarvis-voice.lua"
+
+    result = CliRunner().invoke(
+        voice_cmd.voice,
+        ["hotkey-bridge", "--write-hammerspoon", str(output_path)],
+    )
+
+    assert result.exit_code == 0
+    assert output_path.exists()
+    assert not (home / ".hammerspoon").exists()
+
+    active_result = CliRunner().invoke(
+        voice_cmd.voice,
+        [
+            "hotkey-bridge",
+            "--write-hammerspoon",
+            str(home / ".hammerspoon" / "init.lua"),
+        ],
+    )
+    assert active_result.exit_code != 0
+    assert "Refusing to modify the active ~/.hammerspoon/init.lua" in (
+        active_result.output
+    )
+    assert not (home / ".hammerspoon").exists()
 
 
 def test_voice_hotkey_bridge_uses_configured_preview_defaults(monkeypatch) -> None:
