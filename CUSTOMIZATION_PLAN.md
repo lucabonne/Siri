@@ -1,5 +1,34 @@
 # Customization Plan
 
+## Voice Control Mic Phase 8
+
+Mic Phase 8 is the final microphone-stack hardening pass before any Fn/global
+hotkey activation work.
+
+- The existing command family remains intact: `record-local` records and
+  intentionally retains its output; `mic-smoke`, `mic-transcribe-smoke`,
+  `mic-preview`, and `mic-run` use only an explicitly selected or configured
+  `macos`/`sounddevice` backend and reject `dev-silent`.
+- Every real-microphone capture is bounded to 0.1-30 seconds. This now also
+  applies when `record-local` resolves to a real microphone backend, including
+  a configured default duration.
+- Temporary WAVs from the four `mic-*` pipeline commands are deleted by
+  default, including expected failures, and are retained only with the explicit
+  `--keep-file` flag. `record-local` is the intentional output-producing
+  command and therefore keeps the WAV it prints.
+- `mic-preview` never dispatches or speaks. `mic-run` dispatches only with
+  `--approve-dispatch` and sends `approved=true`; speech additionally requires
+  `--speak-result` and an approved dispatch.
+- `jarvis voice doctor`, `/v1/voice/ptt/status`, and Mission Control use the
+  same recording policy and real-microphone readiness fields. These surfaces
+  remain configuration-only and do not open hardware, request permission, run
+  commands, dispatch, or speak.
+- Event logs continue to record safe command results and retention/dispatch/
+  speech decisions while status removes recording paths and full transcript
+  text. No raw audio is embedded in event logs.
+- Fn/global hotkey capture, always-on listening, voice-only mode, approval
+  bypass, automatic dispatch, and automatic speech remain deferred.
+
 ## Voice Control Mic Phase 7
 
 Mic Phase 7 consolidates the explicit microphone command family and makes

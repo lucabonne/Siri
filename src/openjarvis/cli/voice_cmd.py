@@ -26,6 +26,8 @@ from openjarvis.voice.event_log import (
 )
 from openjarvis.voice.models import TranscriptionUnavailableError, VoiceRecordingError
 from openjarvis.voice.recorder import (
+    MICROPHONE_MAX_DURATION_SECONDS,
+    MICROPHONE_MIN_DURATION_SECONDS,
     MICROPHONE_RECORDER_KINDS,
     RECORDER_KINDS,
     LocalMacOSRecorder,
@@ -33,6 +35,7 @@ from openjarvis.voice.recorder import (
     SilentWavRecorder,
     SoundDeviceRecorder,
     inspect_wav_file,
+    microphone_recording_policy,
     recorder_diagnostics,
 )
 from openjarvis.voice.speech_output import (
@@ -321,6 +324,21 @@ def _configured_microphone_recorder_kind(recorder_kind: str | None) -> str:
             "[voice_control].default_recorder."
         )
     return configured
+
+
+def _validate_real_microphone_duration(
+    recorder_kind: str,
+    duration: float,
+) -> None:
+    if (
+        recorder_kind in MICROPHONE_RECORDER_KINDS
+        and duration > MICROPHONE_MAX_DURATION_SECONDS
+    ):
+        raise click.UsageError(
+            "Real microphone recording duration must be between "
+            f"{MICROPHONE_MIN_DURATION_SECONDS:g} and "
+            f"{MICROPHONE_MAX_DURATION_SECONDS:g} seconds."
+        )
 
 
 def _voice_control_config(config: Any) -> Any:
@@ -619,6 +637,7 @@ def _voice_doctor_data() -> dict[str, Any]:
             else None,
             "duration_flag_required": configured_duration <= 0,
         },
+        "recording_policy": microphone_recording_policy(),
         "recorder": recorder_diagnostics(configured_recorder),
         "speech_output": {
             "configured": speech_adapter,
@@ -675,6 +694,15 @@ def _format_voice_doctor(data: dict[str, Any]) -> None:
     click.echo(
         "  record_duration: "
         f"{default_duration if default_duration is not None else 'requires --duration'}"
+    )
+    policy = data["recording_policy"]
+    click.echo(
+        "  microphone_duration_bounds: "
+        f"{policy['minimum_duration_seconds']:g}-"
+        f"{policy['maximum_duration_seconds']:g} seconds"
+    )
+    click.echo(
+        "  temporary_wav_cleanup: deleted by default; retention requires --keep-file"
     )
     recorder = data["recorder"]
     click.echo(
@@ -1120,7 +1148,8 @@ def speak(
     default=None,
     help=(
         "Recording duration in seconds; required unless "
-        "[voice_control].default_record_duration is set."
+        "[voice_control].default_record_duration is set. Real microphone "
+        "recording is limited to 0.1 to 30 seconds."
     ),
 )
 @click.option(
@@ -1154,6 +1183,7 @@ def record_local(
     """Record only to a local WAV; do not transcribe, preview, or dispatch."""
     resolved_duration = _record_duration(duration)
     resolved_recorder = _configured_recorder_kind(recorder_kind)
+    _validate_real_microphone_duration(resolved_recorder, resolved_duration)
     handle = _record_local_audio(
         duration=resolved_duration,
         output_dir=output_dir,
@@ -1177,7 +1207,10 @@ def record_local(
 @voice.command("mic-smoke")
 @click.option(
     "--duration",
-    type=click.FloatRange(min=0.1, max=30.0),
+    type=click.FloatRange(
+        min=MICROPHONE_MIN_DURATION_SECONDS,
+        max=MICROPHONE_MAX_DURATION_SECONDS,
+    ),
     required=True,
     help="Explicit recording duration in seconds (0.1 to 30).",
 )
@@ -1277,7 +1310,10 @@ def mic_smoke(
 @voice.command("mic-transcribe-smoke")
 @click.option(
     "--duration",
-    type=click.FloatRange(min=0.1, max=30.0),
+    type=click.FloatRange(
+        min=MICROPHONE_MIN_DURATION_SECONDS,
+        max=MICROPHONE_MAX_DURATION_SECONDS,
+    ),
     required=True,
     help="Explicit recording duration in seconds (0.1 to 30).",
 )
@@ -1409,7 +1445,10 @@ def mic_transcribe_smoke(
 @voice.command("mic-preview")
 @click.option(
     "--duration",
-    type=click.FloatRange(min=0.1, max=30.0),
+    type=click.FloatRange(
+        min=MICROPHONE_MIN_DURATION_SECONDS,
+        max=MICROPHONE_MAX_DURATION_SECONDS,
+    ),
     required=True,
     help="Explicit recording duration in seconds (0.1 to 30).",
 )
@@ -1598,7 +1637,10 @@ def mic_preview(
 @voice.command("mic-run")
 @click.option(
     "--duration",
-    type=click.FloatRange(min=0.1, max=30.0),
+    type=click.FloatRange(
+        min=MICROPHONE_MIN_DURATION_SECONDS,
+        max=MICROPHONE_MAX_DURATION_SECONDS,
+    ),
     required=True,
     help="Explicit recording duration in seconds (0.1 to 30).",
 )

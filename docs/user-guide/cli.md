@@ -509,8 +509,8 @@ jarvis voice cancel
 |-------------------------|--------------------------------------------------|
 | `voice submit TEXT`     | POST to `/v1/voice/ptt/submit-transcript` and show the intent preview/session state |
 | `voice submit --approve-dispatch` | Explicitly approve and then POST to `/v1/voice/ptt/dispatch` |
-| `voice record-local --duration N` | Write a local WAV file and print its path; defaults to the dev silent recorder |
-| `voice record-local --recorder sounddevice --duration N` | Use the optional real local microphone adapter and write a local WAV file only |
+| `voice record-local --duration N` | Write and intentionally retain a local WAV file; defaults to the dev silent recorder |
+| `voice record-local --recorder sounddevice --duration N` | Use the optional real local microphone adapter for a bounded 0.1-30 second recording and intentionally retain the printed WAV |
 | `voice mic-smoke --duration N` | Record with an explicitly selected/configured real microphone backend, inspect WAV metadata, and delete the file unless `--keep-file` is passed |
 | `voice mic-transcribe-smoke --duration N` | Record with a selected/configured real microphone backend, transcribe locally, print WAV/transcript metadata and text, then delete the WAV unless `--keep-file` is passed; never submit, dispatch, or speak |
 | `voice mic-preview --duration N` | Record with a selected/configured real microphone backend, transcribe locally, submit to `/v1/voice/ptt/submit-transcript`, print preview/session state, and delete the WAV unless `--keep-file` is passed; never dispatch or speak |
@@ -589,12 +589,16 @@ Deferred real activation behavior:
   commands, mutate settings, request permissions, export/clean logs, approve,
   dispatch, or speak.
 
-This command does not listen in the background, capture Fn hotkeys, call a cloud
+These commands do not listen in the background, capture Fn hotkeys, call a cloud
 speech API, automatically dispatch a transcript, or automatically play TTS for
 results. Speech output runs only through explicit commands/flags such as
 `voice speak` or `voice run-local --speak-result`. `voice record-local` and
-`voice capture-preview` both have an explicit `--duration` stop condition;
-`voice mic-preview` requires a bounded 0.1-30 second duration.
+`voice capture-preview` both have an explicit or configured duration stop
+condition. When `voice record-local` resolves to a real microphone backend, its
+duration is limited to 0.1-30 seconds and its printed WAV is intentionally
+retained. All four `mic-*` commands require an explicit bounded 0.1-30 second
+duration and delete their temporary WAV by default; only `--keep-file` retains
+it.
 `voice capture-preview` manually chains local recording, local transcription,
 and the existing preview endpoint, then stops before dispatch. Text input
 remains available; dispatch is skipped unless `--approve-dispatch` is present on
@@ -631,6 +635,12 @@ preview/session state, and deletes the WAV. It calls the existing
 `approved=true`. `--speak-result` is rejected without that dispatch flag and is
 the only way for this command to speak. `--keep-file` is the only way to retain
 the WAV. The command does not start a hotkey listener or background capture.
+
+`voice doctor --json` and `/v1/voice/ptt/status` expose this same recording
+policy, including real-recorder requirements, duration bounds, default
+temporary-WAV cleanup, explicit `--keep-file` retention, dispatch approval, and
+dispatch-gated speech. The checks are configuration-only and never open the
+microphone.
 
 `voice run-local --duration N` is the explicit manual end-to-end local pipeline:
 it records a local WAV, transcribes with the selected/configured local adapter,
@@ -730,8 +740,9 @@ continues to mirror the safe `voice doctor` data plus local voice logging and
 full transcript logging state; Mission Control does not run `jarvis voice
 doctor`. A separate read-only safety/audit summary shows approval required,
 auto-dispatch disabled, auto-speech disabled, always-on listening disabled, the
-hotkey bridge disabled/print-only state, raw audio non-storage, transcript
-redaction defaults, full transcript logging state, local-only event logging
+hotkey bridge disabled/print-only state, default temporary-WAV cleanup and
+explicit retention, transcript redaction defaults, full transcript logging
+state, local-only event logging
 state, and recent approval/dispatch/speech event counts when safe event data is
 available. The setup checklist remains read-only for API base URL configuration,
 transcription adapter selection, model path configuration and existence,

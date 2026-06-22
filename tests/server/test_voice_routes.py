@@ -120,6 +120,17 @@ def test_voice_status_includes_safe_stack_config(client: TestClient) -> None:
     assert stack["transcription_adapter"]["effective"] == "disabled"
     assert stack["model_path"]["source"] == "[speech].model"
     assert stack["record_duration"]["duration_flag_required"] is True
+    assert stack["recording_policy"] == {
+        "requires_explicit_command": True,
+        "requires_real_recorder": True,
+        "minimum_duration_seconds": 0.1,
+        "maximum_duration_seconds": 30.0,
+        "temporary_wav_deleted_by_default": True,
+        "keep_file_requires_explicit_flag": True,
+        "record_local_retains_output": True,
+        "dispatch_requires_approve_flag": True,
+        "speech_requires_dispatch_and_speak_flag": True,
+    }
     assert stack["recorder"]["configured_default"] == "dev-silent"
     assert stack["recorder"]["backend_available"] is True
     assert stack["recorder"]["dev_silent_recorder_available"] is True

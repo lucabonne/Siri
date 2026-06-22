@@ -637,6 +637,8 @@ def test_voice_doctor_reports_missing_dependencies_without_side_effects(
     assert "model_path: -" in result.output
     assert "required=True, exists=False" in result.output
     assert "record_duration: requires --duration" in result.output
+    assert "microphone_duration_bounds: 0.1-30 seconds" in result.output
+    assert "temporary_wav_cleanup: deleted by default" in result.output
     assert "sounddevice_importable:" in result.output
     assert "microphone_recording_configured: False" in result.output
     assert "permission not checked" in result.output
@@ -1205,6 +1207,52 @@ def test_voice_record_local_rejects_unsupported_configured_recorder(
 
     assert result.exit_code != 0
     assert "[voice_control].default_recorder" in result.output
+
+
+def test_voice_record_local_bounds_real_microphone_duration_before_recording(
+    monkeypatch,
+) -> None:
+    recorder_calls: list[str] = []
+    monkeypatch.setattr(voice_cmd, "load_config", lambda: _safe_config())
+    monkeypatch.setattr(
+        voice_cmd,
+        "_build_recorder",
+        lambda *args, **kwargs: recorder_calls.append("record"),
+    )
+
+    result = CliRunner().invoke(
+        voice_cmd.voice,
+        ["record-local", "--recorder", "sounddevice", "--duration", "31"],
+    )
+
+    assert result.exit_code != 0
+    assert "between 0.1 and 30 seconds" in result.output
+    assert recorder_calls == []
+
+
+def test_voice_record_local_bounds_configured_real_microphone_duration(
+    monkeypatch,
+) -> None:
+    recorder_calls: list[str] = []
+    monkeypatch.setattr(
+        voice_cmd,
+        "load_config",
+        lambda: _safe_config(
+            default_recorder="sounddevice",
+            default_record_duration=31.0,
+        ),
+    )
+    monkeypatch.setattr(
+        voice_cmd,
+        "_build_recorder",
+        lambda *args, **kwargs: recorder_calls.append("record"),
+    )
+
+    result = CliRunner().invoke(voice_cmd.voice, ["record-local"])
+
+    assert result.exit_code != 0
+    assert "between 0.1 and 30 seconds" in result.output
+    assert recorder_calls == []
 
 
 def test_voice_mic_smoke_requires_explicit_duration(monkeypatch) -> None:

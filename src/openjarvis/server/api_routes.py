@@ -1206,7 +1206,10 @@ def _voice_stack_status(request: Request) -> dict[str, Any]:
     import shutil
     import sys
 
-    from openjarvis.voice.recorder import recorder_diagnostics
+    from openjarvis.voice.recorder import (
+        microphone_recording_policy,
+        recorder_diagnostics,
+    )
     from openjarvis.voice.speech_output import LOCAL_SPEECH_OUTPUT_ADAPTERS
     from openjarvis.voice.transcription import LOCAL_TRANSCRIPTION_ADAPTERS
 
@@ -1252,6 +1255,7 @@ def _voice_stack_status(request: Request) -> dict[str, Any]:
             else None,
             "duration_flag_required": configured_duration <= 0,
         },
+        "recording_policy": microphone_recording_policy(),
         "recorder": recorder_diagnostics(configured_recorder),
         "speech_output": {
             "configured": speech_adapter,

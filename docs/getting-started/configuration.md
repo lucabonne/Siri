@@ -572,7 +572,7 @@ voice_logs_preview_chars = 80
 |-------|------|---------|-------------|
 | `transcription_adapter` | string | `""` | Local adapter for explicit transcription commands. Supported values: `"faster-whisper"` and `"whisper.cpp"`. Empty keeps local voice transcription disabled until a CLI flag selects an adapter. |
 | `model_path` | string | `""` | Optional model name or existing local model path override for the selected local adapter. |
-| `default_record_duration` | float | `0.0` | Default fixed recording duration for explicit recorder commands. `0.0` keeps `--duration` required. |
+| `default_record_duration` | float | `0.0` | Default fixed recording duration for explicit recorder commands. `0.0` keeps `--duration` required. Real microphone recording is limited to 0.1-30 seconds. |
 | `default_recorder` | string | `"dev-silent"` | Recorder used by explicit recorder commands when `--recorder` is omitted. Supported values: `"dev-silent"`, `"macos"`, and `"sounddevice"`. |
 | `default_api_base_url` | string | `""` | Optional OpenJarvis API base URL for `jarvis voice`; CLI flags and `OPENJARVIS_BASE_URL` override it. |
 | `speech_output_adapter` | string | `""` | Optional local speech adapter for explicit `voice speak` or `run-local --speak-result`. |
@@ -594,9 +594,11 @@ adapter/model, then test manually with `record-local`, `transcribe-file`,
 
 The optional real microphone recorder is selected only by explicit CLI flag
 (`--recorder sounddevice`) or this config field. Install it with
-`uv sync --extra voice-mic` or `pip install sounddevice`. It still requires an
-explicit duration and writes a local audio file only; transcription, dispatch,
-and speech remain separate explicit commands/flags.
+`uv sync --extra voice-mic` or `pip install sounddevice`. It requires an
+explicit or configured duration bounded to 0.1-30 seconds. `record-local`
+intentionally retains its output; the four `mic-*` pipeline commands delete
+their temporary WAV by default unless `--keep-file` is explicit. Transcription,
+dispatch, and speech remain separate explicit commands/flags.
 
 `jarvis voice doctor` and Mission Control inspect this recorder configuration
 and its static dependencies without opening a microphone. They distinguish the

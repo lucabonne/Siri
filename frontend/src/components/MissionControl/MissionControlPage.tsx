@@ -881,8 +881,9 @@ function buildVoiceSafetyAuditSummary(
       && stack.hotkey_bridge.listener_started === false
       && stack.hotkey_bridge.global_key_capture === false
     : undefined;
-  const rawAudioNotStored = stack
-    ? stack.safety.raw_audio_stored === false && stack.recent_events.raw_audio_stored === false
+  const temporaryWavCleanupSafe = stack
+    ? stack.recording_policy.temporary_wav_deleted_by_default
+      && stack.recording_policy.keep_file_requires_explicit_flag
     : undefined;
   const transcriptRedactionDefault = stack
     ? stack.recent_events.transcript_redaction_default ?? !stack.recent_events.include_full_transcripts
@@ -925,10 +926,10 @@ function buildVoiceSafetyAuditSummary(
       tone: hotkeyBridgeSafe ? 'good' : 'watch',
     },
     {
-      label: 'Raw audio storage',
-      value: auditEnabledLabel(rawAudioNotStored, 'Not stored', 'Stored'),
-      detail: 'Status and event summaries do not expose raw audio',
-      tone: rawAudioNotStored ? 'good' : 'watch',
+      label: 'Temporary WAV retention',
+      value: auditEnabledLabel(temporaryWavCleanupSafe, 'Explicit only', 'Check required'),
+      detail: 'Mic pipeline files are deleted by default; --keep-file retains them',
+      tone: temporaryWavCleanupSafe ? 'good' : 'watch',
     },
     {
       label: 'Transcript redaction',

@@ -917,6 +917,17 @@ export interface VoiceStackStatus {
     effective_default_seconds: number | null;
     duration_flag_required: boolean;
   };
+  recording_policy: {
+    requires_explicit_command: boolean;
+    requires_real_recorder: boolean;
+    minimum_duration_seconds: number;
+    maximum_duration_seconds: number;
+    temporary_wav_deleted_by_default: boolean;
+    keep_file_requires_explicit_flag: boolean;
+    record_local_retains_output: boolean;
+    dispatch_requires_approve_flag: boolean;
+    speech_requires_dispatch_and_speak_flag: boolean;
+  };
   recorder: {
     configured_default: string;
     supported: boolean;

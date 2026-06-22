@@ -19,6 +19,23 @@ from openjarvis.voice.models import RecordingHandle, VoiceRecordingError
 
 RECORDER_KINDS = ("dev-silent", "macos", "sounddevice")
 MICROPHONE_RECORDER_KINDS = ("macos", "sounddevice")
+MICROPHONE_MIN_DURATION_SECONDS = 0.1
+MICROPHONE_MAX_DURATION_SECONDS = 30.0
+
+
+def microphone_recording_policy() -> dict[str, object]:
+    """Return the shared safety contract for explicit real-mic CLI commands."""
+    return {
+        "requires_explicit_command": True,
+        "requires_real_recorder": True,
+        "minimum_duration_seconds": MICROPHONE_MIN_DURATION_SECONDS,
+        "maximum_duration_seconds": MICROPHONE_MAX_DURATION_SECONDS,
+        "temporary_wav_deleted_by_default": True,
+        "keep_file_requires_explicit_flag": True,
+        "record_local_retains_output": True,
+        "dispatch_requires_approve_flag": True,
+        "speech_requires_dispatch_and_speak_flag": True,
+    }
 
 
 class Recorder(Protocol):
