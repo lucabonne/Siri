@@ -760,6 +760,105 @@ def test_voice_hotkey_bridge_writes_disabled_hammerspoon_example(
     assert "Wrote disabled Hammerspoon bridge example" in result.output
 
 
+def _write_hammerspoon_validation_fixture(
+    path: Path,
+    *,
+    extra_active_flags: str = "",
+    include_duration: bool = True,
+) -> None:
+    duration = " --duration 2" if include_duration else ""
+    path.write_text(
+        "-- Generated OpenJarvis bridge example.\n"
+        "local enable_openjarvis_voice_hotkey = false\n"
+        "local openjarvis_voice_command = "
+        f"'jarvis voice mic-run{duration} --recorder macos --input-device :0"
+        f"{extra_active_flags}'\n"
+        "-- local openjarvis_voice_command = "
+        "'jarvis voice mic-run --duration 2 --recorder macos "
+        "--approve-dispatch --speak-result'\n"
+        "if enable_openjarvis_voice_hotkey then\n"
+        "  hs.hotkey.bind({}, 'F18', function() end)\n"
+        "end\n",
+        encoding="utf-8",
+    )
+
+
+def test_voice_hotkey_bridge_validates_safe_generated_file(tmp_path) -> None:
+    bridge_path = tmp_path / "openjarvis-voice.lua"
+    _write_hammerspoon_validation_fixture(bridge_path)
+
+    result = CliRunner().invoke(
+        voice_cmd.voice,
+        ["hotkey-bridge", "--validate-hammerspoon", str(bridge_path)],
+    )
+
+    assert result.exit_code == 0
+    assert "Hammerspoon bridge validation passed" in result.output
+
+
+def test_voice_hotkey_bridge_validation_rejects_active_dispatch(tmp_path) -> None:
+    bridge_path = tmp_path / "unsafe-dispatch.lua"
+    _write_hammerspoon_validation_fixture(
+        bridge_path, extra_active_flags=" --approve-dispatch"
+    )
+
+    result = CliRunner().invoke(
+        voice_cmd.voice,
+        ["hotkey-bridge", "--validate-hammerspoon", str(bridge_path)],
+    )
+
+    assert result.exit_code != 0
+    assert "active content contains unsafe --approve-dispatch" in result.output
+
+
+def test_voice_hotkey_bridge_validation_rejects_active_speech(tmp_path) -> None:
+    bridge_path = tmp_path / "unsafe-speech.lua"
+    _write_hammerspoon_validation_fixture(
+        bridge_path, extra_active_flags=" --speak-result"
+    )
+
+    result = CliRunner().invoke(
+        voice_cmd.voice,
+        ["hotkey-bridge", "--validate-hammerspoon", str(bridge_path)],
+    )
+
+    assert result.exit_code != 0
+    assert "active content contains unsafe --speak-result" in result.output
+
+
+def test_voice_hotkey_bridge_validation_rejects_missing_duration(tmp_path) -> None:
+    bridge_path = tmp_path / "missing-duration.lua"
+    _write_hammerspoon_validation_fixture(bridge_path, include_duration=False)
+
+    result = CliRunner().invoke(
+        voice_cmd.voice,
+        ["hotkey-bridge", "--validate-hammerspoon", str(bridge_path)],
+    )
+
+    assert result.exit_code != 0
+    assert "requires exactly one duration" in result.output
+
+
+def test_voice_hotkey_bridge_validation_refuses_active_init(
+    monkeypatch, tmp_path
+) -> None:
+    home = tmp_path / "home"
+    active_init = home / ".hammerspoon" / "init.lua"
+    active_init.parent.mkdir(parents=True)
+    _write_hammerspoon_validation_fixture(active_init)
+    original_content = active_init.read_text(encoding="utf-8")
+    monkeypatch.setenv("HOME", str(home))
+
+    result = CliRunner().invoke(
+        voice_cmd.voice,
+        ["hotkey-bridge", "--validate-hammerspoon", str(active_init)],
+    )
+
+    assert result.exit_code != 0
+    assert "Refusing to validate the active ~/.hammerspoon/init.lua" in result.output
+    assert active_init.read_text(encoding="utf-8") == original_content
+
+
 def test_voice_hotkey_bridge_write_requires_existing_parent(
     monkeypatch, tmp_path
 ) -> None:

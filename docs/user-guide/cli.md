@@ -493,6 +493,7 @@ jarvis voice doctor                                     # Safe local setup diagn
 jarvis voice hotkey-bridge --adapter faster-whisper      # Print preview-only mic-run command
 jarvis voice hotkey-bridge --format hammerspoon          # Print disabled helper example
 jarvis voice hotkey-bridge --write-hammerspoon ./openjarvis-voice.lua
+jarvis voice hotkey-bridge --validate-hammerspoon ./openjarvis-voice.lua
 jarvis voice speak "preview complete"                    # Explicit local TTS only
 jarvis voice logs                                        # Show recent local voice events
 jarvis voice logs --event dispatch_result --json         # Filter local events as JSON
@@ -520,7 +521,7 @@ jarvis voice cancel
 | `voice capture-preview --duration N` | Record a local WAV, transcribe it locally, POST the transcript to `/v1/voice/ptt/submit-transcript`, and print the preview only |
 | `voice run-local --duration N` | Record, transcribe, submit preview, and print session state; dispatch and TTS require separate opt-in flags |
 | `voice doctor`        | Inspect voice, recorder, microphone configuration, and local dependencies without probing hardware, recording, dispatching, speaking, or starting hotkeys |
-| `voice hotkey-bridge` | Print a disabled macOS bridge example, or write one to an explicit new `.lua` path with `--write-hammerspoon PATH`, around the bounded preview-only `mic-run` pipeline |
+| `voice hotkey-bridge` | Print or write a disabled macOS bridge example, or statically validate one with `--validate-hammerspoon PATH`, around the bounded preview-only `mic-run` pipeline |
 | `voice speak TEXT`     | Speak text through an explicit local speech-output adapter; defaults to macOS `say` when available |
 | `voice logs`           | Inspect, export, or explicitly clean up local structured voice command events |
 | `voice status`          | GET `/v1/voice/ptt/status`, including the same read-only voice stack fields Mission Control uses |
@@ -550,6 +551,14 @@ Approved-dispatch and speech variants are present only as commented manual
 opt-in examples. OpenJarvis does not install Hammerspoon or the file, bind
 Fn/F18, start a listener, request Accessibility permission, or execute any
 generated command.
+
+`--validate-hammerspoon PATH` reads a generated/example `.lua` file as text
+only. It refuses the active `~/.hammerspoon/init.lua` and requires a disabled
+bridge whose active command is preview-only `jarvis voice mic-run`, has a
+0.1-30 second duration, and selects `macos` or `sounddevice`. It rejects active
+`--approve-dispatch`, `--speak-result`, Hammerspoon install-path mutation, and
+LaunchAgent markers. Validation does not execute Lua or commands from the file,
+install anything, start listeners, request permissions, dispatch, or speak.
 
 Current safe workflow:
 

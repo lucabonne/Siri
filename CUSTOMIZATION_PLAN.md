@@ -1,5 +1,25 @@
 # Customization Plan
 
+## Voice Control Hotkey Phase 3
+
+Hotkey Phase 3 adds static validation for generated Hammerspoon bridge files
+without activating or installing them.
+
+- `jarvis voice hotkey-bridge --validate-hammerspoon PATH` reads a `.lua` file
+  as text only and refuses the active `~/.hammerspoon/init.lua`.
+- Validation requires `enable_openjarvis_voice_hotkey = false` and an active
+  preview-only `jarvis voice mic-run` command with a 0.1-30 second duration and
+  a real `macos` or `sounddevice` recorder.
+- Active `--approve-dispatch`, `--speak-result`, Hammerspoon init-path mutation,
+  and LaunchAgent markers are rejected. Commented manual opt-in examples remain
+  valid.
+- Validation does not evaluate Lua, run commands found in the file, install or
+  modify files, start listeners, request Accessibility permission, record,
+  dispatch, approve, or speak.
+- Existing Voice Control Phase 1-30, Mic Phase 1-8, Hotkey Phase 1-2, and
+  read-only Mission Control behavior remain intact. Voice-only mode remains
+  deferred.
+
 ## Voice Control Hotkey Phase 2
 
 Hotkey Phase 2 adds an explicit file-generation boundary without activating or

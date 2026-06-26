@@ -2,8 +2,144 @@
 
 from __future__ import annotations
 
+import ast
+import re
 import shlex
 from dataclasses import dataclass
+
+HAMMERSPOON_MIN_DURATION_SECONDS = 0.1
+HAMMERSPOON_MAX_DURATION_SECONDS = 30.0
+HAMMERSPOON_RECORDER_KINDS = ("macos", "sounddevice")
+
+
+@dataclass(frozen=True)
+class HammerspoonBridgeValidation:
+    """Static validation result for a generated Hammerspoon bridge file."""
+
+    errors: tuple[str, ...]
+
+    @property
+    def valid(self) -> bool:
+        return not self.errors
+
+
+def _strip_lua_comments(content: str) -> str:
+    """Remove Lua comments while preserving quoted string contents."""
+    output: list[str] = []
+    index = 0
+    quote: str | None = None
+    while index < len(content):
+        char = content[index]
+        if quote is not None:
+            output.append(char)
+            if char == "\\" and index + 1 < len(content):
+                index += 1
+                output.append(content[index])
+            elif char == quote:
+                quote = None
+            index += 1
+            continue
+        if char in {"'", '"'}:
+            quote = char
+            output.append(char)
+            index += 1
+            continue
+        if content.startswith("--[[", index):
+            end = content.find("]]", index + 4)
+            comment = content[index:] if end < 0 else content[index : end + 2]
+            output.extend("\n" for char in comment if char == "\n")
+            index = len(content) if end < 0 else end + 2
+            continue
+        if content.startswith("--", index):
+            end = content.find("\n", index + 2)
+            if end < 0:
+                break
+            output.append("\n")
+            index = end + 1
+            continue
+        output.append(char)
+        index += 1
+    return "".join(output)
+
+
+def _command_option(argv: list[str], option: str) -> str | None:
+    positions = [index for index, value in enumerate(argv) if value == option]
+    if len(positions) != 1:
+        return None
+    position = positions[0]
+    if position + 1 >= len(argv):
+        return None
+    return argv[position + 1]
+
+
+def validate_hammerspoon_bridge(content: str) -> HammerspoonBridgeValidation:
+    """Validate bridge Lua as text without evaluating Lua or running commands."""
+    active = _strip_lua_comments(content)
+    errors: list[str] = []
+
+    enable_values = re.findall(
+        r"\blocal\s+enable_openjarvis_voice_hotkey\s*=\s*(true|false)\b", active
+    )
+    if enable_values != ["false"]:
+        errors.append("hotkey capture is not explicitly disabled by default")
+
+    for unsafe_flag in ("--approve-dispatch", "--speak-result"):
+        if unsafe_flag in active:
+            errors.append(f"active content contains unsafe {unsafe_flag}")
+
+    active_lower = active.lower()
+    if ".hammerspoon/init.lua" in active_lower:
+        errors.append("active content references the Hammerspoon install path")
+    if any(
+        marker in active_lower
+        for marker in ("launchagents", "launchagent", "launchctl", "hs.plist")
+    ):
+        errors.append("active content references LaunchAgent creation")
+
+    command_matches = list(
+        re.finditer(
+            r"\blocal\s+openjarvis_voice_command\s*=\s*"
+            r"(?P<literal>'(?:\\.|[^'\\])*'|\"(?:\\.|[^\"\\])*\")",
+            active,
+        )
+    )
+    argv: list[str] | None = None
+    if len(command_matches) != 1:
+        errors.append("exactly one active preview command is required")
+    else:
+        try:
+            command = ast.literal_eval(command_matches[0].group("literal"))
+            argv = shlex.split(command)
+        except (SyntaxError, ValueError):
+            errors.append("active preview command is not a supported literal")
+
+    if argv is not None:
+        if len(argv) < 3 or argv[1:3] != ["voice", "mic-run"]:
+            errors.append("active command must use jarvis voice mic-run")
+
+        duration_value = _command_option(argv, "--duration")
+        if duration_value is None:
+            errors.append("active mic-run command requires exactly one duration")
+        else:
+            try:
+                duration = float(duration_value)
+            except ValueError:
+                errors.append("active mic-run duration must be numeric")
+            else:
+                if not (
+                    HAMMERSPOON_MIN_DURATION_SECONDS
+                    <= duration
+                    <= HAMMERSPOON_MAX_DURATION_SECONDS
+                ):
+                    errors.append("active mic-run duration must be between 0.1 and 30")
+
+        recorder = _command_option(argv, "--recorder")
+        if recorder not in HAMMERSPOON_RECORDER_KINDS:
+            errors.append(
+                "active mic-run command requires recorder macos or sounddevice"
+            )
+
+    return HammerspoonBridgeValidation(errors=tuple(errors))
 
 
 @dataclass(frozen=True)
@@ -80,4 +216,9 @@ class DisabledMacOSHotkeyBridge:
         )
 
 
-__all__ = ["DisabledMacOSHotkeyBridge", "MacOSHotkeyBridgeCommand"]
+__all__ = [
+    "DisabledMacOSHotkeyBridge",
+    "HammerspoonBridgeValidation",
+    "MacOSHotkeyBridgeCommand",
+    "validate_hammerspoon_bridge",
+]

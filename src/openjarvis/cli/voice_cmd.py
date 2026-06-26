@@ -17,7 +17,10 @@ import click
 import httpx
 
 from openjarvis.core.config import load_config
-from openjarvis.hotkeys.macos_bridge import MacOSHotkeyBridgeCommand
+from openjarvis.hotkeys.macos_bridge import (
+    MacOSHotkeyBridgeCommand,
+    validate_hammerspoon_bridge,
+)
 from openjarvis.voice.event_log import (
     VoiceEventLogger,
     cleanup_voice_events,
@@ -228,6 +231,37 @@ def _write_hammerspoon_bridge(path: Path, content: str) -> Path:
         raise click.ClickException(
             f"Could not write Hammerspoon bridge: {exc}"
         ) from exc
+    return path
+
+
+def _validate_hammerspoon_bridge_file(path: Path) -> Path:
+    path = path.expanduser()
+    if "://" in str(path):
+        raise click.ClickException("Hammerspoon bridge path must be local")
+    if path.suffix.lower() != ".lua":
+        raise click.ClickException("Hammerspoon bridge path must end in .lua")
+
+    resolved_path = path.resolve(strict=False)
+    active_init = (Path.home() / ".hammerspoon" / "init.lua").resolve(strict=False)
+    if resolved_path == active_init:
+        raise click.ClickException(
+            "Refusing to validate the active ~/.hammerspoon/init.lua; "
+            "validate a generated example file elsewhere"
+        )
+    if not path.exists():
+        raise click.ClickException(f"Hammerspoon bridge path does not exist: {path}")
+    if not path.is_file():
+        raise click.ClickException(f"Hammerspoon bridge path is not a file: {path}")
+
+    try:
+        content = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as exc:
+        raise click.ClickException(f"Could not read Hammerspoon bridge: {exc}") from exc
+
+    result = validate_hammerspoon_bridge(content)
+    if not result.valid:
+        details = "\n".join(f"  - {error}" for error in result.errors)
+        raise click.ClickException(f"Hammerspoon bridge validation failed:\n{details}")
     return path
 
 
@@ -876,6 +910,12 @@ def doctor(as_json: bool) -> None:
         "never installs or enables it."
     ),
 )
+@click.option(
+    "--validate-hammerspoon",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Statically validate a generated Hammerspoon Lua example without running it.",
+)
 def hotkey_bridge(
     output_format: str | None,
     duration: float | None,
@@ -887,8 +927,18 @@ def hotkey_bridge(
     session_id: str,
     jarvis_bin: str | None,
     write_hammerspoon: Path | None,
+    validate_hammerspoon: Path | None,
 ) -> None:
     """Print or explicitly write a disabled macOS hotkey bridge example."""
+    if validate_hammerspoon is not None:
+        if write_hammerspoon is not None:
+            raise click.UsageError(
+                "--validate-hammerspoon cannot be combined with --write-hammerspoon"
+            )
+        validated_path = _validate_hammerspoon_bridge_file(validate_hammerspoon)
+        click.echo(f"Hammerspoon bridge validation passed: {validated_path}")
+        return
+
     defaults = _hotkey_bridge_defaults()
     if duration is not None:
         bridge_duration = duration
