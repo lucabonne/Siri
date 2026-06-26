@@ -396,6 +396,91 @@ def _format_hammerspoon_activation_guide(path: Path) -> None:
     )
 
 
+def _format_hammerspoon_rollback_guide(path: Path) -> None:
+    expanded_path = path.expanduser()
+    resolved_path = expanded_path.resolve(strict=False)
+    init_path = Path.home() / ".hammerspoon" / "init.lua"
+    active_init = init_path.resolve(strict=False)
+    if resolved_path == active_init:
+        raise click.ClickException(
+            "Refusing to inspect the active ~/.hammerspoon/init.lua; "
+            "use a generated bridge file path for rollback guidance"
+        )
+    dofile_line = f"dofile({json.dumps(str(resolved_path))})"
+    exists = expanded_path.exists()
+    is_file = expanded_path.is_file() if exists else False
+    validation_errors: tuple[str, ...] = ()
+
+    if exists and is_file:
+        try:
+            content = expanded_path.read_text(encoding="utf-8")
+        except (OSError, UnicodeError) as exc:
+            validation_errors = (f"could not read bridge file: {exc}",)
+        else:
+            validation_errors = validate_hammerspoon_bridge(content).errors
+    elif exists:
+        validation_errors = ("bridge path is not a file",)
+
+    validation_status = (
+        "passed"
+        if exists and is_file and not validation_errors
+        else ("not run; bridge file is missing" if not exists else "failed")
+    )
+
+    click.echo("Hammerspoon bridge rollback guide (manual only)")
+    click.echo(f"  bridge: {resolved_path}")
+    click.echo(f"  bridge file exists: {exists}")
+    click.echo(f"  bridge file is regular file: {is_file}")
+    click.echo(f"  static validation: {validation_status}")
+    if validation_errors:
+        click.echo("  validation errors:")
+        for error in validation_errors:
+            click.echo(f"    - {error}")
+    click.echo("  no files were changed")
+    click.echo("  no listener was started")
+    click.echo("  Lua execution by Jarvis: not attempted")
+    click.echo("  shell commands from bridge by Jarvis: not run")
+    click.echo("  ~/.hammerspoon/init.lua modified by Jarvis: False")
+    click.echo("  Hammerspoon installed by Jarvis: False")
+    click.echo("  Accessibility permission requested by Jarvis: False")
+    click.echo("  approval bypassed by Jarvis: False")
+    click.echo("  automatic dispatch by default: False")
+    click.echo("  automatic speech by default: False")
+    click.echo("")
+    click.echo("Manual backup steps:")
+    click.echo(
+        f"  1. Open {init_path} in an editor and confirm it is your active config."
+    )
+    click.echo("  2. Before editing, make a manual backup yourself. Example:")
+    click.echo(
+        "     cp ~/.hammerspoon/init.lua ~/.hammerspoon/init.lua.openjarvis-backup"
+    )
+    click.echo(
+        "  3. If ~/.hammerspoon/init.lua does not exist, there is no active init "
+        "file to back up."
+    )
+    click.echo("")
+    click.echo("Manual rollback steps:")
+    click.echo("  1. In the bridge file, set this line back to false if it exists:")
+    click.echo("     local enable_openjarvis_voice_hotkey = false")
+    click.echo(f"  2. Remove this exact line manually from {init_path}:")
+    click.echo(f"     {dofile_line}")
+    click.echo("  3. Save ~/.hammerspoon/init.lua.")
+    click.echo("  4. Reload Hammerspoon manually from the Hammerspoon menu bar icon:")
+    click.echo("     Hammerspoon > Reload Config")
+    click.echo(
+        "  5. Optionally remove Hammerspoon's Accessibility permission manually "
+        "in System Settings > Privacy & Security > Accessibility."
+    )
+    click.echo("  6. Optionally delete the bridge file manually after rollback.")
+    click.echo("")
+    click.echo(
+        "Jarvis did not modify files, start a listener, execute Lua, run bridge "
+        "shell commands, install Hammerspoon, request Accessibility permission, "
+        "dispatch, or speak."
+    )
+
+
 def _active_init_references_bridge(init_path: Path, bridge_path: Path) -> bool:
     if not init_path.exists() or not init_path.is_file():
         return False
@@ -1228,6 +1313,16 @@ def doctor(as_json: bool) -> None:
     ),
 )
 @click.option(
+    "--rollback-guide",
+    type=click.Path(path_type=Path),
+    default=None,
+    help=(
+        "Manual rollback guide only: inspect a generated Hammerspoon Lua "
+        "example when present and print backup/rollback steps without "
+        "changing files."
+    ),
+)
+@click.option(
     "--status",
     "status_path",
     type=click.Path(path_type=Path),
@@ -1251,6 +1346,7 @@ def hotkey_bridge(
     validate_hammerspoon: Path | None,
     install_preview: Path | None,
     activation_guide: Path | None,
+    rollback_guide: Path | None,
     status_path: Path | None,
 ) -> None:
     """Print or explicitly write a disabled macOS hotkey bridge example."""
@@ -1269,6 +1365,8 @@ def hotkey_bridge(
             raise click.UsageError(
                 "--status cannot be combined with --activation-guide"
             )
+        if rollback_guide is not None:
+            raise click.UsageError("--status cannot be combined with --rollback-guide")
         if output_format is not None:
             raise click.UsageError("--status cannot be combined with --format")
         _format_hammerspoon_bridge_status(_hammerspoon_bridge_status(status_path))
@@ -1287,6 +1385,10 @@ def hotkey_bridge(
             raise click.UsageError(
                 "--install-preview cannot be combined with --activation-guide"
             )
+        if rollback_guide is not None:
+            raise click.UsageError(
+                "--install-preview cannot be combined with --rollback-guide"
+            )
         if output_format is not None:
             raise click.UsageError("--install-preview cannot be combined with --format")
         validated_path = _validate_hammerspoon_bridge_file(install_preview)
@@ -1302,12 +1404,30 @@ def hotkey_bridge(
             raise click.UsageError(
                 "--activation-guide cannot be combined with --validate-hammerspoon"
             )
+        if rollback_guide is not None:
+            raise click.UsageError(
+                "--activation-guide cannot be combined with --rollback-guide"
+            )
         if output_format is not None:
             raise click.UsageError(
                 "--activation-guide cannot be combined with --format"
             )
         validated_path = _validate_hammerspoon_bridge_file(activation_guide)
         _format_hammerspoon_activation_guide(validated_path)
+        return
+
+    if rollback_guide is not None:
+        if write_hammerspoon is not None:
+            raise click.UsageError(
+                "--rollback-guide cannot be combined with --write-hammerspoon"
+            )
+        if validate_hammerspoon is not None:
+            raise click.UsageError(
+                "--rollback-guide cannot be combined with --validate-hammerspoon"
+            )
+        if output_format is not None:
+            raise click.UsageError("--rollback-guide cannot be combined with --format")
+        _format_hammerspoon_rollback_guide(rollback_guide)
         return
 
     if validate_hammerspoon is not None:
@@ -1318,6 +1438,10 @@ def hotkey_bridge(
         if activation_guide is not None:
             raise click.UsageError(
                 "--validate-hammerspoon cannot be combined with --activation-guide"
+            )
+        if rollback_guide is not None:
+            raise click.UsageError(
+                "--validate-hammerspoon cannot be combined with --rollback-guide"
             )
         if output_format is not None:
             raise click.UsageError(

@@ -1060,6 +1060,150 @@ def test_voice_hotkey_bridge_activation_guide_rejects_format_option(tmp_path) ->
     assert "--activation-guide cannot be combined with --format" in result.output
 
 
+def test_voice_hotkey_bridge_rollback_guide_prints_manual_backup_and_rollback(
+    monkeypatch, tmp_path
+) -> None:
+    home = tmp_path / "home"
+    active_init = home / ".hammerspoon" / "init.lua"
+    active_init.parent.mkdir(parents=True)
+    active_init.write_text("-- user hammerspoon config\n", encoding="utf-8")
+    bridge_path = tmp_path / "openjarvis-voice.lua"
+    _write_hammerspoon_validation_fixture(bridge_path)
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setattr(
+        voice_cmd,
+        "load_config",
+        lambda: (_ for _ in ()).throw(AssertionError("config must not load")),
+    )
+    monkeypatch.setattr(
+        voice_cmd,
+        "_log_voice_event",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("rollback guide must not write voice logs")
+        ),
+    )
+
+    result = CliRunner().invoke(
+        voice_cmd.voice,
+        ["hotkey-bridge", "--rollback-guide", str(bridge_path)],
+    )
+
+    dofile_line = f"dofile({json.dumps(str(bridge_path.resolve(strict=False)))})"
+    assert result.exit_code == 0
+    assert "Hammerspoon bridge rollback guide (manual only)" in result.output
+    assert f"bridge: {bridge_path.resolve(strict=False)}" in result.output
+    assert "bridge file exists: True" in result.output
+    assert "static validation: passed" in result.output
+    assert "Manual backup steps:" in result.output
+    assert f"Open {active_init} in an editor" in result.output
+    assert "cp ~/.hammerspoon/init.lua" in result.output
+    assert "Manual rollback steps:" in result.output
+    assert "local enable_openjarvis_voice_hotkey = false" in result.output
+    assert f"Remove this exact line manually from {active_init}" in result.output
+    assert dofile_line in result.output
+    assert "Hammerspoon > Reload Config" in result.output
+    assert "Jarvis did not modify files" in result.output
+
+
+def test_voice_hotkey_bridge_rollback_guide_allows_missing_bridge_path(
+    monkeypatch, tmp_path
+) -> None:
+    home = tmp_path / "home"
+    home.mkdir()
+    bridge_path = tmp_path / "missing-openjarvis-voice.lua"
+    monkeypatch.setenv("HOME", str(home))
+
+    result = CliRunner().invoke(
+        voice_cmd.voice,
+        ["hotkey-bridge", "--rollback-guide", str(bridge_path)],
+    )
+
+    assert result.exit_code == 0
+    assert "bridge file exists: False" in result.output
+    assert "static validation: not run; bridge file is missing" in result.output
+    assert "Manual backup steps:" in result.output
+    assert "Manual rollback steps:" in result.output
+    assert str(bridge_path.resolve(strict=False)) in result.output
+    assert not (home / ".hammerspoon").exists()
+
+
+def test_voice_hotkey_bridge_rollback_guide_does_not_mutate_files(
+    monkeypatch, tmp_path
+) -> None:
+    home = tmp_path / "home"
+    active_init = home / ".hammerspoon" / "init.lua"
+    active_init.parent.mkdir(parents=True)
+    active_init.write_text("-- user hammerspoon config\n", encoding="utf-8")
+    bridge_path = tmp_path / "openjarvis-voice.lua"
+    _write_hammerspoon_validation_fixture(bridge_path)
+    original_bridge = bridge_path.read_text(encoding="utf-8")
+    original_init = active_init.read_text(encoding="utf-8")
+    monkeypatch.setenv("HOME", str(home))
+
+    def fail_side_effect(*args, **kwargs):
+        raise AssertionError("rollback guide must not start voice flow")
+
+    monkeypatch.setattr(voice_cmd, "_post_json", fail_side_effect)
+    monkeypatch.setattr(voice_cmd, "_get_json", fail_side_effect)
+    monkeypatch.setattr(voice_cmd, "_build_recorder", fail_side_effect)
+    monkeypatch.setattr(voice_cmd, "_build_speech_output", fail_side_effect)
+
+    result = CliRunner().invoke(
+        voice_cmd.voice,
+        ["hotkey-bridge", "--rollback-guide", str(bridge_path)],
+    )
+
+    assert result.exit_code == 0
+    assert bridge_path.read_text(encoding="utf-8") == original_bridge
+    assert active_init.read_text(encoding="utf-8") == original_init
+    assert "no files were changed" in result.output
+    assert "no listener was started" in result.output
+
+
+def test_voice_hotkey_bridge_rollback_guide_prints_manual_only_safety(
+    tmp_path,
+) -> None:
+    bridge_path = tmp_path / "openjarvis-voice.lua"
+    _write_hammerspoon_validation_fixture(bridge_path)
+
+    result = CliRunner().invoke(
+        voice_cmd.voice,
+        ["hotkey-bridge", "--rollback-guide", str(bridge_path)],
+    )
+
+    assert result.exit_code == 0
+    assert "Lua execution by Jarvis: not attempted" in result.output
+    assert "shell commands from bridge by Jarvis: not run" in result.output
+    assert "~/.hammerspoon/init.lua modified by Jarvis: False" in result.output
+    assert "Hammerspoon installed by Jarvis: False" in result.output
+    assert "Accessibility permission requested by Jarvis: False" in result.output
+    assert "approval bypassed by Jarvis: False" in result.output
+    assert "automatic dispatch by default: False" in result.output
+    assert "automatic speech by default: False" in result.output
+    assert "dispatch, or speak" in result.output
+
+
+def test_voice_hotkey_bridge_rollback_guide_refuses_active_init(
+    monkeypatch, tmp_path
+) -> None:
+    home = tmp_path / "home"
+    active_init = home / ".hammerspoon" / "init.lua"
+    active_init.parent.mkdir(parents=True)
+    active_init.write_text("-- user hammerspoon config\n", encoding="utf-8")
+    original_content = active_init.read_text(encoding="utf-8")
+    monkeypatch.setenv("HOME", str(home))
+
+    result = CliRunner().invoke(
+        voice_cmd.voice,
+        ["hotkey-bridge", "--rollback-guide", str(active_init)],
+    )
+
+    assert result.exit_code != 0
+    assert "Refusing to inspect the active ~/.hammerspoon/init.lua" in result.output
+    assert "Manual rollback steps" not in result.output
+    assert active_init.read_text(encoding="utf-8") == original_content
+
+
 def test_voice_hotkey_bridge_status_reports_valid_file(monkeypatch, tmp_path) -> None:
     home = tmp_path / "home"
     home.mkdir()
