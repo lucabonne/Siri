@@ -495,6 +495,7 @@ jarvis voice hotkey-bridge --format hammerspoon          # Print disabled helper
 jarvis voice hotkey-bridge --write-hammerspoon ./openjarvis-voice.lua
 jarvis voice hotkey-bridge --validate-hammerspoon ./openjarvis-voice.lua
 jarvis voice hotkey-bridge --install-preview ./openjarvis-voice.lua
+jarvis voice hotkey-bridge --status ./openjarvis-voice.lua
 jarvis voice speak "preview complete"                    # Explicit local TTS only
 jarvis voice logs                                        # Show recent local voice events
 jarvis voice logs --event dispatch_result --json         # Filter local events as JSON
@@ -522,7 +523,7 @@ jarvis voice cancel
 | `voice capture-preview --duration N` | Record a local WAV, transcribe it locally, POST the transcript to `/v1/voice/ptt/submit-transcript`, and print the preview only |
 | `voice run-local --duration N` | Record, transcribe, submit preview, and print session state; dispatch and TTS require separate opt-in flags |
 | `voice doctor`        | Inspect voice, recorder, microphone configuration, and local dependencies without probing hardware, recording, dispatching, speaking, or starting hotkeys |
-| `voice hotkey-bridge` | Print or write a disabled macOS bridge example, statically validate one with `--validate-hammerspoon PATH`, or print manual install steps with `--install-preview PATH`, around the bounded preview-only `mic-run` pipeline |
+| `voice hotkey-bridge` | Print or write a disabled macOS bridge example, statically validate one with `--validate-hammerspoon PATH`, print manual install steps with `--install-preview PATH`, or report read-only bridge status with `--status PATH`, around the bounded preview-only `mic-run` pipeline |
 | `voice speak TEXT`     | Speak text through an explicit local speech-output adapter; defaults to macOS `say` when available |
 | `voice logs`           | Inspect, export, or explicitly clean up local structured voice command events |
 | `voice status`          | GET `/v1/voice/ptt/status`, including the same read-only voice stack fields Mission Control uses |
@@ -568,6 +569,15 @@ exact manual Hammerspoon steps the user would need to perform, including the
 request Accessibility permission, dispatch, approve, or speak. The validated
 bridge remains disabled/preview-only by default; approved dispatch and
 result-speech variants remain commented manual opt-in choices.
+
+`--status PATH` is a read-only check for a generated bridge file. It reports
+whether the file exists, whether the Phase 3 static validator passes, whether
+the bridge is preview-only by default, whether the active
+`~/.hammerspoon/init.lua` appears to reference it, and whether Hammerspoon.app
+is detected by safe filesystem checks on macOS. It does not execute Lua, run
+shell commands from the bridge, write `~/.hammerspoon/init.lua`, install
+Hammerspoon, start listeners, request Accessibility permission, dispatch, or
+speak.
 
 Current safe workflow:
 

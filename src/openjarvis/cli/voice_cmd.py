@@ -310,6 +310,147 @@ def _format_hammerspoon_install_preview(path: Path) -> None:
     )
 
 
+def _active_init_references_bridge(init_path: Path, bridge_path: Path) -> bool:
+    if not init_path.exists() or not init_path.is_file():
+        return False
+    try:
+        init_content = init_path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError):
+        return False
+
+    resolved_bridge = bridge_path.expanduser().resolve(strict=False)
+    expanded_bridge = bridge_path.expanduser()
+    candidates = {str(resolved_bridge), str(expanded_bridge)}
+    return any(candidate and candidate in init_content for candidate in candidates)
+
+
+def _hammerspoon_app_status() -> dict[str, Any]:
+    if sys.platform != "darwin":
+        return {
+            "checked": False,
+            "detected": False,
+            "paths": [],
+            "reason": "not macOS",
+        }
+
+    candidate_paths = [
+        Path("/Applications/Hammerspoon.app"),
+        Path.home() / "Applications" / "Hammerspoon.app",
+    ]
+    detected_paths = [str(path) for path in candidate_paths if path.exists()]
+    return {
+        "checked": True,
+        "detected": bool(detected_paths),
+        "paths": detected_paths,
+        "reason": "filesystem check only",
+    }
+
+
+def _hammerspoon_bridge_status(path: Path) -> dict[str, Any]:
+    expanded_path = path.expanduser()
+    resolved_path = expanded_path.resolve(strict=False)
+    active_init = Path.home() / ".hammerspoon" / "init.lua"
+    exists = expanded_path.exists()
+    is_file = expanded_path.is_file() if exists else False
+    validation_errors: tuple[str, ...]
+
+    if exists and is_file:
+        try:
+            content = expanded_path.read_text(encoding="utf-8")
+        except (OSError, UnicodeError) as exc:
+            validation_errors = (f"could not read bridge file: {exc}",)
+        else:
+            validation = validate_hammerspoon_bridge(content)
+            validation_errors = validation.errors
+    elif exists:
+        validation_errors = ("bridge path is not a file",)
+    else:
+        validation_errors = ("bridge file does not exist",)
+
+    valid = not validation_errors
+    return {
+        "bridge": str(resolved_path),
+        "file_exists": exists,
+        "file_is_file": is_file,
+        "valid": valid,
+        "validation_errors": list(validation_errors),
+        "preview_only_default_detected": valid,
+        "active_init": {
+            "path": str(active_init),
+            "exists": active_init.exists(),
+            "reference_detected": _active_init_references_bridge(
+                active_init,
+                expanded_path,
+            ),
+        },
+        "hammerspoon_app": _hammerspoon_app_status(),
+        "safety": {
+            "listener_started": False,
+            "files_modified": False,
+            "lua_executed": False,
+            "bridge_shell_commands_run": False,
+            "init_modified": False,
+            "hammerspoon_installed": False,
+            "accessibility_permission_requested": False,
+            "dispatch_started": False,
+            "speech_started": False,
+        },
+    }
+
+
+def _format_hammerspoon_bridge_status(data: dict[str, Any]) -> None:
+    click.echo("Hammerspoon bridge status (read-only)")
+    click.echo(f"  bridge: {data['bridge']}")
+    click.echo(f"  file exists: {data['file_exists']}")
+    click.echo(
+        "  validation: "
+        f"{'passed' if data['valid'] else 'failed'} "
+        "(Phase 3 static validator)"
+    )
+    if data["validation_errors"]:
+        click.echo("  validation errors:")
+        for error in data["validation_errors"]:
+            click.echo(f"    - {error}")
+    click.echo(
+        f"  preview-only default detected: {data['preview_only_default_detected']}"
+    )
+    active_init = data["active_init"]
+    click.echo(f"  active init: {active_init['path']}")
+    click.echo(f"  active init reference detected: {active_init['reference_detected']}")
+    click.echo(
+        f"  manual install reference present: {active_init['reference_detected']}"
+    )
+    app_status = data["hammerspoon_app"]
+    if app_status["checked"]:
+        click.echo(f"  Hammerspoon app detected: {app_status['detected']}")
+        if app_status["paths"]:
+            click.echo(f"  Hammerspoon app paths: {', '.join(app_status['paths'])}")
+    else:
+        click.echo(f"  Hammerspoon app detected: not checked ({app_status['reason']})")
+    safety = data["safety"]
+    click.echo(f"  no listener was started: {not safety['listener_started']}")
+    click.echo(f"  no files were modified: {not safety['files_modified']}")
+    lua_status = "not attempted" if not safety["lua_executed"] else "attempted"
+    click.echo(f"  Lua execution: {lua_status}")
+    click.echo(
+        "  shell commands from bridge: "
+        f"{'not run' if not safety['bridge_shell_commands_run'] else 'run'}"
+    )
+    click.echo(f"  ~/.hammerspoon/init.lua modified: {safety['init_modified']}")
+    click.echo(
+        "  Hammerspoon install: "
+        f"{'not attempted' if not safety['hammerspoon_installed'] else 'attempted'}"
+    )
+    accessibility_status = (
+        "not requested"
+        if not safety["accessibility_permission_requested"]
+        else "requested"
+    )
+    click.echo(f"  Accessibility permission: {accessibility_status}")
+    click.echo(f"  dispatch started: {safety['dispatch_started']}")
+    click.echo(f"  speech started: {safety['speech_started']}")
+
+
 def _parse_voice_logs_clear_before(value: str | None) -> datetime | None:
     if value is None:
         return None
@@ -970,6 +1111,16 @@ def doctor(as_json: bool) -> None:
         "steps without changing files."
     ),
 )
+@click.option(
+    "--status",
+    "status_path",
+    type=click.Path(path_type=Path),
+    default=None,
+    help=(
+        "Report read-only Hammerspoon bridge status without executing or "
+        "modifying anything."
+    ),
+)
 def hotkey_bridge(
     output_format: str | None,
     duration: float | None,
@@ -983,8 +1134,25 @@ def hotkey_bridge(
     write_hammerspoon: Path | None,
     validate_hammerspoon: Path | None,
     install_preview: Path | None,
+    status_path: Path | None,
 ) -> None:
     """Print or explicitly write a disabled macOS hotkey bridge example."""
+    if status_path is not None:
+        if write_hammerspoon is not None:
+            raise click.UsageError(
+                "--status cannot be combined with --write-hammerspoon"
+            )
+        if validate_hammerspoon is not None:
+            raise click.UsageError(
+                "--status cannot be combined with --validate-hammerspoon"
+            )
+        if install_preview is not None:
+            raise click.UsageError("--status cannot be combined with --install-preview")
+        if output_format is not None:
+            raise click.UsageError("--status cannot be combined with --format")
+        _format_hammerspoon_bridge_status(_hammerspoon_bridge_status(status_path))
+        return
+
     if install_preview is not None:
         if write_hammerspoon is not None:
             raise click.UsageError(

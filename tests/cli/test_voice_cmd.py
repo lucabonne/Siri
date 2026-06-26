@@ -928,6 +928,139 @@ def test_voice_hotkey_bridge_install_preview_starts_no_listener_or_voice_flow(
     assert "active command: preview-only `jarvis voice mic-run`" in result.output
 
 
+def test_voice_hotkey_bridge_status_reports_valid_file(monkeypatch, tmp_path) -> None:
+    home = tmp_path / "home"
+    home.mkdir()
+    bridge_path = tmp_path / "openjarvis-voice.lua"
+    _write_hammerspoon_validation_fixture(bridge_path)
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setattr(voice_cmd.sys, "platform", "linux")
+    monkeypatch.setattr(
+        voice_cmd,
+        "load_config",
+        lambda: (_ for _ in ()).throw(AssertionError("config must not load")),
+    )
+    monkeypatch.setattr(
+        voice_cmd,
+        "_log_voice_event",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("status must not write voice logs")
+        ),
+    )
+
+    result = CliRunner().invoke(
+        voice_cmd.voice,
+        ["hotkey-bridge", "--status", str(bridge_path)],
+    )
+
+    assert result.exit_code == 0
+    assert "Hammerspoon bridge status (read-only)" in result.output
+    assert "file exists: True" in result.output
+    assert "validation: passed (Phase 3 static validator)" in result.output
+    assert "preview-only default detected: True" in result.output
+    assert "active init reference detected: False" in result.output
+    assert "manual install reference present: False" in result.output
+    assert "Hammerspoon app detected: not checked (not macOS)" in result.output
+    assert "no listener was started: True" in result.output
+    assert "no files were modified: True" in result.output
+    assert "Lua execution: not attempted" in result.output
+    assert "shell commands from bridge: not run" in result.output
+    assert "Accessibility permission: not requested" in result.output
+    assert "dispatch started: False" in result.output
+    assert "speech started: False" in result.output
+
+
+def test_voice_hotkey_bridge_status_reports_invalid_file(tmp_path) -> None:
+    bridge_path = tmp_path / "unsafe-dispatch.lua"
+    _write_hammerspoon_validation_fixture(
+        bridge_path, extra_active_flags=" --approve-dispatch"
+    )
+
+    result = CliRunner().invoke(
+        voice_cmd.voice,
+        ["hotkey-bridge", "--status", str(bridge_path)],
+    )
+
+    assert result.exit_code == 0
+    assert "file exists: True" in result.output
+    assert "validation: failed (Phase 3 static validator)" in result.output
+    assert "active content contains unsafe --approve-dispatch" in result.output
+    assert "preview-only default detected: False" in result.output
+    assert "no listener was started: True" in result.output
+    assert "no files were modified: True" in result.output
+
+
+def test_voice_hotkey_bridge_status_reports_missing_file(tmp_path) -> None:
+    bridge_path = tmp_path / "missing.lua"
+
+    result = CliRunner().invoke(
+        voice_cmd.voice,
+        ["hotkey-bridge", "--status", str(bridge_path)],
+    )
+
+    assert result.exit_code == 0
+    assert "file exists: False" in result.output
+    assert "validation: failed (Phase 3 static validator)" in result.output
+    assert "bridge file does not exist" in result.output
+    assert "preview-only default detected: False" in result.output
+
+
+def test_voice_hotkey_bridge_status_detects_active_init_reference(
+    monkeypatch, tmp_path
+) -> None:
+    home = tmp_path / "home"
+    active_init = home / ".hammerspoon" / "init.lua"
+    active_init.parent.mkdir(parents=True)
+    bridge_path = tmp_path / "openjarvis-voice.lua"
+    _write_hammerspoon_validation_fixture(bridge_path)
+    active_init.write_text(
+        f"dofile({json.dumps(str(bridge_path.resolve(strict=True)))})\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("HOME", str(home))
+
+    result = CliRunner().invoke(
+        voice_cmd.voice,
+        ["hotkey-bridge", "--status", str(bridge_path)],
+    )
+
+    assert result.exit_code == 0
+    assert f"active init: {active_init}" in result.output
+    assert "active init reference detected: True" in result.output
+    assert "manual install reference present: True" in result.output
+    assert "no listener was started: True" in result.output
+
+
+def test_voice_hotkey_bridge_status_does_not_mutate_files(
+    monkeypatch, tmp_path
+) -> None:
+    home = tmp_path / "home"
+    home.mkdir()
+    bridge_path = tmp_path / "openjarvis-voice.lua"
+    _write_hammerspoon_validation_fixture(bridge_path)
+    original_bridge = bridge_path.read_text(encoding="utf-8")
+    monkeypatch.setenv("HOME", str(home))
+
+    def fail_side_effect(*args, **kwargs):
+        raise AssertionError("status must not start voice flow")
+
+    monkeypatch.setattr(voice_cmd, "_post_json", fail_side_effect)
+    monkeypatch.setattr(voice_cmd, "_get_json", fail_side_effect)
+    monkeypatch.setattr(voice_cmd, "_build_recorder", fail_side_effect)
+    monkeypatch.setattr(voice_cmd, "_build_speech_output", fail_side_effect)
+
+    result = CliRunner().invoke(
+        voice_cmd.voice,
+        ["hotkey-bridge", "--status", str(bridge_path)],
+    )
+
+    assert result.exit_code == 0
+    assert bridge_path.read_text(encoding="utf-8") == original_bridge
+    assert not (home / ".hammerspoon").exists()
+    assert not (home / "Applications" / "Hammerspoon.app").exists()
+    assert "no files were modified: True" in result.output
+
+
 def test_voice_hotkey_bridge_validation_rejects_active_dispatch(tmp_path) -> None:
     bridge_path = tmp_path / "unsafe-dispatch.lua"
     _write_hammerspoon_validation_fixture(

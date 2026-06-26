@@ -1,5 +1,29 @@
 # Customization Plan
 
+## Voice Control Hotkey Phase 5
+
+Hotkey Phase 5 adds a read-only Hammerspoon bridge status check without
+activating or installing the bridge.
+
+- `jarvis voice hotkey-bridge --status PATH` reports whether the target bridge
+  file exists, whether it passes the Phase 3 static validator, whether the
+  generated bridge remains preview-only by default, and whether the active
+  `~/.hammerspoon/init.lua` appears to reference it.
+- The status check also reports safe filesystem-only Hammerspoon app detection
+  when running on macOS, plus explicit safety facts: no listener was started,
+  no files were modified, Lua was not executed, bridge shell commands were not
+  run, Hammerspoon was not installed, Accessibility permission was not
+  requested, dispatch was not started, and speech was not started.
+- Missing and invalid files are reported as status results rather than
+  triggering install or execution flows.
+- The command does not write `~/.hammerspoon/init.lua`, copy files, install
+  Hammerspoon or the bridge file, start listeners, enable Fn/global hotkey
+  capture, request Accessibility permission, record, dispatch, approve, or
+  speak.
+- Existing `jarvis voice` commands, Voice Control Phase 1-30, Mic Phase 1-8,
+  Hotkey Phase 1-4, and read-only Mission Control behavior remain intact.
+  Voice-only mode remains deferred.
+
 ## Voice Control Hotkey Phase 4
 
 Hotkey Phase 4 adds a safe Hammerspoon bridge install preview without
