@@ -796,6 +796,138 @@ def test_voice_hotkey_bridge_validates_safe_generated_file(tmp_path) -> None:
     assert "Hammerspoon bridge validation passed" in result.output
 
 
+def test_voice_hotkey_bridge_install_preview_prints_manual_steps(
+    monkeypatch, tmp_path
+) -> None:
+    bridge_path = tmp_path / "openjarvis-voice.lua"
+    _write_hammerspoon_validation_fixture(bridge_path)
+    monkeypatch.setattr(
+        voice_cmd,
+        "load_config",
+        lambda: (_ for _ in ()).throw(AssertionError("config must not load")),
+    )
+    monkeypatch.setattr(
+        voice_cmd,
+        "_log_voice_event",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("install preview must not write voice logs")
+        ),
+    )
+
+    result = CliRunner().invoke(
+        voice_cmd.voice,
+        ["hotkey-bridge", "--install-preview", str(bridge_path)],
+    )
+
+    assert result.exit_code == 0
+    assert "Hammerspoon bridge install preview (no changes made)" in result.output
+    assert f"bridge: {bridge_path.resolve(strict=True)}" in result.output
+    assert "validation: passed" in result.output
+    assert "disabled/preview-only by default" in result.output
+    assert "dofile(" in result.output
+    assert str(bridge_path.resolve(strict=True)) in result.output
+    assert "approved dispatch: manual opt-in only" in result.output
+    assert "result speech: manual opt-in only" in result.output
+    assert "listener startup: not started" in result.output
+    assert "global hotkey capture: not enabled" in result.output
+    assert "~/.hammerspoon/init.lua: not modified" in result.output
+    assert "files copied: none" in result.output
+    assert "Hammerspoon install: not attempted" in result.output
+    assert "Accessibility permission: not requested" in result.output
+    assert "--approve-dispatch` command variant" in result.output
+    assert "--approve-dispatch --speak-result` command variant" in result.output
+
+
+def test_voice_hotkey_bridge_install_preview_validation_failure_has_no_steps(
+    tmp_path,
+) -> None:
+    bridge_path = tmp_path / "unsafe-dispatch.lua"
+    _write_hammerspoon_validation_fixture(
+        bridge_path, extra_active_flags=" --approve-dispatch"
+    )
+    original_content = bridge_path.read_text(encoding="utf-8")
+
+    result = CliRunner().invoke(
+        voice_cmd.voice,
+        ["hotkey-bridge", "--install-preview", str(bridge_path)],
+    )
+
+    assert result.exit_code != 0
+    assert "Hammerspoon bridge validation failed" in result.output
+    assert "active content contains unsafe --approve-dispatch" in result.output
+    assert "Manual install steps" not in result.output
+    assert bridge_path.read_text(encoding="utf-8") == original_content
+
+
+def test_voice_hotkey_bridge_install_preview_does_not_mutate_files(
+    monkeypatch, tmp_path
+) -> None:
+    home = tmp_path / "home"
+    active_init = home / ".hammerspoon" / "init.lua"
+    active_init.parent.mkdir(parents=True)
+    active_init.write_text("-- user hammerspoon config\n", encoding="utf-8")
+    bridge_path = tmp_path / "openjarvis-voice.lua"
+    _write_hammerspoon_validation_fixture(bridge_path)
+    original_bridge = bridge_path.read_text(encoding="utf-8")
+    original_init = active_init.read_text(encoding="utf-8")
+    monkeypatch.setenv("HOME", str(home))
+
+    result = CliRunner().invoke(
+        voice_cmd.voice,
+        ["hotkey-bridge", "--install-preview", str(bridge_path)],
+    )
+
+    assert result.exit_code == 0
+    assert bridge_path.read_text(encoding="utf-8") == original_bridge
+    assert active_init.read_text(encoding="utf-8") == original_init
+
+
+def test_voice_hotkey_bridge_install_preview_refuses_active_init(
+    monkeypatch, tmp_path
+) -> None:
+    home = tmp_path / "home"
+    active_init = home / ".hammerspoon" / "init.lua"
+    active_init.parent.mkdir(parents=True)
+    _write_hammerspoon_validation_fixture(active_init)
+    original_content = active_init.read_text(encoding="utf-8")
+    monkeypatch.setenv("HOME", str(home))
+
+    result = CliRunner().invoke(
+        voice_cmd.voice,
+        ["hotkey-bridge", "--install-preview", str(active_init)],
+    )
+
+    assert result.exit_code != 0
+    assert "Refusing to validate the active ~/.hammerspoon/init.lua" in result.output
+    assert "Manual install steps" not in result.output
+    assert active_init.read_text(encoding="utf-8") == original_content
+
+
+def test_voice_hotkey_bridge_install_preview_starts_no_listener_or_voice_flow(
+    monkeypatch, tmp_path
+) -> None:
+    bridge_path = tmp_path / "openjarvis-voice.lua"
+    _write_hammerspoon_validation_fixture(bridge_path)
+
+    def fail_side_effect(*args, **kwargs):
+        raise AssertionError("install preview must not start voice flow")
+
+    monkeypatch.setattr(voice_cmd, "_post_json", fail_side_effect)
+    monkeypatch.setattr(voice_cmd, "_get_json", fail_side_effect)
+    monkeypatch.setattr(voice_cmd, "_build_recorder", fail_side_effect)
+    monkeypatch.setattr(voice_cmd, "_build_speech_output", fail_side_effect)
+
+    result = CliRunner().invoke(
+        voice_cmd.voice,
+        ["hotkey-bridge", "--install-preview", str(bridge_path)],
+    )
+
+    assert result.exit_code == 0
+    assert "listener startup: not started" in result.output
+    assert "global hotkey capture: not enabled" in result.output
+    assert "active command: preview-only `jarvis voice mic-run`" in result.output
+
+
 def test_voice_hotkey_bridge_validation_rejects_active_dispatch(tmp_path) -> None:
     bridge_path = tmp_path / "unsafe-dispatch.lua"
     _write_hammerspoon_validation_fixture(

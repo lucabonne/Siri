@@ -494,6 +494,7 @@ jarvis voice hotkey-bridge --adapter faster-whisper      # Print preview-only mi
 jarvis voice hotkey-bridge --format hammerspoon          # Print disabled helper example
 jarvis voice hotkey-bridge --write-hammerspoon ./openjarvis-voice.lua
 jarvis voice hotkey-bridge --validate-hammerspoon ./openjarvis-voice.lua
+jarvis voice hotkey-bridge --install-preview ./openjarvis-voice.lua
 jarvis voice speak "preview complete"                    # Explicit local TTS only
 jarvis voice logs                                        # Show recent local voice events
 jarvis voice logs --event dispatch_result --json         # Filter local events as JSON
@@ -521,7 +522,7 @@ jarvis voice cancel
 | `voice capture-preview --duration N` | Record a local WAV, transcribe it locally, POST the transcript to `/v1/voice/ptt/submit-transcript`, and print the preview only |
 | `voice run-local --duration N` | Record, transcribe, submit preview, and print session state; dispatch and TTS require separate opt-in flags |
 | `voice doctor`        | Inspect voice, recorder, microphone configuration, and local dependencies without probing hardware, recording, dispatching, speaking, or starting hotkeys |
-| `voice hotkey-bridge` | Print or write a disabled macOS bridge example, or statically validate one with `--validate-hammerspoon PATH`, around the bounded preview-only `mic-run` pipeline |
+| `voice hotkey-bridge` | Print or write a disabled macOS bridge example, statically validate one with `--validate-hammerspoon PATH`, or print manual install steps with `--install-preview PATH`, around the bounded preview-only `mic-run` pipeline |
 | `voice speak TEXT`     | Speak text through an explicit local speech-output adapter; defaults to macOS `say` when available |
 | `voice logs`           | Inspect, export, or explicitly clean up local structured voice command events |
 | `voice status`          | GET `/v1/voice/ptt/status`, including the same read-only voice stack fields Mission Control uses |
@@ -559,6 +560,14 @@ bridge whose active command is preview-only `jarvis voice mic-run`, has a
 `--approve-dispatch`, `--speak-result`, Hammerspoon install-path mutation, and
 LaunchAgent markers. Validation does not execute Lua or commands from the file,
 install anything, start listeners, request permissions, dispatch, or speak.
+
+`--install-preview PATH` runs the same static validation first, then prints the
+exact manual Hammerspoon steps the user would need to perform, including the
+`dofile(...)` line for the validated bridge. It does not write
+`~/.hammerspoon/init.lua`, copy files, install Hammerspoon, start a listener,
+request Accessibility permission, dispatch, approve, or speak. The validated
+bridge remains disabled/preview-only by default; approved dispatch and
+result-speech variants remain commented manual opt-in choices.
 
 Current safe workflow:
 
@@ -810,13 +819,13 @@ uses the same app entry with `OPENJARVIS_VITE_SKIP_TAILWIND=1` to verify the
 local server bind path without changing normal `npm run dev` or build behavior.
 
 `voice hotkey-bridge` is a print-only boundary for future macOS Fn or
-push-to-talk integration. It formats a `jarvis voice run-local ...` command, or
+push-to-talk integration. It formats a `jarvis voice mic-run ...` command, or
 a disabled Hammerspoon example with `enable_openjarvis_voice_hotkey = false`.
 Running `voice hotkey-bridge` does not start Hammerspoon, install a listener,
 capture global keys, record audio, call the API, dispatch actions, approve
 anything, or speak results. The printed command intentionally omits
 `--approve-dispatch` and `--speak-result`, so it follows the same preview-only
-default as `voice run-local`.
+default as `voice mic-run`.
 
 `voice record-local` defaults to `--recorder dev-silent` for safe development.
 `--recorder sounddevice` uses the optional Python `sounddevice` package as a

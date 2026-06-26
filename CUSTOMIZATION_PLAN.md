@@ -1,5 +1,26 @@
 # Customization Plan
 
+## Voice Control Hotkey Phase 4
+
+Hotkey Phase 4 adds a safe Hammerspoon bridge install preview without
+activating or installing the bridge.
+
+- `jarvis voice hotkey-bridge --install-preview PATH` validates the supplied
+  generated/example `.lua` file with the Phase 3 validator before printing any
+  install guidance.
+- The preview prints the exact manual Hammerspoon steps, including the
+  `dofile(...)` line the user would add by hand, and states that no changes
+  were made.
+- The command does not write `~/.hammerspoon/init.lua`, copy files, install
+  Hammerspoon or the bridge file, start listeners, enable Fn/global hotkey
+  capture, request Accessibility permission, record, dispatch, approve, or
+  speak.
+- The generated bridge remains disabled/preview-only by default. Approved
+  dispatch and result speech variants remain commented manual opt-in choices.
+- Existing `jarvis voice` commands, Voice Control Phase 1-30, Mic Phase 1-8,
+  Hotkey Phase 1-3, and read-only Mission Control behavior remain intact.
+  Voice-only mode remains deferred.
+
 ## Voice Control Hotkey Phase 3
 
 Hotkey Phase 3 adds static validation for generated Hammerspoon bridge files

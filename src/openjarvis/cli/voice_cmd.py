@@ -265,6 +265,51 @@ def _validate_hammerspoon_bridge_file(path: Path) -> Path:
     return path
 
 
+def _format_hammerspoon_install_preview(path: Path) -> None:
+    resolved_path = path.resolve(strict=True)
+    init_path = Path.home() / ".hammerspoon" / "init.lua"
+    dofile_line = f"dofile({json.dumps(str(resolved_path))})"
+
+    click.echo("Hammerspoon bridge install preview (no changes made)")
+    click.echo(f"  bridge: {resolved_path}")
+    click.echo("  validation: passed")
+    click.echo("  generated bridge: disabled/preview-only by default")
+    click.echo("  active command: preview-only `jarvis voice mic-run`")
+    click.echo("  approved dispatch: manual opt-in only")
+    click.echo("  result speech: manual opt-in only")
+    click.echo("  listener startup: not started")
+    click.echo("  global hotkey capture: not enabled")
+    click.echo("  ~/.hammerspoon/init.lua: not modified")
+    click.echo("  files copied: none")
+    click.echo("  Hammerspoon install: not attempted")
+    click.echo("  Accessibility permission: not requested")
+    click.echo("")
+    click.echo("Manual install steps:")
+    click.echo("  1. Install Hammerspoon yourself if you choose to use it.")
+    click.echo(f"  2. Open {init_path} in an editor.")
+    click.echo("  3. Add this line manually:")
+    click.echo(f"     {dofile_line}")
+    click.echo("  4. Save the file and reload Hammerspoon manually.")
+    click.echo(
+        "  5. Leave `enable_openjarvis_voice_hotkey = false` until you "
+        "explicitly decide to enable capture."
+    )
+    click.echo(
+        "  6. If enabling later, grant Accessibility permission manually in "
+        "System Settings > Privacy & Security > Accessibility."
+    )
+    click.echo("")
+    click.echo("Manual opt-in variants:")
+    click.echo(
+        "  - Approved dispatch requires manually choosing the commented "
+        "`--approve-dispatch` command variant."
+    )
+    click.echo(
+        "  - Result speech requires manually choosing the commented "
+        "`--approve-dispatch --speak-result` command variant."
+    )
+
+
 def _parse_voice_logs_clear_before(value: str | None) -> datetime | None:
     if value is None:
         return None
@@ -916,6 +961,15 @@ def doctor(as_json: bool) -> None:
     default=None,
     help="Statically validate a generated Hammerspoon Lua example without running it.",
 )
+@click.option(
+    "--install-preview",
+    type=click.Path(path_type=Path),
+    default=None,
+    help=(
+        "Validate a generated Hammerspoon Lua example and print manual install "
+        "steps without changing files."
+    ),
+)
 def hotkey_bridge(
     output_format: str | None,
     duration: float | None,
@@ -928,8 +982,24 @@ def hotkey_bridge(
     jarvis_bin: str | None,
     write_hammerspoon: Path | None,
     validate_hammerspoon: Path | None,
+    install_preview: Path | None,
 ) -> None:
     """Print or explicitly write a disabled macOS hotkey bridge example."""
+    if install_preview is not None:
+        if write_hammerspoon is not None:
+            raise click.UsageError(
+                "--install-preview cannot be combined with --write-hammerspoon"
+            )
+        if validate_hammerspoon is not None:
+            raise click.UsageError(
+                "--install-preview cannot be combined with --validate-hammerspoon"
+            )
+        if output_format is not None:
+            raise click.UsageError("--install-preview cannot be combined with --format")
+        validated_path = _validate_hammerspoon_bridge_file(install_preview)
+        _format_hammerspoon_install_preview(validated_path)
+        return
+
     if validate_hammerspoon is not None:
         if write_hammerspoon is not None:
             raise click.UsageError(
