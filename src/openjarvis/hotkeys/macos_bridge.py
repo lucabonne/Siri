@@ -62,6 +62,15 @@ def _strip_lua_comments(content: str) -> str:
     return "".join(output)
 
 
+def _strip_disabled_hotkey_guard(content: str) -> str:
+    return re.sub(
+        r"(?ms)^\s*if\s+enable_openjarvis_voice_hotkey\s+then\b.*?^\s*end\s*$",
+        "",
+        content,
+        count=1,
+    )
+
+
 def _command_option(argv: list[str], option: str) -> str | None:
     positions = [index for index, value in enumerate(argv) if value == option]
     if len(positions) != 1:
@@ -95,6 +104,26 @@ def validate_hammerspoon_bridge(content: str) -> HammerspoonBridgeValidation:
         for marker in ("launchagents", "launchagent", "launchctl", "hs.plist")
     ):
         errors.append("active content references LaunchAgent creation")
+
+    active_outside_disabled_guard = _strip_disabled_hotkey_guard(active).lower()
+    immediate_execution_markers = (
+        "os.execute",
+        "io.popen",
+        "hs.execute",
+        "hs.task.new",
+        ":start(",
+        "dofile(",
+        "loadfile(",
+        "require(",
+    )
+    if any(
+        marker in active_outside_disabled_guard
+        for marker in immediate_execution_markers
+    ):
+        errors.append(
+            "active content outside the disabled hotkey guard contains "
+            "execution or loading markers"
+        )
 
     command_matches = list(
         re.finditer(

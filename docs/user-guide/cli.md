@@ -544,40 +544,49 @@ behavior:
 Speech is never automatic. For `mic-run` and `run-local`, it additionally
 requires `--speak-result` after approved dispatch.
 
-`voice hotkey-bridge` is print-only unless `--write-hammerspoon PATH` is passed.
-That option writes a disabled example to a new `.lua` file whose parent already
-exists; it refuses existing files and the active `~/.hammerspoon/init.lua`.
-The active example command uses the bounded real-microphone `voice mic-run`
-preview path and omits both `--approve-dispatch` and `--speak-result`.
-Approved-dispatch and speech variants are present only as commented manual
-opt-in examples. OpenJarvis does not install Hammerspoon or the file, bind
-Fn/F18, start a listener, request Accessibility permission, or execute any
-generated command.
+`voice hotkey-bridge` is the generated disabled bridge mode. It is print-only
+unless `--write-hammerspoon PATH` is passed. That option writes a disabled
+example to a new `.lua` file whose parent already exists; it refuses existing
+files and the active `~/.hammerspoon/init.lua`. The active example command uses
+the bounded real-microphone `voice mic-run` preview path and omits both
+`--approve-dispatch` and `--speak-result`. Approved-dispatch and speech variants
+are present only as commented manual opt-in examples. OpenJarvis does not
+install Hammerspoon or the file, bind Fn/F18, start a listener, request
+Accessibility permission, or execute any generated command.
 
-`--validate-hammerspoon PATH` reads a generated/example `.lua` file as text
-only. It refuses the active `~/.hammerspoon/init.lua` and requires a disabled
-bridge whose active command is preview-only `jarvis voice mic-run`, has a
-0.1-30 second duration, and selects `macos` or `sounddevice`. It rejects active
-`--approve-dispatch`, `--speak-result`, Hammerspoon install-path mutation, and
-LaunchAgent markers. Validation does not execute Lua or commands from the file,
-install anything, start listeners, request permissions, dispatch, or speak.
+`--validate-hammerspoon PATH` is validation only. It reads a generated/example
+`.lua` file as text only. It refuses the active `~/.hammerspoon/init.lua` and
+requires a disabled bridge whose active command is preview-only
+`jarvis voice mic-run`, has a 0.1-30 second duration, and selects `macos` or
+`sounddevice`. It rejects active `--approve-dispatch`, `--speak-result`,
+Hammerspoon install-path mutation, LaunchAgent markers, and active
+execution/loading markers outside the disabled hotkey guard. Validation does
+not execute Lua or commands from the file, install anything, start listeners,
+request permissions, dispatch, or speak.
 
-`--install-preview PATH` runs the same static validation first, then prints the
-exact manual Hammerspoon steps the user would need to perform, including the
-`dofile(...)` line for the validated bridge. It does not write
+`--install-preview PATH` is install preview only. It runs the same static
+validation first, then prints the exact manual Hammerspoon steps the user would
+need to perform, including the `dofile(...)` line for the validated bridge. It
+does not write
 `~/.hammerspoon/init.lua`, copy files, install Hammerspoon, start a listener,
 request Accessibility permission, dispatch, approve, or speak. The validated
 bridge remains disabled/preview-only by default; approved dispatch and
 result-speech variants remain commented manual opt-in choices.
 
-`--status PATH` is a read-only check for a generated bridge file. It reports
-whether the file exists, whether the Phase 3 static validator passes, whether
-the bridge is preview-only by default, whether the active
+`--status PATH` is status/readiness only. It is a read-only check for a
+generated bridge file. It reports whether the file exists, whether the Phase 6
+static validator passes, whether the bridge is preview-only by default, whether
+the bridge is ready for manual review, whether actual activation is still
+deferred, whether global hotkey capture remains disabled, whether the active
 `~/.hammerspoon/init.lua` appears to reference it, and whether Hammerspoon.app
 is detected by safe filesystem checks on macOS. It does not execute Lua, run
 shell commands from the bridge, write `~/.hammerspoon/init.lua`, install
 Hammerspoon, start listeners, request Accessibility permission, dispatch, or
 speak.
+
+Actual activation remains deferred. None of the hotkey bridge commands starts a
+global listener, captures Fn/F18, modifies `~/.hammerspoon/init.lua`, bypasses
+approval, dispatches automatically, or speaks automatically.
 
 Current safe workflow:
 
@@ -835,7 +844,9 @@ Running `voice hotkey-bridge` does not start Hammerspoon, install a listener,
 capture global keys, record audio, call the API, dispatch actions, approve
 anything, or speak results. The printed command intentionally omits
 `--approve-dispatch` and `--speak-result`, so it follows the same preview-only
-default as `voice mic-run`.
+default as `voice mic-run`. Validation, install preview, and status/readiness
+submodes remain static/read-only and do not execute Lua or shell commands from
+the bridge file.
 
 `voice record-local` defaults to `--recorder dev-silent` for safe development.
 `--recorder sounddevice` uses the optional Python `sounddevice` package as a

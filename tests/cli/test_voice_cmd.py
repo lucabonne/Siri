@@ -956,8 +956,11 @@ def test_voice_hotkey_bridge_status_reports_valid_file(monkeypatch, tmp_path) ->
     assert result.exit_code == 0
     assert "Hammerspoon bridge status (read-only)" in result.output
     assert "file exists: True" in result.output
-    assert "validation: passed (Phase 3 static validator)" in result.output
+    assert "validation: passed (Phase 6 static validator)" in result.output
     assert "preview-only default detected: True" in result.output
+    assert "readiness: ready_for_manual_review" in result.output
+    assert "activation deferred: True" in result.output
+    assert "global hotkey enabled: False" in result.output
     assert "active init reference detected: False" in result.output
     assert "manual install reference present: False" in result.output
     assert "Hammerspoon app detected: not checked (not macOS)" in result.output
@@ -983,9 +986,10 @@ def test_voice_hotkey_bridge_status_reports_invalid_file(tmp_path) -> None:
 
     assert result.exit_code == 0
     assert "file exists: True" in result.output
-    assert "validation: failed (Phase 3 static validator)" in result.output
+    assert "validation: failed (Phase 6 static validator)" in result.output
     assert "active content contains unsafe --approve-dispatch" in result.output
     assert "preview-only default detected: False" in result.output
+    assert "readiness: not_ready" in result.output
     assert "no listener was started: True" in result.output
     assert "no files were modified: True" in result.output
 
@@ -1000,9 +1004,10 @@ def test_voice_hotkey_bridge_status_reports_missing_file(tmp_path) -> None:
 
     assert result.exit_code == 0
     assert "file exists: False" in result.output
-    assert "validation: failed (Phase 3 static validator)" in result.output
+    assert "validation: failed (Phase 6 static validator)" in result.output
     assert "bridge file does not exist" in result.output
     assert "preview-only default detected: False" in result.output
+    assert "readiness: not_ready" in result.output
 
 
 def test_voice_hotkey_bridge_status_detects_active_init_reference(
@@ -1122,6 +1127,25 @@ def test_voice_hotkey_bridge_validation_refuses_active_init(
     assert result.exit_code != 0
     assert "Refusing to validate the active ~/.hammerspoon/init.lua" in result.output
     assert active_init.read_text(encoding="utf-8") == original_content
+
+
+def test_voice_hotkey_bridge_validation_rejects_format_option(tmp_path) -> None:
+    bridge_path = tmp_path / "openjarvis-voice.lua"
+    _write_hammerspoon_validation_fixture(bridge_path)
+
+    result = CliRunner().invoke(
+        voice_cmd.voice,
+        [
+            "hotkey-bridge",
+            "--validate-hammerspoon",
+            str(bridge_path),
+            "--format",
+            "json",
+        ],
+    )
+
+    assert result.exit_code != 0
+    assert "--validate-hammerspoon cannot be combined with --format" in result.output
 
 
 def test_voice_hotkey_bridge_write_requires_existing_parent(

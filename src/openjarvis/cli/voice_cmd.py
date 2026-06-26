@@ -368,6 +368,12 @@ def _hammerspoon_bridge_status(path: Path) -> dict[str, Any]:
         validation_errors = ("bridge file does not exist",)
 
     valid = not validation_errors
+    readiness_state = "ready_for_manual_review" if valid else "not_ready"
+    next_step = (
+        "Review the disabled bridge and use --install-preview for manual steps."
+        if valid
+        else "Fix validation errors before any manual install preview."
+    )
     return {
         "bridge": str(resolved_path),
         "file_exists": exists,
@@ -384,6 +390,12 @@ def _hammerspoon_bridge_status(path: Path) -> dict[str, Any]:
             ),
         },
         "hammerspoon_app": _hammerspoon_app_status(),
+        "readiness": {
+            "state": readiness_state,
+            "next_safe_manual_step": next_step,
+            "activation_deferred": True,
+            "global_hotkey_enabled": False,
+        },
         "safety": {
             "listener_started": False,
             "files_modified": False,
@@ -405,7 +417,7 @@ def _format_hammerspoon_bridge_status(data: dict[str, Any]) -> None:
     click.echo(
         "  validation: "
         f"{'passed' if data['valid'] else 'failed'} "
-        "(Phase 3 static validator)"
+        "(Phase 6 static validator)"
     )
     if data["validation_errors"]:
         click.echo("  validation errors:")
@@ -414,6 +426,11 @@ def _format_hammerspoon_bridge_status(data: dict[str, Any]) -> None:
     click.echo(
         f"  preview-only default detected: {data['preview_only_default_detected']}"
     )
+    readiness = data["readiness"]
+    click.echo(f"  readiness: {readiness['state']}")
+    click.echo(f"  next safe manual step: {readiness['next_safe_manual_step']}")
+    click.echo(f"  activation deferred: {readiness['activation_deferred']}")
+    click.echo(f"  global hotkey enabled: {readiness['global_hotkey_enabled']}")
     active_init = data["active_init"]
     click.echo(f"  active init: {active_init['path']}")
     click.echo(f"  active init reference detected: {active_init['reference_detected']}")
@@ -1092,23 +1109,26 @@ def doctor(as_json: bool) -> None:
     type=click.Path(path_type=Path),
     default=None,
     help=(
-        "Write a disabled Hammerspoon Lua example to an explicit new path; "
-        "never installs or enables it."
+        "Generated disabled bridge only: write a preview-only Hammerspoon Lua "
+        "example to an explicit new path; never installs or enables it."
     ),
 )
 @click.option(
     "--validate-hammerspoon",
     type=click.Path(path_type=Path),
     default=None,
-    help="Statically validate a generated Hammerspoon Lua example without running it.",
+    help=(
+        "Validation only: statically read a generated Hammerspoon Lua example "
+        "without running Lua or bridge commands."
+    ),
 )
 @click.option(
     "--install-preview",
     type=click.Path(path_type=Path),
     default=None,
     help=(
-        "Validate a generated Hammerspoon Lua example and print manual install "
-        "steps without changing files."
+        "Install preview only: validate a generated Hammerspoon Lua example "
+        "and print manual steps without changing files."
     ),
 )
 @click.option(
@@ -1117,8 +1137,8 @@ def doctor(as_json: bool) -> None:
     type=click.Path(path_type=Path),
     default=None,
     help=(
-        "Report read-only Hammerspoon bridge status without executing or "
-        "modifying anything."
+        "Status/readiness only: report read-only Hammerspoon bridge status "
+        "without executing or modifying anything."
     ),
 )
 def hotkey_bridge(
@@ -1172,6 +1192,10 @@ def hotkey_bridge(
         if write_hammerspoon is not None:
             raise click.UsageError(
                 "--validate-hammerspoon cannot be combined with --write-hammerspoon"
+            )
+        if output_format is not None:
+            raise click.UsageError(
+                "--validate-hammerspoon cannot be combined with --format"
             )
         validated_path = _validate_hammerspoon_bridge_file(validate_hammerspoon)
         click.echo(f"Hammerspoon bridge validation passed: {validated_path}")

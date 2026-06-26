@@ -1,5 +1,41 @@
 # Customization Plan
 
+## Voice Control Hotkey Phase 6
+
+Hotkey Phase 6 is a final disabled-by-default bridge hardening pass before any
+activation work.
+
+- The hotkey bridge command family is documented as four separate safe modes:
+  generated disabled bridge output/write, validation only, install preview only,
+  and status/readiness only.
+- `jarvis voice hotkey-bridge --validate-hammerspoon PATH` remains a static text
+  validator. It now rejects active execution/loading markers outside the
+  disabled hotkey guard in addition to active dispatch, speech, init-path, and
+  LaunchAgent markers. It still never evaluates Lua or runs shell commands from
+  the bridge file.
+- `jarvis voice hotkey-bridge --status PATH` remains read-only and now reports
+  whether the bridge is ready for manual review, that activation remains
+  deferred, and that global hotkey capture is not enabled. It does not mutate
+  `~/.hammerspoon/init.lua`, install anything, execute Lua, run bridge shell
+  commands, request permissions, dispatch, or speak.
+- `--validate-hammerspoon` no longer accepts irrelevant `--format` output
+  selection, matching the existing separation for status and install preview.
+- Generated Hammerspoon examples remain preview-only by default. Approved
+  dispatch and result speech variants remain commented manual opt-in examples.
+- Existing `jarvis voice` commands, Voice Control Phase 1-30, Mic Phase 1-8,
+  Hotkey Phase 1-5, and read-only Mission Control behavior remain intact.
+  Voice-only mode remains deferred.
+
+Deferred work remains intentionally untouched:
+
+- no always-on listening
+- no enabled Fn/global hotkey capture
+- no approval bypass
+- no automatic dispatch by default
+- no automatic speech playback by default
+- no live Hammerspoon or Swift helper installation
+- no voice-only mode; text input remains available
+
 ## Voice Control Hotkey Phase 5
 
 Hotkey Phase 5 adds a read-only Hammerspoon bridge status check without

@@ -77,6 +77,29 @@ def test_hammerspoon_validation_rejects_install_mutation_markers(
     assert any(expected_error in error for error in result.errors)
 
 
+@pytest.mark.parametrize(
+    "active_line",
+    [
+        "os.execute('say unsafe')",
+        "io.popen('say unsafe')",
+        "hs.execute('say unsafe')",
+        "hs.task.new('/bin/zsh', nil, {'-lc', 'say unsafe'}):start()",
+        "dofile('/tmp/unsafe.lua')",
+        "loadfile('/tmp/unsafe.lua')()",
+        "require('unsafe')",
+    ],
+)
+def test_hammerspoon_validation_rejects_active_execution_outside_disabled_guard(
+    active_line: str,
+) -> None:
+    snippet = MacOSHotkeyBridgeCommand().hammerspoon_snippet() + active_line
+
+    result = validate_hammerspoon_bridge(snippet)
+
+    assert result.valid is False
+    assert any("execution or loading markers" in error for error in result.errors)
+
+
 def test_disabled_macos_hotkey_bridge_does_not_start_capture() -> None:
     bridge = DisabledMacOSHotkeyBridge()
 
