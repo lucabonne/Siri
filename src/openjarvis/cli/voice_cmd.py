@@ -310,6 +310,92 @@ def _format_hammerspoon_install_preview(path: Path) -> None:
     )
 
 
+def _format_hammerspoon_activation_guide(path: Path) -> None:
+    resolved_path = path.resolve(strict=True)
+    init_path = Path.home() / ".hammerspoon" / "init.lua"
+    dofile_line = f"dofile({json.dumps(str(resolved_path))})"
+    status = _hammerspoon_bridge_status(path)
+    active_init = status["active_init"]
+    app_status = status["hammerspoon_app"]
+
+    click.echo("Hammerspoon push-to-talk activation guide (manual only)")
+    click.echo(f"  bridge: {resolved_path}")
+    click.echo("  validation: passed")
+    click.echo("  activation owner: user, outside Jarvis")
+    click.echo("  default behavior: preview-only `jarvis voice mic-run`")
+    click.echo("  approved dispatch: disabled unless manually opted in")
+    click.echo("  result speech: disabled unless manually opted in")
+    click.echo("")
+    click.echo("Preflight checklist:")
+    click.echo(f"  - bridge file exists: {status['file_exists']}")
+    click.echo(f"  - bridge file is regular file: {status['file_is_file']}")
+    click.echo("  - static validation passed: True")
+    click.echo(
+        f"  - preview-only default detected: {status['preview_only_default_detected']}"
+    )
+    click.echo("  - Lua execution by Jarvis: not attempted")
+    click.echo("  - shell commands from bridge by Jarvis: not run")
+    click.echo("  - listener started by Jarvis: False")
+    click.echo("  - files modified by Jarvis: False")
+    click.echo("  - ~/.hammerspoon/init.lua modified by Jarvis: False")
+    click.echo("  - Hammerspoon installed by Jarvis: False")
+    click.echo("  - Accessibility permission requested by Jarvis: False")
+    click.echo("  - approval bypassed by Jarvis: False")
+    click.echo("  - automatic dispatch by default: False")
+    click.echo("  - automatic speech by default: False")
+    click.echo(f"  - active init path: {active_init['path']}")
+    click.echo(
+        "  - active init currently references bridge: "
+        f"{active_init['reference_detected']}"
+    )
+    if app_status["checked"]:
+        click.echo(f"  - Hammerspoon app detected: {app_status['detected']}")
+    else:
+        click.echo(
+            f"  - Hammerspoon app detected: not checked ({app_status['reason']})"
+        )
+    click.echo("")
+    click.echo("Manual install steps:")
+    click.echo("  1. Install Hammerspoon yourself if you choose to use it.")
+    click.echo(f"  2. Open {init_path} in an editor.")
+    click.echo("  3. Add this exact line manually:")
+    click.echo(f"     {dofile_line}")
+    click.echo("  4. Save the file and reload Hammerspoon manually.")
+    click.echo(
+        "  5. Keep `enable_openjarvis_voice_hotkey = false` to preserve "
+        "preview-only behavior."
+    )
+    click.echo(
+        "  6. To activate later, manually change "
+        "`enable_openjarvis_voice_hotkey` to true in the bridge file."
+    )
+    click.echo(
+        "  7. If macOS prompts or blocks the hotkey, grant Accessibility "
+        "permission manually in System Settings > Privacy & Security > "
+        "Accessibility."
+    )
+    click.echo("")
+    click.echo("Manual rollback steps:")
+    click.echo(
+        "  1. Change `enable_openjarvis_voice_hotkey` back to false in the bridge file."
+    )
+    click.echo(f"  2. Remove this exact line from {init_path}:")
+    click.echo(f"     {dofile_line}")
+    click.echo("  3. Save the file and reload Hammerspoon manually.")
+    click.echo(
+        "  4. Optionally remove Hammerspoon's Accessibility permission manually "
+        "in System Settings."
+    )
+    click.echo(
+        "  5. Optionally delete the bridge file manually after it is no longer used."
+    )
+    click.echo("")
+    click.echo(
+        "Jarvis does not perform activation, rollback, permission changes, "
+        "listener startup, dispatch, or speech from this guide."
+    )
+
+
 def _active_init_references_bridge(init_path: Path, bridge_path: Path) -> bool:
     if not init_path.exists() or not init_path.is_file():
         return False
@@ -1132,6 +1218,16 @@ def doctor(as_json: bool) -> None:
     ),
 )
 @click.option(
+    "--activation-guide",
+    type=click.Path(path_type=Path),
+    default=None,
+    help=(
+        "Manual activation guide only: validate a generated Hammerspoon Lua "
+        "example, show preflight status, and print manual install/rollback "
+        "steps without changing files."
+    ),
+)
+@click.option(
     "--status",
     "status_path",
     type=click.Path(path_type=Path),
@@ -1154,6 +1250,7 @@ def hotkey_bridge(
     write_hammerspoon: Path | None,
     validate_hammerspoon: Path | None,
     install_preview: Path | None,
+    activation_guide: Path | None,
     status_path: Path | None,
 ) -> None:
     """Print or explicitly write a disabled macOS hotkey bridge example."""
@@ -1168,6 +1265,10 @@ def hotkey_bridge(
             )
         if install_preview is not None:
             raise click.UsageError("--status cannot be combined with --install-preview")
+        if activation_guide is not None:
+            raise click.UsageError(
+                "--status cannot be combined with --activation-guide"
+            )
         if output_format is not None:
             raise click.UsageError("--status cannot be combined with --format")
         _format_hammerspoon_bridge_status(_hammerspoon_bridge_status(status_path))
@@ -1182,16 +1283,41 @@ def hotkey_bridge(
             raise click.UsageError(
                 "--install-preview cannot be combined with --validate-hammerspoon"
             )
+        if activation_guide is not None:
+            raise click.UsageError(
+                "--install-preview cannot be combined with --activation-guide"
+            )
         if output_format is not None:
             raise click.UsageError("--install-preview cannot be combined with --format")
         validated_path = _validate_hammerspoon_bridge_file(install_preview)
         _format_hammerspoon_install_preview(validated_path)
         return
 
+    if activation_guide is not None:
+        if write_hammerspoon is not None:
+            raise click.UsageError(
+                "--activation-guide cannot be combined with --write-hammerspoon"
+            )
+        if validate_hammerspoon is not None:
+            raise click.UsageError(
+                "--activation-guide cannot be combined with --validate-hammerspoon"
+            )
+        if output_format is not None:
+            raise click.UsageError(
+                "--activation-guide cannot be combined with --format"
+            )
+        validated_path = _validate_hammerspoon_bridge_file(activation_guide)
+        _format_hammerspoon_activation_guide(validated_path)
+        return
+
     if validate_hammerspoon is not None:
         if write_hammerspoon is not None:
             raise click.UsageError(
                 "--validate-hammerspoon cannot be combined with --write-hammerspoon"
+            )
+        if activation_guide is not None:
+            raise click.UsageError(
+                "--validate-hammerspoon cannot be combined with --activation-guide"
             )
         if output_format is not None:
             raise click.UsageError(
