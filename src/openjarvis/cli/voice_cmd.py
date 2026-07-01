@@ -2534,7 +2534,7 @@ def mic_preview(
     "--speak-result",
     is_flag=True,
     default=False,
-    help="Speak the dispatch result through an explicit local TTS adapter.",
+    help="Speak the dispatch result through an explicit local speech-output adapter.",
 )
 @click.option(
     "--speech-adapter",
@@ -2994,7 +2994,7 @@ def capture_preview(
     "--speak-result",
     is_flag=True,
     default=False,
-    help="Speak the dispatch result through an explicit local TTS adapter.",
+    help="Speak the dispatch result through an explicit local speech-output adapter.",
 )
 @click.option(
     "--speech-adapter",

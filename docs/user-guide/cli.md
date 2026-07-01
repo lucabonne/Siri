@@ -652,19 +652,20 @@ Current safe workflow:
    pass `--adapter` on transcription commands.
 4. `jarvis voice mic-transcribe-smoke --duration 1 --recorder sounddevice --adapter faster-whisper`
 5. `jarvis voice mic-preview --duration 1 --recorder sounddevice --adapter faster-whisper`
-6. `jarvis voice record-local --duration 2`
-7. `jarvis voice transcribe-file ./voice-sample.wav --adapter faster-whisper`
-8. `jarvis voice capture-preview --duration 2 --adapter faster-whisper`
-9. `jarvis voice run-local --duration 2 --adapter faster-whisper`
-10. `jarvis voice logs`
+6. `jarvis voice mic-run --duration 1 --recorder sounddevice --adapter faster-whisper`
+7. `jarvis voice record-local --duration 2`
+8. `jarvis voice transcribe-file ./voice-sample.wav --adapter faster-whisper`
+9. `jarvis voice capture-preview --duration 2 --adapter faster-whisper`
+10. `jarvis voice run-local --duration 2 --adapter faster-whisper`
+11. `jarvis voice logs`
 
 Implemented safe local/manual behavior:
 
 - `submit`, `status`, and `cancel` exercise the preview/approval/session API
   gates with typed transcripts.
 - `record-local`, `mic-smoke`, `mic-transcribe-smoke`, `mic-preview`,
-  `transcribe-file`, `capture-preview`, and `run-local` run only after an
-  explicit terminal command and fixed duration or existing file input.
+  `mic-run`, `transcribe-file`, `capture-preview`, and `run-local` run only
+  after an explicit terminal command and fixed duration or existing file input.
 - `doctor` and Mission Control status/readiness views inspect setup without
   starting capture, hotkeys, dispatch, speech, model downloads, or settings
   mutation.
@@ -678,8 +679,9 @@ Optional configured behavior:
   printed hotkey bridge command formatting, and local event logging.
 - `--approve-dispatch` explicitly calls `/v1/voice/ptt/dispatch` after preview
   and sends `approved=true`.
-- `voice speak` and `run-local --approve-dispatch --speak-result` explicitly use
-  the selected local speech-output adapter.
+- `voice speak`, `mic-run --approve-dispatch --speak-result`, and
+  `run-local --approve-dispatch --speak-result` explicitly use the selected
+  local speech-output adapter.
 - `--recorder macos` explicitly uses local macOS recording tools and may request
   macOS **Microphone** permission.
 
@@ -695,7 +697,8 @@ Deferred real activation behavior:
 These commands do not listen in the background, capture Fn hotkeys, call a cloud
 speech API, automatically dispatch a transcript, or automatically play TTS for
 results. Speech output runs only through explicit commands/flags such as
-`voice speak` or `voice run-local --speak-result`. `voice record-local` and
+`voice speak`, `voice mic-run --approve-dispatch --speak-result`, or
+`voice run-local --approve-dispatch --speak-result`. `voice record-local` and
 `voice capture-preview` both have an explicit or configured duration stop
 condition. When `voice record-local` resolves to a real microphone backend, its
 duration is limited to 0.1-30 seconds and its printed WAV is intentionally
@@ -705,7 +708,7 @@ it.
 `voice capture-preview` manually chains local recording, local transcription,
 and the existing preview endpoint, then stops before dispatch. Text input
 remains available; dispatch is skipped unless `--approve-dispatch` is present on
-`voice submit` or `voice run-local`.
+`voice submit`, `voice mic-run`, or `voice run-local`.
 
 `voice mic-smoke --duration N` is a narrower real-microphone check. Its duration
 must be supplied explicitly and must be between 0.1 and 30 seconds. It accepts
@@ -780,7 +783,8 @@ CLI flags and `OPENJARVIS_BASE_URL` override these config values. This section
 does not enable listening, global/Fn hotkey capture, approval bypass,
 auto-dispatch, or automatic speech playback. Dispatch still requires
 `--approve-dispatch`; speech still requires `voice speak` or
-`voice run-local --speak-result`.
+`voice mic-run --approve-dispatch --speak-result` or
+`voice run-local --approve-dispatch --speak-result`.
 
 `voice logs` reads recent JSONL events from the local `voice_logs_path`.
 Logging is local-only and records command activity such as submit, status,
@@ -926,7 +930,8 @@ with `--adapter`, set `[voice_control].transcription_adapter`, or set
 current local adapter choices are `faster-whisper` and `whisper.cpp`; cloud
 speech backends are not used by `jarvis voice transcribe-file` or
 `jarvis voice capture-preview`.
-The same local adapter requirement applies to `jarvis voice run-local`.
+The same local adapter requirement applies to `jarvis voice mic-run` and
+`jarvis voice run-local`.
 
 For `faster-whisper`, install the optional dependency with:
 
@@ -952,10 +957,11 @@ selected local adapter, raw recordings are not persisted unless
 `jarvis voice submit --approve-dispatch` path or
 `voice run-local --approve-dispatch` or `voice mic-run --approve-dispatch`.
 `voice speak` sends only the literal text you provide to the selected local
-adapter; `voice run-local --speak-result` and `voice mic-run --speak-result`
-speak only an explicitly approved dispatch result. The current speech-output
-adapter is `macos-say`, which uses the local macOS `say` command when available;
-Piper, Coqui, and other local TTS adapters remain deferred. Voice-only mode, Fn
+adapter; `voice run-local --approve-dispatch --speak-result` and
+`voice mic-run --approve-dispatch --speak-result` speak only an explicitly
+approved dispatch result. The current speech-output adapter is `macos-say`,
+which uses the local macOS `say` command when available; Piper, Coqui, and
+other local TTS adapters remain deferred. Voice-only mode, Fn
 hotkey listening, always-on listening, and automatic speech playback of
 dispatch results remain deferred.
 

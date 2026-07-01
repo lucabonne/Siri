@@ -145,6 +145,40 @@ def test_voice_microphone_command_help_separates_pipeline_stages() -> None:
         assert description in result.output
 
 
+def test_voice_release_readiness_help_text_stays_manual_and_safe() -> None:
+    doctor = CliRunner().invoke(voice_cmd.voice, ["doctor", "--help"])
+    assert doctor.exit_code == 0
+    assert "without recording, dispatching, speaking, or hotkeys" in doctor.output
+
+    for command in ("run-local", "mic-run"):
+        result = CliRunner().invoke(voice_cmd.voice, [command, "--help"])
+        output = " ".join(result.output.split())
+
+        assert result.exit_code == 0
+        assert "approved dispatch is opt-in" in output
+        assert "Explicitly approve and call /dispatch after preview" in output
+        assert (
+            "Speak the dispatch result through an explicit local speech-output adapter"
+        ) in output
+
+    bridge = CliRunner().invoke(voice_cmd.voice, ["hotkey-bridge", "--help"])
+    bridge_output = " ".join(bridge.output.split())
+    assert bridge.exit_code == 0
+    assert "never starts a listener" in bridge_output
+    assert "--write-hammerspoon" in bridge_output
+    assert "never installs or enables it" in bridge_output
+    assert "--validate-hammerspoon" in bridge_output
+    assert "without running Lua or bridge commands" in bridge_output
+    assert "--install-preview" in bridge_output
+    assert "without changing files" in bridge_output
+    assert "--activation-guide" in bridge_output
+    assert "--rollback-guide" in bridge_output
+    assert "--activation-status" in bridge_output
+    assert "without executing or modifying anything" in bridge_output
+    assert "--status" in bridge_output
+    assert "read-only Hammerspoon bridge status" in bridge_output
+
+
 def test_voice_logs_command_outputs_recent_events(monkeypatch, tmp_path: Path) -> None:
     log_path = tmp_path / "voice-events.jsonl"
     logger = voice_cmd.VoiceEventLogger(

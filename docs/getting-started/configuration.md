@@ -575,7 +575,7 @@ voice_logs_preview_chars = 80
 | `default_record_duration` | float | `0.0` | Default fixed recording duration for explicit recorder commands. `0.0` keeps `--duration` required. Real microphone recording is limited to 0.1-30 seconds. |
 | `default_recorder` | string | `"dev-silent"` | Recorder used by explicit recorder commands when `--recorder` is omitted. Supported values: `"dev-silent"`, `"macos"`, and `"sounddevice"`. |
 | `default_api_base_url` | string | `""` | Optional OpenJarvis API base URL for `jarvis voice`; CLI flags and `OPENJARVIS_BASE_URL` override it. |
-| `speech_output_adapter` | string | `""` | Optional local speech adapter for explicit `voice speak` or `run-local --speak-result`. |
+| `speech_output_adapter` | string | `""` | Optional local speech adapter for explicit `voice speak`, `mic-run --approve-dispatch --speak-result`, or `run-local --approve-dispatch --speak-result`. |
 | `speech_voice` | string | `""` | Optional local speech voice name, currently used by `macos-say`. |
 | `speech_rate` | int | `0` | Optional local speech rate. `0` uses the adapter default. |
 | `hotkey_bridge_format` | string | `"command"` | Output format for the print-only hotkey bridge helper: `"command"`, `"hammerspoon"`, or `"json"`. |
@@ -589,7 +589,8 @@ voice_logs_preview_chars = 80
 | `voice_logs_preview_chars` | int | `80` | Maximum redacted transcript preview length in local voice logs. |
 
 For the current safe workflow, use `jarvis voice doctor`, configure a local
-adapter/model, then test manually with `record-local`, `transcribe-file`,
+adapter/model, then test manually with `mic-smoke`, `mic-transcribe-smoke`,
+`mic-preview`, `mic-run`, `record-local`, `transcribe-file`,
 `capture-preview`, `run-local`, and `logs`.
 
 The optional real microphone recorder is selected only by explicit CLI flag

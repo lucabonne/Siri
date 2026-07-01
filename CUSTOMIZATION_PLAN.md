@@ -1,5 +1,70 @@
 # Customization Plan
 
+## Voice Control Release Readiness
+
+This pass consolidates Voice Control Phase 1-30, Mic Phase 1-8, Hotkey Phase
+1-6, and Hotkey Activation Phase 1-5 before any automatic hotkey/listener
+activation work.
+
+Implemented safe local/manual behavior:
+
+- Existing `jarvis voice` commands remain explicit terminal/API operations.
+  `submit`, `status`, and `cancel` keep the preview, approval, dispatch, and
+  FSM gates; recording and transcription commands run only when invoked.
+- `doctor`, `/v1/voice/ptt/status`, and Mission Control are inspection-only for
+  setup, readiness, diagnostics, safety/audit state, and recent redacted event
+  status. They do not record, dispatch, speak, start hotkeys, request
+  permissions, download models, or mutate settings.
+- `mic-run` and `run-local` are preview-only by default. Dispatch requires
+  `--approve-dispatch`, and result speech additionally requires
+  `--speak-result`.
+- Voice logs remain local structured JSONL events with redacted transcript
+  summaries by default. Export and cleanup are explicit CLI actions only.
+
+Optional local microphone/transcription/TTS behavior:
+
+- Real microphone recording is available only through explicit `macos` or
+  `sounddevice` recorder selection/configuration and a bounded 0.1-30 second
+  duration.
+- Local transcription requires an explicit/configured local adapter and model.
+- Local speech output is limited to `jarvis voice speak` or the explicit
+  `mic-run --approve-dispatch --speak-result` or
+  `run-local --approve-dispatch --speak-result` path.
+
+Generated but disabled Hammerspoon bridge behavior:
+
+- `jarvis voice hotkey-bridge` prints or writes a disabled bridge example
+  around preview-only `jarvis voice mic-run`.
+- Validation, install preview, activation guide, rollback guide, activation
+  status, and status modes are static/read-only or guide-only. They do not
+  execute Lua, run bridge shell commands, mutate `~/.hammerspoon/init.lua`,
+  install Hammerspoon, start listeners, request Accessibility permission,
+  dispatch, approve, or speak.
+
+Manual activation workflow:
+
+- The documented workflow is still user-performed outside Jarvis: write the
+  disabled bridge, validate it, preview install steps, read the activation
+  guide, manually add the printed `dofile(...)` line to
+  `~/.hammerspoon/init.lua`, manually reload Hammerspoon, inspect activation
+  status, and use the rollback guide if needed.
+
+Deferred scope:
+
+- no always-on listening
+- no wake word
+- no enabled Fn/global hotkey capture
+- no Python-started global hotkey listener
+- no automatic Hammerspoon installation or init mutation
+- no programmatic Accessibility permission request
+- no approval bypass
+- no automatic dispatch by default
+- no automatic speech playback by default
+- no Mission Control settings mutation controls
+- no Mission Control microphone/accessibility permission prompts
+- no Mission Control log export or cleanup controls
+- no voice-only mode; text input remains available
+
 ## Voice Control Hotkey Activation Phase 5
 
 Activation Phase 5 adds a final read-only manual hotkey activation safety
@@ -613,6 +678,7 @@ Control stack before Fn/global hotkey activation and always-on listening.
   `approved=true`.
 - Local transcription adapters are opt-in and local-only for the voice CLI.
 - Speech output is explicit through `jarvis voice speak` or
+  `mic-run --approve-dispatch --speak-result` or
   `run-local --approve-dispatch --speak-result`.
 - The hotkey bridge is disabled/print-only by default.
 - Voice logs are local structured JSONL events with redacted transcript
@@ -1207,8 +1273,8 @@ defaults without enabling any risky runtime behavior by default.
   JSON/Hammerspoon preview, but it still reports disabled listener state and
   does not start global key capture.
 - Config can choose defaults for explicit speech commands, but it does not make
-  the CLI speak automatically; `voice speak` or `run-local --speak-result` are
-  still required.
+  the CLI speak automatically; `voice speak` or
+  `run-local --approve-dispatch --speak-result` are still required.
 - Dispatch remains approval-gated. Config does not cause automatic dispatch;
   `--approve-dispatch` is still required and the dispatch request still sends
   `approved=true`.
