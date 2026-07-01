@@ -595,10 +595,15 @@ adapter/model, then test manually with `mic-smoke`, `mic-transcribe-smoke`,
 
 Use `jarvis voice hotkey-runtime --dry-run` to resolve the preview-only
 `jarvis voice mic-run ...` command an external Hammerspoon trigger would call
-and to see missing setup guidance. The dry run reads configuration only; it
-does not open the microphone, load models, submit, dispatch, speak, start a
-listener, install Hammerspoon, edit `~/.hammerspoon/init.lua`, or request
-Accessibility permission.
+and to see missing setup guidance. Use
+`jarvis voice hotkey-runtime --preflight` for the stricter readiness report:
+resolved preview-only command, real recorder backend, bounded duration, local
+transcription adapter/model, API base URL, approval requirement,
+dispatch/speech defaults, and safe Hammerspoon/manual activation status. Both
+commands read configuration only; they do not open the microphone, load models,
+submit, dispatch, speak, start a listener, install Hammerspoon, edit
+`~/.hammerspoon/init.lua`, request Accessibility permission, bypass approval,
+or write voice log events.
 
 The optional real microphone recorder is selected only by explicit CLI flag
 (`--recorder sounddevice`) or this config field. Install it with

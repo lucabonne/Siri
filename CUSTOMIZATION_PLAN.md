@@ -1,5 +1,42 @@
 # Customization Plan
 
+## Voice Control Hotkey Runtime Phase 3
+
+Hotkey Runtime Phase 3 adds a safe runtime preflight command for external
+Hammerspoon triggers without activating or installing anything.
+
+- `jarvis voice hotkey-runtime --preflight` reports readiness for an external
+  Hammerspoon trigger.
+- The preflight reports the resolved preview-only `jarvis voice mic-run ...`
+  command, real recorder backend configuration, bounded duration configuration,
+  local transcription adapter/model configuration, API base URL, approval
+  requirement, dispatch-disabled default, speech-disabled default, and safe
+  Hammerspoon bridge/manual activation status where filesystem-only checks are
+  possible.
+- `--json` returns the same readiness checks, setup issues, guidance, resolved
+  command, and safety fields for external tooling.
+- The resolved command remains preview-only by default and omits
+  `--approve-dispatch` and `--speak-result`.
+- The preflight command does not record audio, transcribe, load transcription
+  models, submit, dispatch, speak, start listeners, install Hammerspoon, modify
+  `~/.hammerspoon/init.lua`, request Accessibility permission, bypass approval,
+  or write voice log events.
+- Runtime Phase 1 `jarvis voice hotkey-runtime --contract` and Runtime Phase 2
+  `jarvis voice hotkey-runtime --dry-run` behavior remain intact.
+
+Deferred work remains intentionally untouched:
+
+- no always-on listening
+- no enabled Fn/global hotkey capture
+- no Python-started global hotkey listener
+- no automatic Hammerspoon installation or init mutation
+- no programmatic Accessibility permission request
+- no approval bypass
+- no automatic dispatch by default
+- no automatic speech playback by default
+- no Mission Control execution controls
+- no voice-only mode; text input remains available
+
 ## Voice Control Hotkey Runtime Phase 2
 
 Hotkey Runtime Phase 2 adds a safe dry-run preflight for external Hammerspoon

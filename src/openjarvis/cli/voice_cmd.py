@@ -1614,6 +1614,204 @@ def _hotkey_runtime_dry_run_data() -> dict[str, Any]:
     }
 
 
+def _hotkey_runtime_preflight_data() -> dict[str, Any]:
+    config = load_config()
+    voice_control = _voice_control_config(config)
+    issues: list[str] = []
+    guidance: list[str] = []
+
+    raw_duration = getattr(voice_control, "default_record_duration", 0.0) or 0.0
+    try:
+        duration = float(raw_duration)
+    except (TypeError, ValueError):
+        duration = 0.0
+        issues.append("[voice_control].default_record_duration must be numeric")
+        guidance.append(
+            "Set [voice_control].default_record_duration to a bounded value "
+            "between 0.1 and 30 seconds before wiring an external trigger."
+        )
+
+    duration_configured = (
+        MICROPHONE_MIN_DURATION_SECONDS <= duration <= MICROPHONE_MAX_DURATION_SECONDS
+    )
+    if not duration_configured:
+        issues.append(
+            "[voice_control].default_record_duration must be configured between "
+            f"{MICROPHONE_MIN_DURATION_SECONDS:g} and "
+            f"{MICROPHONE_MAX_DURATION_SECONDS:g} seconds"
+        )
+        guidance.append(
+            "Configure a fixed bounded duration so an external hotkey cannot "
+            "start an unbounded recording."
+        )
+
+    recorder = str(getattr(voice_control, "hotkey_bridge_recorder", "macos") or "macos")
+    recorder_status = recorder_diagnostics(recorder)
+    real_recorder_configured = (
+        recorder in MICROPHONE_RECORDER_KINDS
+        and recorder_status["real_microphone_recorder_configured"] is True
+        and recorder_status["supported"] is True
+    )
+    if not real_recorder_configured:
+        issues.append(
+            "[voice_control].hotkey_bridge_recorder must be macos or sounddevice"
+        )
+        guidance.append(
+            "Set [voice_control].hotkey_bridge_recorder to a real microphone "
+            "backend before wiring an external trigger."
+        )
+
+    configured_adapter = str(getattr(voice_control, "transcription_adapter", "") or "")
+    speech_backend = str(getattr(config.speech, "backend", "") or "")
+    if configured_adapter:
+        adapter = configured_adapter
+        adapter_source = "[voice_control].transcription_adapter"
+    elif speech_backend in LOCAL_TRANSCRIPTION_ADAPTERS:
+        adapter = speech_backend
+        adapter_source = "[speech].backend"
+    else:
+        adapter = ""
+        adapter_source = ""
+
+    adapter_configured = adapter in LOCAL_TRANSCRIPTION_ADAPTERS
+    if not adapter_configured:
+        issues.append("local transcription adapter is not configured")
+        guidance.append(
+            "Set [voice_control].transcription_adapter to faster-whisper or "
+            "whisper.cpp before wiring an external trigger."
+        )
+
+    model_path = _voice_doctor_model_path(config, adapter or "disabled")
+    model_configured = bool(model_path["value"]) and model_path["exists"] is not False
+    if not model_configured:
+        issues.append("local transcription model is not configured")
+        guidance.append(
+            "Configure [voice_control].model_path, [speech].model, or the "
+            "required adapter model environment variable before wiring an "
+            "external trigger."
+        )
+
+    approval_required = bool(
+        getattr(config.speech, "require_explicit_voice_approval", True)
+    )
+    if not approval_required:
+        issues.append("[speech].require_explicit_voice_approval should remain true")
+        guidance.append(
+            "Keep [speech].require_explicit_voice_approval = true for external "
+            "hotkey-triggered workflows."
+        )
+
+    api_base = _configured_api_base_url(config)
+    api_base_configured = bool(api_base["value"])
+    command_duration = duration if duration_configured else 2.0
+    bridge = MacOSHotkeyBridgeCommand(
+        jarvis_bin=str(
+            getattr(voice_control, "hotkey_bridge_jarvis_bin", "jarvis") or "jarvis"
+        ),
+        duration=command_duration,
+        recorder=recorder,
+        input_device=str(
+            getattr(voice_control, "hotkey_bridge_input_device", ":0") or ":0"
+        ),
+        adapter=adapter or None,
+        base_url=api_base["value"] or None,
+        session_id=str(getattr(voice_control, "hotkey_bridge_session_id", "") or "")
+        or None,
+    )
+    argv = bridge.argv()
+    forbidden_default_flags_absent = all(
+        flag not in argv for flag in ("--approve-dispatch", "--speak-result")
+    )
+    hammerspoon_app = _hammerspoon_app_status()
+    active_init = Path.home() / ".hammerspoon" / "init.lua"
+
+    checks = {
+        "resolved_preview_only_command": {
+            "passed": forbidden_default_flags_absent,
+            "value": bridge.shell_command(),
+        },
+        "real_recorder_backend_configured": {
+            "passed": real_recorder_configured,
+            "value": recorder,
+            "source": "[voice_control].hotkey_bridge_recorder",
+            "diagnostics": recorder_status,
+        },
+        "bounded_duration_configured": {
+            "passed": duration_configured,
+            "value": duration if duration > 0 else None,
+            "source": "[voice_control].default_record_duration",
+            "minimum": MICROPHONE_MIN_DURATION_SECONDS,
+            "maximum": MICROPHONE_MAX_DURATION_SECONDS,
+        },
+        "local_transcription_adapter_model_configured": {
+            "passed": adapter_configured and model_configured,
+            "adapter": {
+                "value": adapter,
+                "source": adapter_source,
+                "allowed": list(LOCAL_TRANSCRIPTION_ADAPTERS),
+                "configured": adapter_configured,
+            },
+            "model": model_path,
+        },
+        "api_base_url_configured": {
+            "passed": api_base_configured,
+            "value": api_base["value"],
+            "source": api_base["source"],
+        },
+        "approval_required": {
+            "passed": approval_required,
+            "config": "[speech].require_explicit_voice_approval",
+        },
+        "dispatch_disabled_by_default": {
+            "passed": True,
+            "approve_flag_present": "--approve-dispatch" in argv,
+        },
+        "speech_disabled_by_default": {
+            "passed": True,
+            "speak_flag_present": "--speak-result" in argv,
+        },
+        "hammerspoon_bridge_manual_activation_status": {
+            "checked": True,
+            "activation": "manual/deferred",
+            "listener_started": False,
+            "active_init_path": str(active_init),
+            "active_init_exists": active_init.exists(),
+            "bridge_reference_checked": False,
+            "bridge_reference_check_reason": "no bridge path is used by preflight",
+            "hammerspoon_app": hammerspoon_app,
+        },
+    }
+    ready = all(check["passed"] for check in checks.values() if "passed" in check)
+
+    return {
+        "name": "OpenJarvis Hammerspoon push-to-talk runtime preflight",
+        "version": 1,
+        "ready": ready and not issues,
+        "resolved_preview_command": bridge.shell_command(),
+        "resolved_argv": argv,
+        "checks": checks,
+        "issues": issues,
+        "guidance": guidance,
+        "safety": {
+            "preflight": True,
+            "record_audio": False,
+            "transcribe": False,
+            "load_transcription_model": False,
+            "submit": False,
+            "dispatch": False,
+            "speak": False,
+            "listener_started": False,
+            "hammerspoon_init_modified": False,
+            "hammerspoon_installed": False,
+            "accessibility_permission_requested": False,
+            "approval_bypassed": False,
+            "event_logged": False,
+            "preview_only_default": True,
+            "forbidden_default_flags_absent": forbidden_default_flags_absent,
+        },
+    }
+
+
 def _format_hotkey_runtime_contract(data: dict[str, Any]) -> None:
     state = data["state"]
     trigger = data["external_trigger"]
@@ -1734,6 +1932,95 @@ def _format_hotkey_runtime_dry_run(data: dict[str, Any]) -> None:
             click.echo(f"  - {item}")
 
 
+def _format_hotkey_runtime_preflight(data: dict[str, Any]) -> None:
+    click.echo("Voice hotkey runtime preflight")
+    click.echo(f"  ready: {data['ready']}")
+    click.echo(f"  resolved preview-only command: {data['resolved_preview_command']}")
+    click.echo("  behavior: preview-only")
+    safety = data["safety"]
+    click.echo(
+        "  safety: no recording, transcription, model loading, submit, dispatch, "
+        "speech, listeners, Hammerspoon install, init.lua edit, Accessibility "
+        "request, approval bypass, or event log"
+    )
+    click.echo(
+        f"  forbidden default flags absent: {safety['forbidden_default_flags_absent']}"
+    )
+
+    checks = data["checks"]
+    click.echo("")
+    click.echo("Readiness checks:")
+    resolved = checks["resolved_preview_only_command"]
+    click.echo(f"  - resolved preview-only command: {resolved['passed']}")
+    recorder = checks["real_recorder_backend_configured"]
+    click.echo(
+        "  - real recorder backend configured: "
+        f"{recorder['passed']} ({recorder['value']})"
+    )
+    duration = checks["bounded_duration_configured"]
+    duration_value = duration["value"] if duration["value"] is not None else "-"
+    click.echo(
+        "  - bounded duration configured: "
+        f"{duration['passed']} ({duration_value} seconds)"
+    )
+    transcription = checks["local_transcription_adapter_model_configured"]
+    click.echo(
+        f"  - local transcription adapter/model configured: {transcription['passed']}"
+    )
+    click.echo(f"    adapter: {transcription['adapter']['value'] or '-'}")
+    model = transcription["model"]
+    exists = model["exists"] if model["exists"] is not None else "not required"
+    click.echo(
+        f"    model: {model['value'] or '-'} "
+        f"(required={model['required']}, exists={exists})"
+    )
+    api_base = checks["api_base_url_configured"]
+    click.echo(
+        f"  - API base URL configured: {api_base['passed']} ({api_base['value']})"
+    )
+    click.echo(f"  - approval required: {checks['approval_required']['passed']}")
+    dispatch = checks["dispatch_disabled_by_default"]
+    approve_flag_present = dispatch["approve_flag_present"]
+    click.echo(
+        "  - dispatch disabled by default: "
+        f"{dispatch['passed']} (approve flag present={approve_flag_present})"
+    )
+    speech = checks["speech_disabled_by_default"]
+    click.echo(
+        "  - speech disabled by default: "
+        f"{speech['passed']} (speak flag present={speech['speak_flag_present']})"
+    )
+    activation = checks["hammerspoon_bridge_manual_activation_status"]
+    click.echo("  - Hammerspoon bridge/manual activation status:")
+    click.echo(f"    activation: {activation['activation']}")
+    click.echo(f"    listener started: {activation['listener_started']}")
+    click.echo(f"    active init path: {activation['active_init_path']}")
+    click.echo(f"    active init exists: {activation['active_init_exists']}")
+    click.echo(
+        "    bridge reference checked: "
+        f"{activation['bridge_reference_checked']} "
+        f"({activation['bridge_reference_check_reason']})"
+    )
+    app_status = activation["hammerspoon_app"]
+    if app_status["checked"]:
+        click.echo(f"    Hammerspoon app detected: {app_status['detected']}")
+    else:
+        click.echo(
+            f"    Hammerspoon app detected: not checked ({app_status['reason']})"
+        )
+
+    if data["issues"]:
+        click.echo("")
+        click.echo("Setup issues:")
+        for issue in data["issues"]:
+            click.echo(f"  - {issue}")
+    if data["guidance"]:
+        click.echo("")
+        click.echo("Guidance:")
+        for item in data["guidance"]:
+            click.echo(f"  - {item}")
+
+
 @click.group("voice")
 def voice() -> None:
     """Explicit local/manual voice flow over /v1/voice/ptt."""
@@ -1756,28 +2043,49 @@ def voice() -> None:
     ),
 )
 @click.option(
+    "--preflight",
+    is_flag=True,
+    default=False,
+    help=(
+        "Validate external Hammerspoon trigger readiness without recording, "
+        "transcribing, dispatching, speaking, logging, or starting listeners."
+    ),
+)
+@click.option(
     "--json",
     "as_json",
     is_flag=True,
-    help="Print the contract or dry-run result as JSON.",
+    help="Print the contract, dry-run, or preflight result as JSON.",
 )
-def hotkey_runtime(contract: bool, dry_run: bool, as_json: bool) -> None:
-    """Document or dry-run the safe external hotkey runtime boundary."""
-    if contract == dry_run:
+def hotkey_runtime(
+    contract: bool,
+    dry_run: bool,
+    preflight: bool,
+    as_json: bool,
+) -> None:
+    """Document, dry-run, or preflight the safe external hotkey runtime boundary."""
+    selected_modes = sum((contract, dry_run, preflight))
+    if selected_modes != 1:
         raise click.UsageError(
-            "pass exactly one of --contract or --dry-run for hotkey runtime"
+            "pass exactly one of --contract, --dry-run, or --preflight "
+            "for hotkey runtime"
         )
 
-    data = (
-        _hotkey_runtime_contract_data() if contract else _hotkey_runtime_dry_run_data()
-    )
+    if contract:
+        data = _hotkey_runtime_contract_data()
+    elif dry_run:
+        data = _hotkey_runtime_dry_run_data()
+    else:
+        data = _hotkey_runtime_preflight_data()
     if as_json:
         _emit_json(data)
         return
     if contract:
         _format_hotkey_runtime_contract(data)
-    else:
+    elif dry_run:
         _format_hotkey_runtime_dry_run(data)
+    else:
+        _format_hotkey_runtime_preflight(data)
 
 
 @voice.command("doctor")
