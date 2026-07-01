@@ -586,14 +586,16 @@ Accessibility permission, enable dispatch by default, or speak.
 
 `--activation-status PATH` is a final manual activation readiness summary. It
 reports whether the generated bridge exists and validates safely, whether the
-default remains preview-only, whether the manual install and rollback guides
-are available, whether the active `~/.hammerspoon/init.lua` appears to
-reference it, whether Hammerspoon.app is detected by safe filesystem checks,
-and that Accessibility and Microphone permissions remain user-managed. It also
-states that Jarvis did not start a global listener, execute Lua, run shell
-commands from the bridge file, mutate files, touch active Hammerspoon config,
-install Hammerspoon, bypass approval, dispatch automatically, or speak
-automatically.
+default remains preview-only, whether a real microphone recorder and local
+transcription adapter/model are configured, whether approval is required,
+whether dispatch and speech remain disabled unless explicitly requested,
+whether the manual install and rollback guides are available, whether the
+active `~/.hammerspoon/init.lua` appears to reference it, whether
+Hammerspoon.app is detected by safe filesystem checks, and that Accessibility
+and Microphone permissions remain user-managed. It also states that Jarvis did
+not start a global listener, execute Lua, run shell commands from the bridge
+file, mutate files, touch active Hammerspoon config, install Hammerspoon,
+bypass approval, dispatch automatically, or speak automatically.
 
 Full manual Hammerspoon activation workflow:
 
@@ -618,8 +620,9 @@ Full manual Hammerspoon activation workflow:
    permission prompt is managed by you in macOS System Settings; Jarvis does
    not request it programmatically.
 7. `jarvis voice hotkey-bridge --activation-status ./siri-ptt.lua`
-   reports readiness and whether the active init appears to reference the
-   bridge. It remains read-only and does not dispatch or speak.
+   reports the final read-only checklist and whether the active init appears
+   to reference the bridge. It remains read-only and does not dispatch or
+   speak.
 8. `jarvis voice hotkey-bridge --rollback-guide ./siri-ptt.lua`
    prints the exact manual backup and rollback steps, including the
    `dofile(...)` line to remove manually. Jarvis does not roll back files for

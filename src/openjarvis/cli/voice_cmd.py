@@ -589,6 +589,61 @@ def _hammerspoon_bridge_status(path: Path) -> dict[str, Any]:
     }
 
 
+def _manual_hotkey_activation_checklist(
+    data: dict[str, Any],
+    voice_setup: dict[str, Any],
+) -> dict[str, Any]:
+    recorder = voice_setup["recorder"]
+    adapter = voice_setup["transcription_adapter"]
+    model = voice_setup["model_path"]
+    safety = data["safety"]
+    active_init = data["active_init"]
+    app_status = data["hammerspoon_app"]
+
+    local_adapter_configured = (
+        bool(adapter["effective"])
+        and adapter["effective"] != "disabled"
+        and adapter["supported"] is True
+    )
+    model_configured = bool(model["value"]) and model["exists"] is not False
+    real_recorder_configured = recorder["real_microphone_recorder_configured"] is True
+    dispatch_disabled = safety["dispatch_started"] is False
+    speech_disabled = safety["speech_started"] is False
+
+    return {
+        "bridge_file_generated": data["file_exists"] and data["file_is_file"],
+        "bridge_validates_safely": data["valid"],
+        "preview_only_default": data["preview_only_default_detected"],
+        "real_mic_recorder_configured": real_recorder_configured,
+        "local_transcription_adapter_model_configured": (
+            local_adapter_configured and model_configured
+        ),
+        "approval_required": voice_setup["approval"]["required"] is True,
+        "dispatch_disabled_unless_explicit": dispatch_disabled,
+        "speech_disabled_unless_explicit": speech_disabled,
+        "hammerspoon_detection_safely_checkable": app_status["checked"],
+        "hammerspoon_detected": app_status["detected"],
+        "hammerspoon_detection_note": app_status["reason"],
+        "active_init_reference_detected": active_init["reference_detected"],
+        "accessibility_permission_user_managed": True,
+        "microphone_permission_user_managed": True,
+        "manual_install_guide_available": data["valid"],
+        "rollback_guide_available": True,
+        "ready_for_manual_review": (
+            data["file_exists"]
+            and data["file_is_file"]
+            and data["valid"]
+            and data["preview_only_default_detected"]
+            and real_recorder_configured
+            and local_adapter_configured
+            and model_configured
+            and voice_setup["approval"]["required"] is True
+            and dispatch_disabled
+            and speech_disabled
+        ),
+    }
+
+
 def _format_hammerspoon_bridge_status(data: dict[str, Any]) -> None:
     click.echo("Hammerspoon bridge status (read-only)")
     click.echo(f"  bridge: {data['bridge']}")
@@ -648,6 +703,7 @@ def _format_hammerspoon_bridge_status(data: dict[str, Any]) -> None:
 
 
 def _format_hammerspoon_activation_status(data: dict[str, Any]) -> None:
+    checklist = data["manual_activation_checklist"]
     click.echo("Hammerspoon bridge activation readiness (manual only)")
     click.echo(f"  bridge: {data['bridge']}")
     click.echo(
@@ -661,6 +717,51 @@ def _format_hammerspoon_activation_status(data: dict[str, Any]) -> None:
     click.echo(f"  preview-only default: {data['preview_only_default_detected']}")
     click.echo(f"  manual install guide available: {data['valid']}")
     click.echo("  manual rollback guide available: True")
+    click.echo("")
+    click.echo("Final manual hotkey activation safety checklist:")
+    click.echo(f"  - bridge file generated: {checklist['bridge_file_generated']}")
+    click.echo(f"  - bridge validates safely: {checklist['bridge_validates_safely']}")
+    click.echo(f"  - preview-only default: {checklist['preview_only_default']}")
+    click.echo(
+        f"  - real mic recorder configured: {checklist['real_mic_recorder_configured']}"
+    )
+    click.echo(
+        "  - local transcription adapter/model configured: "
+        f"{checklist['local_transcription_adapter_model_configured']}"
+    )
+    click.echo(f"  - approval required: {checklist['approval_required']}")
+    click.echo(
+        "  - dispatch disabled unless explicit: "
+        f"{checklist['dispatch_disabled_unless_explicit']}"
+    )
+    click.echo(
+        "  - speech disabled unless explicit: "
+        f"{checklist['speech_disabled_unless_explicit']}"
+    )
+    if checklist["hammerspoon_detection_safely_checkable"]:
+        click.echo(
+            "  - Hammerspoon installed/detected if safely checkable: "
+            f"{checklist['hammerspoon_detected']}"
+        )
+    else:
+        click.echo(
+            "  - Hammerspoon installed/detected if safely checkable: "
+            f"not checked ({checklist['hammerspoon_detection_note']})"
+        )
+    click.echo(
+        "  - active init.lua reference detected: "
+        f"{checklist['active_init_reference_detected']}"
+    )
+    click.echo(
+        "  - Accessibility permission is user-managed: "
+        f"{checklist['accessibility_permission_user_managed']}"
+    )
+    click.echo(
+        "  - Microphone permission is user-managed: "
+        f"{checklist['microphone_permission_user_managed']}"
+    )
+    click.echo(f"  - rollback guide available: {checklist['rollback_guide_available']}")
+    click.echo(f"  - ready for manual review: {checklist['ready_for_manual_review']}")
     active_init = data["active_init"]
     click.echo(f"  active init: {active_init['path']}")
     click.echo(f"  active init reference detected: {active_init['reference_detected']}")
@@ -1448,9 +1549,11 @@ def hotkey_bridge(
             raise click.UsageError(
                 "--activation-status cannot be combined with --format"
             )
-        _format_hammerspoon_activation_status(
-            _hammerspoon_bridge_status(activation_status)
+        status_data = _hammerspoon_bridge_status(activation_status)
+        status_data["manual_activation_checklist"] = (
+            _manual_hotkey_activation_checklist(status_data, _voice_doctor_data())
         )
+        _format_hammerspoon_activation_status(status_data)
         return
 
     if status_path is not None:

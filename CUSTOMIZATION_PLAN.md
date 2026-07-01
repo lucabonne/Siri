@@ -1,5 +1,43 @@
 # Customization Plan
 
+## Voice Control Hotkey Activation Phase 5
+
+Activation Phase 5 adds a final read-only manual hotkey activation safety
+checklist to `jarvis voice hotkey-bridge --activation-status PATH`.
+
+- The checklist reports whether the bridge file is generated, validates
+  safely, remains preview-only by default, has a real microphone recorder
+  configured, has a local transcription adapter/model configured, requires
+  approval, keeps dispatch disabled unless explicit, keeps speech disabled
+  unless explicit, has Hammerspoon detected when safe filesystem checks apply,
+  has an active `init.lua` reference detected or not detected, keeps
+  Accessibility and Microphone permissions user-managed, and has rollback guide
+  visibility.
+- The checklist uses existing configuration-only voice diagnostics and the
+  existing static bridge validator. It does not execute Lua, run shell commands
+  from the bridge file, mutate files, touch active Hammerspoon config, install
+  Hammerspoon, start listeners, request Accessibility permission, request
+  Microphone permission, bypass approval, dispatch by default, or speak
+  automatically.
+- Focused CLI tests cover ready output, missing recorder/transcription setup,
+  unsafe bridge output, missing bridge/manual guide visibility, and manual-only
+  safety statements.
+- Existing `jarvis voice` commands, Voice Control Phase 1-30, Mic Phase 1-8,
+  Hotkey Phase 1-6, Hotkey Activation Phase 1-4, and read-only Mission Control
+  behavior remain intact. Voice-only mode remains deferred.
+
+Deferred work remains intentionally untouched:
+
+- no always-on listening
+- no enabled Fn/global hotkey capture
+- no Python-started global hotkey listener
+- no automatic Hammerspoon installation or init mutation
+- no programmatic Accessibility permission request
+- no approval bypass
+- no automatic dispatch by default
+- no automatic speech playback by default
+- no voice-only mode; text input remains available
+
 ## Voice Control Hotkey Activation Phase 4
 
 Activation Phase 4 documents and tests the full manual Hammerspoon activation
