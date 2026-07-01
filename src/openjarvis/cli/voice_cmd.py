@@ -606,6 +606,225 @@ def _format_hammerspoon_manual_test(path: Path) -> None:
     click.echo("  voice-only mode: deferred")
 
 
+def _voice_post_test_log_summary(limit: int = 20) -> dict[str, Any]:
+    settings = voice_log_settings_from_config(load_config())
+    events = query_voice_events(settings.path, limit=limit) if settings.enabled else []
+
+    preview_events = [
+        event for event in events if str(event.get("event", "")) == "preview_result"
+    ]
+    dispatch_decision_events = [
+        event for event in events if str(event.get("event", "")) == "dispatch_decision"
+    ]
+    skipped_dispatch_events = [
+        event
+        for event in dispatch_decision_events
+        if str(event.get("status", "")) == "skipped"
+    ]
+    approved_dispatch_events = [
+        event
+        for event in events
+        if str(event.get("event", "")) == "dispatch_result"
+        and isinstance(event.get("details"), dict)
+        and (
+            event["details"].get("approved") is True
+            or event["details"].get("dispatched") is True
+        )
+    ]
+    speech_events = [
+        event
+        for event in events
+        if str(event.get("event", "")) == "speech_result"
+        and isinstance(event.get("details"), dict)
+        and event["details"].get("spoken") is True
+    ]
+    full_transcript_fields = [
+        event
+        for event in events
+        if isinstance(event.get("transcript"), dict) and "text" in event["transcript"]
+    ]
+
+    commands = sorted(
+        {
+            str(event.get("command", ""))
+            for event in events
+            if str(event.get("command", ""))
+        }
+    )
+    return {
+        "enabled": settings.enabled,
+        "path": str(settings.path) if settings.path else "",
+        "limit": limit,
+        "events_inspected": len(events),
+        "commands": commands,
+        "preview_submission_event_count": len(preview_events),
+        "dispatch_decision_event_count": len(dispatch_decision_events),
+        "skipped_dispatch_event_count": len(skipped_dispatch_events),
+        "approved_dispatch_event_count": len(approved_dispatch_events),
+        "speech_event_count": len(speech_events),
+        "full_transcript_fields_observed": len(full_transcript_fields),
+        "transcript_text_displayed": False,
+        "raw_audio_displayed": False,
+    }
+
+
+def _hammerspoon_post_test_check(path: Path) -> dict[str, Any]:
+    status = _hammerspoon_bridge_status(path)
+    log_summary = _voice_post_test_log_summary()
+    safety = status["safety"]
+    return {
+        "bridge": status,
+        "log_summary": log_summary,
+        "checks": {
+            "bridge_still_validates": status["valid"],
+            "active_init_reference_present_or_absent": True,
+            "trigger_path_preview_only_by_default": (
+                status["preview_only_default_detected"]
+            ),
+            "recent_logs_contain_preview_submission_events": (
+                log_summary["preview_submission_event_count"] > 0
+            ),
+            "no_approved_dispatch_observed": (
+                log_summary["approved_dispatch_event_count"] == 0
+            ),
+            "no_speech_observed": log_summary["speech_event_count"] == 0,
+            "rollback_instructions_available": True,
+        },
+        "safety": {
+            "read_only": True,
+            "manual_testing_outside_jarvis": True,
+            "record_audio": False,
+            "transcribe": False,
+            "submit": False,
+            "dispatch": False,
+            "speak": False,
+            "listener_started": safety["listener_started"],
+            "global_hotkey_listener_started_from_python": False,
+            "files_modified": safety["files_modified"],
+            "active_hammerspoon_config_touched": False,
+            "init_modified": safety["init_modified"],
+            "hammerspoon_installed": safety["hammerspoon_installed"],
+            "accessibility_permission_requested": (
+                safety["accessibility_permission_requested"]
+            ),
+            "approval_bypassed": False,
+            "lua_executed": safety["lua_executed"],
+            "bridge_shell_commands_run": safety["bridge_shell_commands_run"],
+            "voice_only_mode": False,
+        },
+    }
+
+
+def _format_hammerspoon_post_test_check(data: dict[str, Any]) -> None:
+    bridge = data["bridge"]
+    checks = data["checks"]
+    log_summary = data["log_summary"]
+    active_init = bridge["active_init"]
+
+    click.echo("Hammerspoon post-test checklist (manual test outside Jarvis)")
+    click.echo(f"  bridge: {bridge['bridge']}")
+    click.echo("  scope: read-only checklist after user-performed manual testing")
+    click.echo("  manual activation owner: user outside Jarvis")
+    click.echo(f"  bridge file exists: {bridge['file_exists']}")
+    click.echo(f"  bridge file is regular file: {bridge['file_is_file']}")
+    click.echo(f"  bridge still validates: {checks['bridge_still_validates']}")
+    if bridge["validation_errors"]:
+        click.echo("  validation errors:")
+        for error in bridge["validation_errors"]:
+            click.echo(f"    - {error}")
+    click.echo(
+        f"  active init.lua reference present: {active_init['reference_detected']}"
+    )
+    click.echo(f"  active init: {active_init['path']}")
+    click.echo(
+        "  trigger path preview-only by default: "
+        f"{checks['trigger_path_preview_only_by_default']}"
+    )
+    click.echo("  approval bypassed by Jarvis: False")
+    click.echo("  automatic dispatch by default: False")
+    click.echo("  automatic speech by default: False")
+    click.echo("")
+    click.echo("Recent `jarvis voice logs` inspection (read-only, redacted)")
+    click.echo(f"  enabled: {log_summary['enabled']}")
+    click.echo(f"  path: {log_summary['path'] or '-'}")
+    click.echo(f"  events inspected: {log_summary['events_inspected']}")
+    click.echo(f"  commands observed: {', '.join(log_summary['commands']) or '-'}")
+    click.echo(
+        "  preview/submission events found: "
+        f"{log_summary['preview_submission_event_count']}"
+    )
+    click.echo(
+        "  skipped dispatch decisions found: "
+        f"{log_summary['skipped_dispatch_event_count']}"
+    )
+    click.echo(
+        "  approved dispatch events found: "
+        f"{log_summary['approved_dispatch_event_count']} "
+        "(expected 0 unless --approve-dispatch was explicitly used)"
+    )
+    click.echo(
+        f"  speech events found: {log_summary['speech_event_count']} "
+        "(expected 0 unless --speak-result was explicitly used)"
+    )
+    click.echo(
+        "  full transcript fields observed in stored events: "
+        f"{log_summary['full_transcript_fields_observed']} "
+        "(not displayed by this checklist)"
+    )
+    click.echo(
+        "  transcript text displayed by this checklist: "
+        f"{log_summary['transcript_text_displayed']}"
+    )
+    click.echo(
+        f"  raw audio displayed by this checklist: {log_summary['raw_audio_displayed']}"
+    )
+    click.echo("")
+    click.echo("Post-test verification")
+    click.echo(f"  - bridge still validates: {checks['bridge_still_validates']}")
+    click.echo(
+        "  - active init reference checked as present/absent: "
+        f"{checks['active_init_reference_present_or_absent']}"
+    )
+    click.echo(
+        "  - trigger remains preview-only by default: "
+        f"{checks['trigger_path_preview_only_by_default']}"
+    )
+    click.echo(
+        "  - recent logs contain preview/submission events: "
+        f"{checks['recent_logs_contain_preview_submission_events']}"
+    )
+    click.echo(
+        "  - no approved dispatch observed unless explicitly requested: "
+        f"{checks['no_approved_dispatch_observed']}"
+    )
+    click.echo(
+        "  - no speech observed unless explicitly requested: "
+        f"{checks['no_speech_observed']}"
+    )
+    click.echo(
+        "  - rollback instructions available: "
+        f"{checks['rollback_instructions_available']}"
+    )
+    click.echo(f"    jarvis voice hotkey-bridge --rollback-guide {bridge['bridge']}")
+    safety = data["safety"]
+    click.echo("")
+    click.echo("Safety boundaries for this post-test checklist:")
+    click.echo(f"  read-only: {safety['read_only']}")
+    click.echo("  Lua execution by Jarvis: not attempted")
+    click.echo("  shell commands from bridge by Jarvis: not run")
+    click.echo("  files modified by Jarvis: False")
+    click.echo("  active Hammerspoon config touched by Jarvis: False")
+    click.echo("  ~/.hammerspoon/init.lua modified by Jarvis: False")
+    click.echo("  listener started by Jarvis: False")
+    click.echo("  global hotkey listener started from Python: False")
+    click.echo("  Hammerspoon installed by Jarvis: False")
+    click.echo("  Accessibility permission requested by Jarvis: False")
+    click.echo("  approval bypassed by Jarvis: False")
+    click.echo("  automatic dispatch by default: False")
+    click.echo("  automatic speech by default: False")
+    click.echo("  voice-only mode: deferred")
+
+
 def _active_init_references_bridge(init_path: Path, bridge_path: Path) -> bool:
     if not init_path.exists() or not init_path.is_file():
         return False
@@ -2903,6 +3122,16 @@ def doctor(as_json: bool) -> None:
     ),
 )
 @click.option(
+    "--post-test-check",
+    type=click.Path(path_type=Path),
+    default=None,
+    help=(
+        "Read-only post-test checklist for user-performed manual Hammerspoon "
+        "activation tests; inspects bridge status and redacted local voice log "
+        "summaries without running the bridge."
+    ),
+)
+@click.option(
     "--status",
     "status_path",
     type=click.Path(path_type=Path),
@@ -2929,9 +3158,48 @@ def hotkey_bridge(
     manual_test: Path | None,
     rollback_guide: Path | None,
     activation_status: Path | None,
+    post_test_check: Path | None,
     status_path: Path | None,
 ) -> None:
     """Print or explicitly write a disabled macOS hotkey bridge example."""
+    if post_test_check is not None:
+        if write_hammerspoon is not None:
+            raise click.UsageError(
+                "--post-test-check cannot be combined with --write-hammerspoon"
+            )
+        if validate_hammerspoon is not None:
+            raise click.UsageError(
+                "--post-test-check cannot be combined with --validate-hammerspoon"
+            )
+        if install_preview is not None:
+            raise click.UsageError(
+                "--post-test-check cannot be combined with --install-preview"
+            )
+        if activation_guide is not None:
+            raise click.UsageError(
+                "--post-test-check cannot be combined with --activation-guide"
+            )
+        if manual_test is not None:
+            raise click.UsageError(
+                "--post-test-check cannot be combined with --manual-test"
+            )
+        if rollback_guide is not None:
+            raise click.UsageError(
+                "--post-test-check cannot be combined with --rollback-guide"
+            )
+        if activation_status is not None:
+            raise click.UsageError(
+                "--post-test-check cannot be combined with --activation-status"
+            )
+        if status_path is not None:
+            raise click.UsageError("--post-test-check cannot be combined with --status")
+        if output_format is not None:
+            raise click.UsageError("--post-test-check cannot be combined with --format")
+        _format_hammerspoon_post_test_check(
+            _hammerspoon_post_test_check(post_test_check)
+        )
+        return
+
     if manual_test is not None:
         if write_hammerspoon is not None:
             raise click.UsageError(

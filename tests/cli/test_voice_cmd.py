@@ -177,6 +177,8 @@ def test_voice_release_readiness_help_text_stays_manual_and_safe() -> None:
     assert "user-performed Hammerspoon test flow" in bridge_output
     assert "--rollback-guide" in bridge_output
     assert "--activation-status" in bridge_output
+    assert "--post-test-check" in bridge_output
+    assert "Read-only post-test checklist" in bridge_output
     assert "without executing or modifying anything" in bridge_output
     assert "--status" in bridge_output
     assert "read-only Hammerspoon bridge status" in bridge_output
@@ -2572,6 +2574,205 @@ def test_voice_hotkey_bridge_activation_status_prints_manual_only_safety(
     assert "automatic dispatch by default: False" in result.output
     assert "automatic speech by default: False" in result.output
     assert "Jarvis does not activate the bridge" in result.output
+
+
+def test_voice_hotkey_bridge_post_test_check_outputs_read_only_checklist(
+    monkeypatch, tmp_path
+) -> None:
+    home = tmp_path / "home"
+    home.mkdir()
+    bridge_path = tmp_path / "openjarvis-voice.lua"
+    log_path = tmp_path / "voice-events.jsonl"
+    _write_hammerspoon_validation_fixture(bridge_path)
+    logger = voice_cmd.VoiceEventLogger(
+        voice_cmd.voice_log_settings_from_config(
+            _safe_config(voice_logs_enabled=True, voice_logs_path=str(log_path))
+        )
+    )
+    logger.record(
+        command="mic-run",
+        event="preview_result",
+        transcript="email luca@example.com token sk-1234567890abcdef",
+        details={"approval_required": True, "approved": False, "dispatched": False},
+    )
+    logger.record(
+        command="mic-run",
+        event="dispatch_decision",
+        status="skipped",
+        details={"approved": False, "attempted": False},
+    )
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setattr(
+        voice_cmd,
+        "load_config",
+        lambda: _safe_config(voice_logs_enabled=True, voice_logs_path=str(log_path)),
+    )
+
+    result = CliRunner().invoke(
+        voice_cmd.voice,
+        ["hotkey-bridge", "--post-test-check", str(bridge_path)],
+    )
+
+    assert result.exit_code == 0
+    assert (
+        "Hammerspoon post-test checklist (manual test outside Jarvis)" in result.output
+    )
+    assert "scope: read-only checklist after user-performed manual testing" in (
+        result.output
+    )
+    assert "bridge still validates: True" in result.output
+    assert "active init.lua reference present: False" in result.output
+    assert "trigger path preview-only by default: True" in result.output
+    assert "preview/submission events found: 1" in result.output
+    assert "skipped dispatch decisions found: 1" in result.output
+    assert "approved dispatch events found: 0" in result.output
+    assert "speech events found: 0" in result.output
+    assert "transcript text displayed by this checklist: False" in result.output
+    assert "raw audio displayed by this checklist: False" in result.output
+    assert "rollback instructions available: True" in result.output
+    assert "Safety boundaries for this post-test checklist:" in result.output
+    assert "Lua execution by Jarvis: not attempted" in result.output
+    assert "shell commands from bridge by Jarvis: not run" in result.output
+    assert "global hotkey listener started from Python: False" in result.output
+    assert "Accessibility permission requested by Jarvis: False" in result.output
+    assert "automatic dispatch by default: False" in result.output
+    assert "automatic speech by default: False" in result.output
+    assert "voice-only mode: deferred" in result.output
+    assert "luca@example.com" not in result.output
+    assert "sk-1234567890abcdef" not in result.output
+
+
+def test_voice_hotkey_bridge_post_test_check_keeps_full_transcript_text_hidden(
+    monkeypatch, tmp_path
+) -> None:
+    bridge_path = tmp_path / "openjarvis-voice.lua"
+    log_path = tmp_path / "voice-events.jsonl"
+    _write_hammerspoon_validation_fixture(bridge_path)
+    logger = voice_cmd.VoiceEventLogger(
+        voice_cmd.voice_log_settings_from_config(
+            _safe_config(
+                voice_logs_enabled=True,
+                voice_logs_path=str(log_path),
+                voice_logs_include_full_transcripts=True,
+            )
+        )
+    )
+    logger.record(
+        command="mic-run",
+        event="preview_result",
+        transcript="full secret transcript token sk-1234567890abcdef",
+    )
+    monkeypatch.setattr(
+        voice_cmd,
+        "load_config",
+        lambda: _safe_config(voice_logs_enabled=True, voice_logs_path=str(log_path)),
+    )
+
+    result = CliRunner().invoke(
+        voice_cmd.voice,
+        ["hotkey-bridge", "--post-test-check", str(bridge_path)],
+    )
+
+    assert result.exit_code == 0
+    assert "full transcript fields observed in stored events: 1" in result.output
+    assert "not displayed by this checklist" in result.output
+    assert "full secret transcript" not in result.output
+    assert "sk-1234567890abcdef" not in result.output
+
+
+def test_voice_hotkey_bridge_post_test_check_reports_missing_bridge(
+    monkeypatch, tmp_path
+) -> None:
+    bridge_path = tmp_path / "missing-openjarvis-voice.lua"
+    monkeypatch.setattr(voice_cmd, "load_config", lambda: _safe_config())
+
+    result = CliRunner().invoke(
+        voice_cmd.voice,
+        ["hotkey-bridge", "--post-test-check", str(bridge_path)],
+    )
+
+    assert result.exit_code == 0
+    assert "bridge file exists: False" in result.output
+    assert "bridge still validates: False" in result.output
+    assert "bridge file does not exist" in result.output
+    assert "trigger path preview-only by default: False" in result.output
+    assert "recent logs contain preview/submission events: False" in result.output
+    assert "rollback instructions available: True" in result.output
+
+
+def test_voice_hotkey_bridge_post_test_check_detects_active_init_reference(
+    monkeypatch, tmp_path
+) -> None:
+    home = tmp_path / "home"
+    active_init = home / ".hammerspoon" / "init.lua"
+    active_init.parent.mkdir(parents=True)
+    bridge_path = tmp_path / "openjarvis-voice.lua"
+    _write_hammerspoon_validation_fixture(bridge_path)
+    active_init.write_text(
+        f"dofile({json.dumps(str(bridge_path.resolve(strict=True)))})\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setattr(voice_cmd, "load_config", lambda: _safe_config())
+
+    result = CliRunner().invoke(
+        voice_cmd.voice,
+        ["hotkey-bridge", "--post-test-check", str(bridge_path)],
+    )
+
+    assert result.exit_code == 0
+    assert f"active init: {active_init}" in result.output
+    assert "active init.lua reference present: True" in result.output
+    assert "active init reference checked as present/absent: True" in result.output
+    assert "active Hammerspoon config touched by Jarvis: False" in result.output
+
+
+def test_voice_hotkey_bridge_post_test_check_does_not_mutate_or_start_flow(
+    monkeypatch, tmp_path
+) -> None:
+    home = tmp_path / "home"
+    active_init = home / ".hammerspoon" / "init.lua"
+    active_init.parent.mkdir(parents=True)
+    active_init.write_text("-- user hammerspoon config\n", encoding="utf-8")
+    bridge_path = tmp_path / "openjarvis-voice.lua"
+    log_path = tmp_path / "voice-events.jsonl"
+    _write_hammerspoon_validation_fixture(bridge_path)
+    original_bridge = bridge_path.read_text(encoding="utf-8")
+    original_init = active_init.read_text(encoding="utf-8")
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setattr(
+        voice_cmd,
+        "load_config",
+        lambda: _safe_config(voice_logs_enabled=True, voice_logs_path=str(log_path)),
+    )
+
+    def fail_side_effect(*args, **kwargs):
+        raise AssertionError("post-test checklist must not start voice flow")
+
+    monkeypatch.setattr(voice_cmd, "_post_json", fail_side_effect)
+    monkeypatch.setattr(voice_cmd, "_get_json", fail_side_effect)
+    monkeypatch.setattr(voice_cmd, "_build_recorder", fail_side_effect)
+    monkeypatch.setattr(voice_cmd, "_build_speech_output", fail_side_effect)
+    monkeypatch.setattr(
+        voice_cmd,
+        "_log_voice_event",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("post-test checklist must not write voice logs")
+        ),
+    )
+
+    result = CliRunner().invoke(
+        voice_cmd.voice,
+        ["hotkey-bridge", "--post-test-check", str(bridge_path)],
+    )
+
+    assert result.exit_code == 0
+    assert bridge_path.read_text(encoding="utf-8") == original_bridge
+    assert active_init.read_text(encoding="utf-8") == original_init
+    assert not log_path.exists()
+    assert "files modified by Jarvis: False" in result.output
+    assert "~/.hammerspoon/init.lua modified by Jarvis: False" in result.output
+    assert "listener started by Jarvis: False" in result.output
 
 
 def test_voice_hotkey_bridge_full_manual_hammerspoon_activation_workflow(
