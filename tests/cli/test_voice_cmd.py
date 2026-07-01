@@ -1847,7 +1847,10 @@ def test_voice_hotkey_bridge_activation_guide_prints_preflight_and_rollback(
         in result.output
     )
     assert "approved dispatch: disabled unless manually opted in" in result.output
-    assert "result speech: disabled unless manually opted in" in result.output
+    assert (
+        "result speech: disabled unless explicit dispatch approval plus speech opt-in"
+        in result.output
+    )
     assert "Preflight checklist:" in result.output
     assert "static validation passed: True" in result.output
     assert "preview-only default detected: True" in result.output
@@ -2007,7 +2010,10 @@ def test_voice_hotkey_bridge_manual_test_reports_preview_only_default(
     assert "preview-only default: True" in result.output
     assert "Confirm the result is preview-only by default" in result.output
     assert "approved dispatch: explicit opt-in only" in result.output
-    assert "result speech: explicit opt-in only" in result.output
+    assert (
+        "result speech: requires explicit dispatch approval plus speech opt-in"
+        in result.output
+    )
     assert "--approve-dispatch --speak-result" in result.output
 
 
@@ -2417,7 +2423,10 @@ def test_voice_hotkey_bridge_activation_status_reports_ready(
     assert "local transcription adapter/model configured: True" in result.output
     assert "approval required: True" in result.output
     assert "dispatch disabled unless explicit: True" in result.output
-    assert "speech disabled unless explicit: True" in result.output
+    assert (
+        "speech disabled unless explicit dispatch approval plus speech opt-in: True"
+        in result.output
+    )
     assert "rollback guide available: True" in result.output
     assert "ready for manual review: True" in result.output
     assert "manual install guide available: True" in result.output
@@ -2626,7 +2635,11 @@ def test_voice_hotkey_bridge_post_test_check_outputs_read_only_checklist(
     assert "preview/submission events found: 1" in result.output
     assert "skipped dispatch decisions found: 1" in result.output
     assert "approved dispatch events found: 0" in result.output
-    assert "speech events found: 0" in result.output
+    assert (
+        "speech events found: 0 "
+        "(expected 0 unless --approve-dispatch --speak-result was explicitly used)"
+        in result.output
+    )
     assert "transcript text displayed by this checklist: False" in result.output
     assert "raw audio displayed by this checklist: False" in result.output
     assert "rollback instructions available: True" in result.output

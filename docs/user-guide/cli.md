@@ -527,7 +527,7 @@ jarvis voice cancel
 | `voice mic-smoke --duration N` | Record with an explicitly selected/configured real microphone backend, inspect WAV metadata, and delete the file unless `--keep-file` is passed |
 | `voice mic-transcribe-smoke --duration N` | Record with a selected/configured real microphone backend, transcribe locally, print WAV/transcript metadata and text, then delete the WAV unless `--keep-file` is passed; never submit, dispatch, or speak |
 | `voice mic-preview --duration N` | Record with a selected/configured real microphone backend, transcribe locally, submit to `/v1/voice/ptt/submit-transcript`, print preview/session state, and delete the WAV unless `--keep-file` is passed; never dispatch or speak |
-| `voice mic-run --duration N` | Run the bounded real-microphone preview path and delete the WAV unless `--keep-file` is passed; dispatch requires `--approve-dispatch`, and speech additionally requires `--speak-result` |
+| `voice mic-run --duration N` | Run the bounded real-microphone preview path and delete the WAV unless `--keep-file` is passed; dispatch requires `--approve-dispatch`, and speech additionally requires approved dispatch plus `--speak-result` |
 | `voice transcribe-file AUDIO` | Transcribe an existing local audio file with a local adapter and print the transcript only |
 | `voice capture-preview --duration N` | Record a local WAV, transcribe it locally, POST the transcript to `/v1/voice/ptt/submit-transcript`, and print the preview only |
 | `voice run-local --duration N` | Record, transcribe, submit preview, and print session state; dispatch and TTS require separate opt-in flags |
@@ -565,10 +565,10 @@ preview prints the internal bounded real-microphone `voice mic-run` preview
 path for terminal review. The generated Hammerspoon example uses the runtime
 entry point, `jarvis voice hotkey-runtime --trigger`, and omits both
 `--approve-dispatch` and `--speak-result` from the active command. Approved
-dispatch and speech variants are present only as commented manual opt-in
-examples. OpenJarvis does not install Hammerspoon or the file, bind Fn/F18,
-start a listener, request Accessibility permission, or execute any generated
-command.
+dispatch and approved-dispatch-plus-speech variants are present only as
+commented manual opt-in examples. OpenJarvis does not install Hammerspoon or
+the file, bind Fn/F18, start a listener, request Accessibility permission, or
+execute any generated command.
 
 `voice hotkey-runtime --contract` is the runtime bridge contract for an
 external Hammerspoon script that a user may install later. It prints the
@@ -578,9 +578,9 @@ faster-whisper|whisper.cpp` command with optional input device, language, base
 URL, session id, or `--keep-file` flags. The wrapper internally reuses the
 existing preview-only `mic-run` path; `--approve-dispatch` is forbidden by
 default and dispatches only when explicitly added, while `--speak-result` is
-valid only after approved dispatch. The contract also documents required 0.1-30 second
-duration bounds, required real recorder backend, required local transcription
-adapter/model, expected exit codes (`0` completed/printed, `1` runtime or
+valid only after approved dispatch. The contract also documents required
+0.1-30 second duration bounds, required real recorder backend, required local
+transcription adapter/model, expected exit codes (`0` completed/printed, `1` runtime or
 configuration failure, `2` CLI usage error), stdout/stderr expectations, local
 redacted event logging behavior, and rollback expectations for disabling the
 external Hammerspoon guard or removing a manually added `dofile(...)` line.
@@ -615,9 +615,9 @@ dispatch, write a voice log event, or speak.
 whether the runtime contract, dry-run, preflight, and trigger command are
 available; the generated Hammerspoon bridge's expected command
 (`jarvis voice hotkey-runtime --trigger`); preview-only defaults; explicit
-approval and speech opt-in requirements; recorder readiness;
-transcription/model readiness; API base URL readiness; event logging state; and
-the safety fields `listener_started_by_python=false`,
+dispatch approval and dispatch-plus-speech opt-in requirements; recorder
+readiness; transcription/model readiness; API base URL readiness; event logging
+state; and the safety fields `listener_started_by_python=false`,
 `init_lua_mutated_by_jarvis=false`, and
 `accessibility_permission_requested_by_jarvis=false`. It supports `--json`. It
 does not record, transcribe, submit, dispatch, speak, write voice log events,
@@ -643,7 +643,7 @@ does not write
 `~/.hammerspoon/init.lua`, copy files, install Hammerspoon, start a listener,
 request Accessibility permission, dispatch, approve, or speak. The validated
 bridge remains disabled/preview-only by default; approved dispatch and
-result-speech variants remain commented manual opt-in choices.
+approved-dispatch-plus-speech variants remain commented manual opt-in choices.
 
 `--activation-guide PATH` is a manual guide only. It runs the same static
 validation first, then prints a preflight checklist plus exact manual install
@@ -668,10 +668,11 @@ approval, dispatch by default, or speak by default.
 `--activation-status PATH` is a final manual activation readiness summary. It
 reports whether the generated bridge exists and validates safely, whether the
 default remains preview-only, whether a real microphone recorder and local
-transcription adapter/model are configured, whether approval is required,
-whether dispatch and speech remain disabled unless explicitly requested,
-whether the manual install and rollback guides are available, whether the
-active `~/.hammerspoon/init.lua` appears to reference it, whether
+transcription adapter/model are configured, whether dispatch approval is
+required, whether dispatch remains disabled unless explicitly approved and
+speech remains disabled unless approved dispatch plus speech opt-in are both
+explicit, whether the manual install and rollback guides are available, whether
+the active `~/.hammerspoon/init.lua` appears to reference it, whether
 Hammerspoon.app is detected by safe filesystem checks, and that Accessibility
 and Microphone permissions remain user-managed. It also states that Jarvis did
 not start a global listener, execute Lua, run shell commands from the bridge
@@ -718,7 +719,8 @@ Full manual Hammerspoon activation workflow:
    permission prompt is managed by you in macOS System Settings; Jarvis does
    not request it programmatically.
 8. Press the configured hotkey and confirm the result is preview-only by
-   default; dispatch and speech remain explicit opt-in variants only.
+   default; dispatch requires explicit approval and speech requires approved
+   dispatch plus speech opt-in.
 9. Inspect `jarvis voice logs`.
 10. `jarvis voice hotkey-bridge --post-test-check ./siri-ptt.lua`
    runs the read-only post-test checklist for the user-performed manual test.

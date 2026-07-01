@@ -1,68 +1,35 @@
 # Customization Plan
 
-## Voice Control Hammerspoon Activation Test Phase 2
+## Voice Control Hammerspoon Activation Test Phase 1-3 Summary
 
-Hammerspoon Activation Test Phase 2 adds a read-only post-test checklist for a
-manual Hammerspoon push-to-talk test performed by the user outside Jarvis.
+Hammerspoon Activation Test Phase 1-3 consolidates the final manual activation
+test path for a generated Hammerspoon push-to-talk bridge. The bridge remains
+manual, disabled/preview-only by default, and activated only outside Jarvis by
+the user.
 
-- `jarvis voice hotkey-bridge --post-test-check PATH` inspects the generated
-  bridge file, active `~/.hammerspoon/init.lua` reference status, preview-only
-  default, rollback availability, and recent local voice log metadata.
-- The checklist verifies whether recent redacted `jarvis voice logs` contain
-  preview/submission events, whether approved dispatch events appeared, and
-  whether speech events appeared. Approved dispatch and speech are reported as
-  acceptable only when the user explicitly requested those opt-in paths during
-  the manual test.
-- Log inspection remains safe: the checklist reports counts and metadata only.
-  It does not display raw audio, transcript text, or stored full transcript
-  fields.
-- The command does not execute Lua, run bridge shell commands, mutate files,
-  touch the active Hammerspoon config, start listeners, install Hammerspoon,
-  request Accessibility permission, bypass approval, dispatch by default, or
-  speak automatically.
-- Existing `jarvis voice` commands, Hammerspoon Activation Test Phase 1,
+- Phase 1 added `jarvis voice hotkey-bridge --manual-test PATH`, a guide-only
+  user-run test flow. It tells the user to run safe diagnostics, preflight the
+  runtime, generate or validate the bridge, manually add the printed
+  `dofile(...)` line to `~/.hammerspoon/init.lua`, manually reload Hammerspoon,
+  press the configured hotkey, confirm preview-only behavior, inspect
+  `jarvis voice logs`, and manually roll back if needed.
+- Phase 2 added `jarvis voice hotkey-bridge --post-test-check PATH`, a
+  read-only post-test checklist. It re-checks the bridge, active init reference
+  status, preview-only default, rollback availability, and recent redacted
+  voice log metadata without displaying raw audio or transcript text.
+- Phase 3 is a final consolidation pass across
+  `hotkey-bridge --manual-test`, `--post-test-check`, `--activation-guide`,
+  `--rollback-guide`, `--activation-status`, `hotkey-runtime --trigger`, and
+  `hotkey-runtime --status`.
+- Documentation and CLI output now consistently state that manual activation is
+  performed outside Jarvis, preview-only is the default, dispatch requires
+  explicit `--approve-dispatch`, and speech requires explicit
+  `--approve-dispatch --speak-result`.
+- Manual rollback remains documented through `--rollback-guide`; Jarvis does
+  not roll back or mutate active Hammerspoon files for the user.
+- Existing `jarvis voice` commands, Hammerspoon Activation Test Phase 1-2,
   Hotkey Runtime Phase 1-7, and Mission Control read-only behavior remain
   intact.
-- Voice-only mode remains deferred.
-
-Deferred scope remains intentionally untouched:
-
-- no always-on listening
-- no enabled Fn/global hotkey capture
-- no Python-started global hotkey listener
-- no automatic Hammerspoon installation or init mutation
-- no programmatic Accessibility permission request
-- no approval bypass
-- no automatic dispatch by default
-- no automatic speech playback by default
-- no Mission Control execution controls
-- no voice-only mode; text input remains available
-
-## Voice Control Hammerspoon Activation Test Phase 1
-
-Hammerspoon Activation Test Phase 1 adds a manual, user-run activation test
-workflow for the existing generated bridge without activating anything from
-Jarvis.
-
-- `jarvis voice hotkey-bridge --manual-test PATH` prints a step-by-step
-  manual test flow for a generated Hammerspoon bridge.
-- The flow tells the user to run `jarvis voice doctor`, run
-  `jarvis voice hotkey-runtime --preflight`, generate or validate the bridge,
-  manually add the printed `dofile(...)` line to `~/.hammerspoon/init.lua`,
-  manually reload Hammerspoon, press the configured hotkey, confirm the result
-  is preview-only by default, inspect `jarvis voice logs`, and manually roll
-  back with `--rollback-guide` if needed.
-- The command statically inspects only the supplied generated bridge file when
-  it exists. It does not execute Lua, run bridge shell commands, mutate files,
-  touch the active Hammerspoon config, start listeners, install Hammerspoon,
-  request Accessibility permission, bypass approval, dispatch by default, or
-  speak by default.
-- The runtime trigger path remains intact:
-  `jarvis voice hotkey-runtime --trigger`.
-- Preview-only behavior remains the default. Approved dispatch and speech
-  remain explicit opt-in variants only.
-- Mission Control remains read-only and unchanged.
-- Voice-only mode remains deferred.
 
 Deferred scope remains intentionally untouched:
 
@@ -381,8 +348,8 @@ Implemented safe local/manual behavior:
   status. They do not record, dispatch, speak, start hotkeys, request
   permissions, download models, or mutate settings.
 - `mic-run` and `run-local` are preview-only by default. Dispatch requires
-  `--approve-dispatch`, and result speech additionally requires
-  `--speak-result`.
+  `--approve-dispatch`, and result speech additionally requires approved
+  dispatch plus `--speak-result`.
 - Voice logs remain local structured JSONL events with redacted transcript
   summaries by default. Export and cleanup are explicit CLI actions only.
 

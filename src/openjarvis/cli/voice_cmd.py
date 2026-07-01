@@ -329,7 +329,9 @@ def _format_hammerspoon_activation_guide(path: Path) -> None:
         "  default behavior: preview-only `jarvis voice hotkey-runtime --trigger`"
     )
     click.echo("  approved dispatch: disabled unless manually opted in")
-    click.echo("  result speech: disabled unless manually opted in")
+    click.echo(
+        "  result speech: disabled unless explicit dispatch approval plus speech opt-in"
+    )
     click.echo("")
     click.echo("Preflight checklist:")
     click.echo(f"  - bridge file exists: {status['file_exists']}")
@@ -555,7 +557,9 @@ def _format_hammerspoon_manual_test(path: Path) -> None:
         for error in validation["validation_errors"]:
             click.echo(f"    - {error}")
     click.echo("  approved dispatch: explicit opt-in only")
-    click.echo("  result speech: explicit opt-in only")
+    click.echo(
+        "  result speech: requires explicit dispatch approval plus speech opt-in"
+    )
     click.echo("")
     click.echo("Manual test flow:")
     click.echo("  1. Run safe diagnostics:")
@@ -764,7 +768,7 @@ def _format_hammerspoon_post_test_check(data: dict[str, Any]) -> None:
     )
     click.echo(
         f"  speech events found: {log_summary['speech_event_count']} "
-        "(expected 0 unless --speak-result was explicitly used)"
+        "(expected 0 unless --approve-dispatch --speak-result was explicitly used)"
     )
     click.echo(
         "  full transcript fields observed in stored events: "
@@ -1072,7 +1076,7 @@ def _format_hammerspoon_activation_status(data: dict[str, Any]) -> None:
         f"{checklist['dispatch_disabled_unless_explicit']}"
     )
     click.echo(
-        "  - speech disabled unless explicit: "
+        "  - speech disabled unless explicit dispatch approval plus speech opt-in: "
         f"{checklist['speech_disabled_unless_explicit']}"
     )
     if checklist["hammerspoon_detection_safely_checkable"]:
