@@ -1,5 +1,38 @@
 # Customization Plan
 
+## Voice Control Hotkey Activation Phase 3
+
+Activation Phase 3 adds a final manual Hammerspoon bridge activation readiness
+summary without activating anything from Jarvis.
+
+- `jarvis voice hotkey-bridge --activation-status PATH` inspects a generated
+  Hammerspoon bridge file with the existing static validator and summarizes
+  whether it exists, validates safely, remains preview-only by default, has
+  manual install and rollback guide paths available, is referenced by the
+  active `~/.hammerspoon/init.lua`, and whether Hammerspoon.app is detected by
+  safe filesystem checks.
+- The summary states that Accessibility and Microphone permissions remain
+  user-managed, no global listener was started by Jarvis, and activation remains
+  deferred/manual.
+- The command does not execute Lua, run shell commands from the bridge file,
+  mutate files, touch active Hammerspoon config, install Hammerspoon, request
+  permissions, bypass approval, dispatch by default, or speak automatically.
+- Existing `jarvis voice` commands, Voice Control Phase 1-30, Mic Phase 1-8,
+  Hotkey Phase 1-6, Hotkey Activation Phase 1-2, and read-only Mission Control
+  behavior remain intact. Voice-only mode remains deferred.
+
+Deferred work remains intentionally untouched:
+
+- no always-on listening
+- no enabled Fn/global hotkey capture
+- no Python-started global hotkey listener
+- no automatic Hammerspoon installation or init mutation
+- no programmatic Accessibility permission request
+- no approval bypass
+- no automatic dispatch by default
+- no automatic speech playback by default
+- no voice-only mode; text input remains available
+
 ## Voice Control Hotkey Activation Phase 2
 
 Activation Phase 2 adds a manual Hammerspoon bridge backup/rollback instruction

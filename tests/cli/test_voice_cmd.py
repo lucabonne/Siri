@@ -1342,6 +1342,160 @@ def test_voice_hotkey_bridge_status_does_not_mutate_files(
     assert "no files were modified: True" in result.output
 
 
+def test_voice_hotkey_bridge_activation_status_reports_ready(
+    monkeypatch, tmp_path
+) -> None:
+    home = tmp_path / "home"
+    home.mkdir()
+    bridge_path = tmp_path / "openjarvis-voice.lua"
+    _write_hammerspoon_validation_fixture(bridge_path)
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setattr(voice_cmd.sys, "platform", "linux")
+    monkeypatch.setattr(
+        voice_cmd,
+        "load_config",
+        lambda: (_ for _ in ()).throw(AssertionError("config must not load")),
+    )
+    monkeypatch.setattr(
+        voice_cmd,
+        "_log_voice_event",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("activation status must not write voice logs")
+        ),
+    )
+
+    result = CliRunner().invoke(
+        voice_cmd.voice,
+        ["hotkey-bridge", "--activation-status", str(bridge_path)],
+    )
+
+    assert result.exit_code == 0
+    assert "Hammerspoon bridge activation readiness (manual only)" in result.output
+    assert "generated bridge exists: True" in result.output
+    assert "bridge validates safely: True" in result.output
+    assert "preview-only default: True" in result.output
+    assert "manual install guide available: True" in result.output
+    assert "manual rollback guide available: True" in result.output
+    assert "active init reference detected: False" in result.output
+    assert "Hammerspoon app detected: False" in result.output
+    assert "Hammerspoon app detection note: not macOS" in result.output
+    assert "activation: deferred/manual" in result.output
+
+
+def test_voice_hotkey_bridge_activation_status_reports_missing_bridge(
+    tmp_path,
+) -> None:
+    bridge_path = tmp_path / "missing-openjarvis-voice.lua"
+
+    result = CliRunner().invoke(
+        voice_cmd.voice,
+        ["hotkey-bridge", "--activation-status", str(bridge_path)],
+    )
+
+    assert result.exit_code == 0
+    assert "generated bridge exists: False" in result.output
+    assert "bridge validates safely: False" in result.output
+    assert "bridge file does not exist" in result.output
+    assert "preview-only default: False" in result.output
+    assert "manual install guide available: False" in result.output
+    assert "manual rollback guide available: True" in result.output
+    assert "activation: deferred/manual" in result.output
+
+
+def test_voice_hotkey_bridge_activation_status_reports_unsafe_bridge(
+    tmp_path,
+) -> None:
+    bridge_path = tmp_path / "unsafe-dispatch.lua"
+    _write_hammerspoon_validation_fixture(
+        bridge_path, extra_active_flags=" --approve-dispatch"
+    )
+
+    result = CliRunner().invoke(
+        voice_cmd.voice,
+        ["hotkey-bridge", "--activation-status", str(bridge_path)],
+    )
+
+    assert result.exit_code == 0
+    assert "generated bridge exists: True" in result.output
+    assert "bridge validates safely: False" in result.output
+    assert "active content contains unsafe --approve-dispatch" in result.output
+    assert "preview-only default: False" in result.output
+    assert "manual install guide available: False" in result.output
+
+
+def test_voice_hotkey_bridge_activation_status_detects_active_init_reference(
+    monkeypatch, tmp_path
+) -> None:
+    home = tmp_path / "home"
+    active_init = home / ".hammerspoon" / "init.lua"
+    active_init.parent.mkdir(parents=True)
+    bridge_path = tmp_path / "openjarvis-voice.lua"
+    _write_hammerspoon_validation_fixture(bridge_path)
+    active_init.write_text(
+        f"dofile({json.dumps(str(bridge_path.resolve(strict=True)))})\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("HOME", str(home))
+
+    result = CliRunner().invoke(
+        voice_cmd.voice,
+        ["hotkey-bridge", "--activation-status", str(bridge_path)],
+    )
+
+    assert result.exit_code == 0
+    assert f"active init: {active_init}" in result.output
+    assert "active init reference detected: True" in result.output
+    assert "global listener not started by Jarvis: True" in result.output
+
+
+def test_voice_hotkey_bridge_activation_status_prints_manual_only_safety(
+    monkeypatch, tmp_path
+) -> None:
+    home = tmp_path / "home"
+    active_init = home / ".hammerspoon" / "init.lua"
+    active_init.parent.mkdir(parents=True)
+    active_init.write_text("-- user hammerspoon config\n", encoding="utf-8")
+    bridge_path = tmp_path / "openjarvis-voice.lua"
+    _write_hammerspoon_validation_fixture(bridge_path)
+    original_bridge = bridge_path.read_text(encoding="utf-8")
+    original_init = active_init.read_text(encoding="utf-8")
+    monkeypatch.setenv("HOME", str(home))
+
+    def fail_side_effect(*args, **kwargs):
+        raise AssertionError("activation status must not start voice flow")
+
+    monkeypatch.setattr(voice_cmd, "_post_json", fail_side_effect)
+    monkeypatch.setattr(voice_cmd, "_get_json", fail_side_effect)
+    monkeypatch.setattr(voice_cmd, "_build_recorder", fail_side_effect)
+    monkeypatch.setattr(voice_cmd, "_build_speech_output", fail_side_effect)
+
+    result = CliRunner().invoke(
+        voice_cmd.voice,
+        ["hotkey-bridge", "--activation-status", str(bridge_path)],
+    )
+
+    assert result.exit_code == 0
+    assert bridge_path.read_text(encoding="utf-8") == original_bridge
+    assert active_init.read_text(encoding="utf-8") == original_init
+    assert (
+        "Accessibility permission: user-managed; not requested by Jarvis"
+        in result.output
+    )
+    assert (
+        "Microphone permission: user-managed; not requested by Jarvis" in result.output
+    )
+    assert "global listener not started by Jarvis: True" in result.output
+    assert "Lua execution by Jarvis: not attempted" in result.output
+    assert "shell commands from bridge by Jarvis: not run" in result.output
+    assert "files modified by Jarvis: False" in result.output
+    assert "~/.hammerspoon/init.lua modified by Jarvis: False" in result.output
+    assert "Hammerspoon installed by Jarvis: False" in result.output
+    assert "approval bypassed by Jarvis: False" in result.output
+    assert "automatic dispatch by default: False" in result.output
+    assert "automatic speech by default: False" in result.output
+    assert "Jarvis does not activate the bridge" in result.output
+
+
 def test_voice_hotkey_bridge_validation_rejects_active_dispatch(tmp_path) -> None:
     bridge_path = tmp_path / "unsafe-dispatch.lua"
     _write_hammerspoon_validation_fixture(

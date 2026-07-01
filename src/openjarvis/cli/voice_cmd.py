@@ -575,6 +575,7 @@ def _hammerspoon_bridge_status(path: Path) -> dict[str, Any]:
             "init_modified": False,
             "hammerspoon_installed": False,
             "accessibility_permission_requested": False,
+            "microphone_permission_requested": False,
             "dispatch_started": False,
             "speech_started": False,
         },
@@ -637,6 +638,56 @@ def _format_hammerspoon_bridge_status(data: dict[str, Any]) -> None:
     click.echo(f"  Accessibility permission: {accessibility_status}")
     click.echo(f"  dispatch started: {safety['dispatch_started']}")
     click.echo(f"  speech started: {safety['speech_started']}")
+
+
+def _format_hammerspoon_activation_status(data: dict[str, Any]) -> None:
+    click.echo("Hammerspoon bridge activation readiness (manual only)")
+    click.echo(f"  bridge: {data['bridge']}")
+    click.echo(
+        f"  generated bridge exists: {data['file_exists'] and data['file_is_file']}"
+    )
+    click.echo(f"  bridge validates safely: {data['valid']}")
+    if data["validation_errors"]:
+        click.echo("  validation errors:")
+        for error in data["validation_errors"]:
+            click.echo(f"    - {error}")
+    click.echo(f"  preview-only default: {data['preview_only_default_detected']}")
+    click.echo(f"  manual install guide available: {data['valid']}")
+    click.echo("  manual rollback guide available: True")
+    active_init = data["active_init"]
+    click.echo(f"  active init: {active_init['path']}")
+    click.echo(f"  active init reference detected: {active_init['reference_detected']}")
+    app_status = data["hammerspoon_app"]
+    click.echo(f"  Hammerspoon app detected: {app_status['detected']}")
+    if app_status["paths"]:
+        click.echo(f"  Hammerspoon app paths: {', '.join(app_status['paths'])}")
+    elif app_status["reason"]:
+        click.echo(f"  Hammerspoon app detection note: {app_status['reason']}")
+    safety = data["safety"]
+    click.echo("  Accessibility permission: user-managed; not requested by Jarvis")
+    click.echo("  Microphone permission: user-managed; not requested by Jarvis")
+    click.echo(
+        f"  global listener not started by Jarvis: {not safety['listener_started']}"
+    )
+    click.echo("  activation: deferred/manual")
+    lua_status = "attempted" if safety["lua_executed"] else "not attempted"
+    click.echo(f"  Lua execution by Jarvis: {lua_status}")
+    click.echo(
+        "  shell commands from bridge by Jarvis: "
+        f"{'run' if safety['bridge_shell_commands_run'] else 'not run'}"
+    )
+    click.echo(f"  files modified by Jarvis: {safety['files_modified']}")
+    click.echo(
+        f"  ~/.hammerspoon/init.lua modified by Jarvis: {safety['init_modified']}"
+    )
+    click.echo(f"  Hammerspoon installed by Jarvis: {safety['hammerspoon_installed']}")
+    click.echo("  approval bypassed by Jarvis: False")
+    click.echo(f"  automatic dispatch by default: {safety['dispatch_started']}")
+    click.echo(f"  automatic speech by default: {safety['speech_started']}")
+    click.echo(
+        "  Jarvis does not activate the bridge, request permissions, dispatch, "
+        "or speak from this status command."
+    )
 
 
 def _parse_voice_logs_clear_before(value: str | None) -> datetime | None:
@@ -1323,6 +1374,15 @@ def doctor(as_json: bool) -> None:
     ),
 )
 @click.option(
+    "--activation-status",
+    type=click.Path(path_type=Path),
+    default=None,
+    help=(
+        "Manual activation readiness only: summarize bridge readiness and "
+        "manual-only safety boundaries without executing or modifying anything."
+    ),
+)
+@click.option(
     "--status",
     "status_path",
     type=click.Path(path_type=Path),
@@ -1347,9 +1407,44 @@ def hotkey_bridge(
     install_preview: Path | None,
     activation_guide: Path | None,
     rollback_guide: Path | None,
+    activation_status: Path | None,
     status_path: Path | None,
 ) -> None:
     """Print or explicitly write a disabled macOS hotkey bridge example."""
+    if activation_status is not None:
+        if write_hammerspoon is not None:
+            raise click.UsageError(
+                "--activation-status cannot be combined with --write-hammerspoon"
+            )
+        if validate_hammerspoon is not None:
+            raise click.UsageError(
+                "--activation-status cannot be combined with --validate-hammerspoon"
+            )
+        if install_preview is not None:
+            raise click.UsageError(
+                "--activation-status cannot be combined with --install-preview"
+            )
+        if activation_guide is not None:
+            raise click.UsageError(
+                "--activation-status cannot be combined with --activation-guide"
+            )
+        if rollback_guide is not None:
+            raise click.UsageError(
+                "--activation-status cannot be combined with --rollback-guide"
+            )
+        if status_path is not None:
+            raise click.UsageError(
+                "--activation-status cannot be combined with --status"
+            )
+        if output_format is not None:
+            raise click.UsageError(
+                "--activation-status cannot be combined with --format"
+            )
+        _format_hammerspoon_activation_status(
+            _hammerspoon_bridge_status(activation_status)
+        )
+        return
+
     if status_path is not None:
         if write_hammerspoon is not None:
             raise click.UsageError(
