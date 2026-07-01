@@ -932,6 +932,37 @@ def _configured_microphone_recorder_kind(recorder_kind: str | None) -> str:
     return configured
 
 
+def _configured_hotkey_microphone_recorder_kind(recorder_kind: str | None) -> str:
+    if recorder_kind:
+        configured = recorder_kind
+    else:
+        voice_control = _voice_control_config(load_config())
+        configured = str(
+            getattr(voice_control, "hotkey_bridge_recorder", "") or "macos"
+        )
+    if configured not in MICROPHONE_RECORDER_KINDS:
+        raise click.ClickException(
+            "The hotkey runtime trigger requires a real microphone recorder. Pass "
+            "--recorder macos or --recorder sounddevice, or configure "
+            "[voice_control].hotkey_bridge_recorder."
+        )
+    return configured
+
+
+def _configured_hotkey_input_device(input_device: str | None) -> str:
+    if input_device:
+        return input_device
+    voice_control = _voice_control_config(load_config())
+    return str(getattr(voice_control, "hotkey_bridge_input_device", ":0") or ":0")
+
+
+def _configured_hotkey_session_id(session_id: str) -> str:
+    if session_id:
+        return session_id
+    voice_control = _voice_control_config(load_config())
+    return str(getattr(voice_control, "hotkey_bridge_session_id", "") or "")
+
+
 def _validate_real_microphone_duration(
     recorder_kind: str,
     duration: float,
@@ -942,6 +973,17 @@ def _validate_real_microphone_duration(
     ):
         raise click.UsageError(
             "Real microphone recording duration must be between "
+            f"{MICROPHONE_MIN_DURATION_SECONDS:g} and "
+            f"{MICROPHONE_MAX_DURATION_SECONDS:g} seconds."
+        )
+
+
+def _validate_bounded_microphone_duration(duration: float) -> None:
+    if not (
+        MICROPHONE_MIN_DURATION_SECONDS <= duration <= MICROPHONE_MAX_DURATION_SECONDS
+    ):
+        raise click.UsageError(
+            "Microphone recording duration must be between "
             f"{MICROPHONE_MIN_DURATION_SECONDS:g} and "
             f"{MICROPHONE_MAX_DURATION_SECONDS:g} seconds."
         )
@@ -1368,7 +1410,8 @@ def _hotkey_runtime_contract_data() -> dict[str, Any]:
             "shape": [
                 "jarvis",
                 "voice",
-                "mic-run",
+                "hotkey-runtime",
+                "--trigger",
                 "--duration",
                 "SECONDS",
                 "--recorder",
@@ -1390,9 +1433,10 @@ def _hotkey_runtime_contract_data() -> dict[str, Any]:
         },
         "default_command_path": {
             "command": (
-                "jarvis voice mic-run --duration SECONDS --recorder macos "
-                "--adapter faster-whisper"
+                "jarvis voice hotkey-runtime --trigger --duration SECONDS "
+                "--recorder macos --adapter faster-whisper"
             ),
+            "internal_safe_path": "jarvis voice mic-run",
             "behavior": "preview-only",
             "submit_endpoint": "/v1/voice/ptt/submit-transcript",
             "dispatch_endpoint": "/v1/voice/ptt/dispatch",
@@ -1839,6 +1883,7 @@ def _format_hotkey_runtime_contract(data: dict[str, Any]) -> None:
     click.echo("")
     click.echo("Default command path:")
     click.echo(f"  command: {command_path['command']}")
+    click.echo(f"  internal safe path: {command_path['internal_safe_path']}")
     click.echo(f"  behavior: {command_path['behavior']}")
     click.echo(f"  submit endpoint: {command_path['submit_endpoint']}")
     click.echo("  dispatch: skipped unless --approve-dispatch is present")
@@ -2052,22 +2097,169 @@ def voice() -> None:
     ),
 )
 @click.option(
+    "--trigger",
+    is_flag=True,
+    default=False,
+    help=(
+        "Run one bounded external trigger using the same safe path as mic-run. "
+        "Preview-only unless --approve-dispatch is also passed."
+    ),
+)
+@click.option(
+    "--duration",
+    type=click.FloatRange(
+        min=MICROPHONE_MIN_DURATION_SECONDS,
+        max=MICROPHONE_MAX_DURATION_SECONDS,
+    ),
+    default=None,
+    help=(
+        "Trigger recording duration in seconds. Required unless "
+        "[voice_control].default_record_duration is configured."
+    ),
+)
+@click.option(
+    "--output-dir",
+    type=click.Path(file_okay=False, path_type=Path),
+    default=None,
+    help="Directory for the temporary trigger WAV.",
+)
+@click.option(
+    "--recorder",
+    "recorder_kind",
+    type=click.Choice(MICROPHONE_RECORDER_KINDS),
+    default=None,
+    help=(
+        "Real microphone recorder for --trigger. Required unless configured in "
+        "[voice_control].hotkey_bridge_recorder."
+    ),
+)
+@click.option(
+    "--input-device",
+    default=None,
+    help=(
+        "Input device for --trigger. Defaults to "
+        "[voice_control].hotkey_bridge_input_device."
+    ),
+)
+@click.option(
+    "--adapter",
+    type=click.Choice(LOCAL_TRANSCRIPTION_ADAPTERS),
+    default=None,
+    help=(
+        "Local transcription adapter for --trigger. Required unless configured "
+        "in [voice_control].transcription_adapter."
+    ),
+)
+@click.option("--language", default=None, help="Optional trigger language code hint.")
+@click.option(
+    "--session-id",
+    default="",
+    help=(
+        "Optional trigger session id. Defaults to "
+        "[voice_control].hotkey_bridge_session_id."
+    ),
+)
+@click.option(
+    "--agent-id",
+    default="",
+    help="Agent id to dispatch to after explicit --approve-dispatch.",
+)
+@click.option(
+    "--approve-dispatch",
+    is_flag=True,
+    default=False,
+    help="Explicitly approve and call /dispatch after the trigger preview.",
+)
+@click.option(
+    "--speak-result",
+    is_flag=True,
+    default=False,
+    help=(
+        "Speak the dispatch result. Requires --approve-dispatch and never runs "
+        "by default."
+    ),
+)
+@click.option(
+    "--speech-adapter",
+    type=click.Choice(LOCAL_SPEECH_OUTPUT_ADAPTERS),
+    default=None,
+    help="Explicit local speech-output adapter for --speak-result.",
+)
+@click.option(
+    "--voice",
+    "voice_name",
+    default=None,
+    help="Optional macOS say voice name for --speak-result.",
+)
+@click.option(
+    "--rate",
+    type=click.IntRange(min=80, max=500),
+    default=None,
+    help="Optional macOS say speaking rate for --speak-result.",
+)
+@click.option(
+    "--base-url",
+    envvar="OPENJARVIS_BASE_URL",
+    default=None,
+    help="OpenJarvis API base URL for --trigger.",
+)
+@click.option(
+    "--api-key",
+    envvar="OPENJARVIS_API_KEY",
+    default=None,
+    help="API key for an authenticated local server.",
+)
+@click.option(
+    "--timeout",
+    default=10.0,
+    show_default=True,
+    help="HTTP timeout seconds for --trigger.",
+)
+@click.option(
+    "--keep-file",
+    is_flag=True,
+    default=False,
+    help="Keep the trigger WAV instead of deleting it after the run.",
+)
+@click.option(
     "--json",
     "as_json",
     is_flag=True,
-    help="Print the contract, dry-run, or preflight result as JSON.",
+    help="Print the contract, dry-run, preflight, or trigger result as JSON.",
 )
+@click.pass_context
 def hotkey_runtime(
+    ctx: click.Context,
     contract: bool,
     dry_run: bool,
     preflight: bool,
+    trigger: bool,
+    duration: float | None,
+    output_dir: Path | None,
+    recorder_kind: str | None,
+    input_device: str | None,
+    adapter: str | None,
+    language: str | None,
+    session_id: str,
+    agent_id: str,
+    approve_dispatch: bool,
+    speak_result: bool,
+    speech_adapter: str | None,
+    voice_name: str | None,
+    rate: int | None,
+    base_url: str | None,
+    api_key: str | None,
+    timeout: float,
+    keep_file: bool,
     as_json: bool,
 ) -> None:
-    """Document, dry-run, or preflight the safe external hotkey runtime boundary."""
-    selected_modes = sum((contract, dry_run, preflight))
+    """Document, dry-run, preflight, or trigger the safe external hotkey runtime
+    boundary.
+    """
+    selected_modes = sum((contract, dry_run, preflight, trigger))
     if selected_modes != 1:
         raise click.UsageError(
-            "pass exactly one of --contract, --dry-run, or --preflight "
+            "pass exactly one of --contract, --dry-run, --preflight, or --trigger "
             "for hotkey runtime"
         )
 
@@ -2075,6 +2267,43 @@ def hotkey_runtime(
         data = _hotkey_runtime_contract_data()
     elif dry_run:
         data = _hotkey_runtime_dry_run_data()
+    elif trigger:
+        if speak_result and not approve_dispatch:
+            raise click.UsageError("--speak-result requires --approve-dispatch")
+        resolved_duration = _record_duration(duration)
+        _validate_bounded_microphone_duration(resolved_duration)
+        resolved_recorder = _configured_hotkey_microphone_recorder_kind(recorder_kind)
+        resolved_input_device = _configured_hotkey_input_device(input_device)
+        resolved_session_id = _configured_hotkey_session_id(session_id)
+        if not as_json:
+            click.echo("Voice hotkey runtime trigger")
+            click.echo("  mode: external single-shot")
+            click.echo("  listener_started: False")
+            click.echo("  hammerspoon_init_modified: False")
+            click.echo("  accessibility_permission_requested: False")
+            click.echo("  behavior: preview-only unless --approve-dispatch is present")
+        ctx.invoke(
+            mic_run,
+            duration=resolved_duration,
+            output_dir=output_dir,
+            recorder_kind=resolved_recorder,
+            input_device=resolved_input_device,
+            adapter=adapter,
+            language=language,
+            session_id=resolved_session_id,
+            agent_id=agent_id,
+            approve_dispatch=approve_dispatch,
+            speak_result=speak_result,
+            speech_adapter=speech_adapter,
+            voice_name=voice_name,
+            rate=rate,
+            base_url=base_url,
+            api_key=api_key,
+            timeout=timeout,
+            keep_file=keep_file,
+            as_json=as_json,
+        )
+        return
     else:
         data = _hotkey_runtime_preflight_data()
     if as_json:

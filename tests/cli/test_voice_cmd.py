@@ -189,13 +189,18 @@ def test_voice_release_readiness_help_text_stays_manual_and_safe() -> None:
     )
     assert "--preflight" in runtime_output
     assert "Validate external Hammerspoon trigger readiness" in runtime_output
+    assert "--trigger" in runtime_output
+    assert "Run one bounded external trigger" in runtime_output
 
 
 def test_voice_hotkey_runtime_requires_contract_flag() -> None:
     result = CliRunner().invoke(voice_cmd.voice, ["hotkey-runtime"])
 
     assert result.exit_code == 2
-    assert "pass exactly one of --contract, --dry-run, or --preflight" in result.output
+    assert (
+        "pass exactly one of --contract, --dry-run, --preflight, or --trigger"
+        in result.output
+    )
 
 
 def test_voice_hotkey_runtime_rejects_contract_and_dry_run_together() -> None:
@@ -205,7 +210,10 @@ def test_voice_hotkey_runtime_rejects_contract_and_dry_run_together() -> None:
     )
 
     assert result.exit_code == 2
-    assert "pass exactly one of --contract, --dry-run, or --preflight" in result.output
+    assert (
+        "pass exactly one of --contract, --dry-run, --preflight, or --trigger"
+        in result.output
+    )
 
 
 def test_voice_hotkey_runtime_contract_prints_safe_boundary(monkeypatch) -> None:
@@ -230,12 +238,13 @@ def test_voice_hotkey_runtime_contract_prints_safe_boundary(monkeypatch) -> None
     assert "Python listener started: False" in result.output
     assert "~/.hammerspoon/init.lua modified: False" in result.output
     assert "Accessibility permission requested: False" in result.output
-    assert "required argv: jarvis voice mic-run" in result.output
+    assert "required argv: jarvis voice hotkey-runtime --trigger" in result.output
     assert "--duration SECONDS" in result.output
     assert "--recorder macos|sounddevice" in result.output
     assert "--adapter faster-whisper|whisper.cpp" in result.output
     assert "forbidden by default: --approve-dispatch, --speak-result" in (result.output)
     assert "behavior: preview-only" in result.output
+    assert "internal safe path: jarvis voice mic-run" in result.output
     assert "dispatch: skipped unless --approve-dispatch is present" in result.output
     assert "duration: required, 0.1-30 seconds" in result.output
     assert "recorder: real backend required (macos, sounddevice)" in result.output
@@ -285,12 +294,20 @@ def test_voice_hotkey_runtime_contract_json_reports_safe_defaults(
         "dispatches_by_default": False,
         "speaks_by_default": False,
     }
-    assert data["external_trigger"]["shape"][:3] == ["jarvis", "voice", "mic-run"]
+    assert data["external_trigger"]["shape"][:4] == [
+        "jarvis",
+        "voice",
+        "hotkey-runtime",
+        "--trigger",
+    ]
     assert data["external_trigger"]["forbidden_default_flags"] == [
         "--approve-dispatch",
         "--speak-result",
     ]
     assert data["default_command_path"]["behavior"] == "preview-only"
+    assert data["default_command_path"]["internal_safe_path"] == (
+        "jarvis voice mic-run"
+    )
     assert data["default_command_path"]["dispatch_called_by_default"] is False
     assert data["requirements"]["duration_seconds"]["required"] is True
     assert data["requirements"]["duration_seconds"]["minimum"] == 0.1
@@ -614,6 +631,191 @@ def test_voice_hotkey_runtime_preflight_json_reports_checks_and_safety(
         "preview_only_default": True,
         "forbidden_default_flags_absent": True,
     }
+
+
+def test_voice_hotkey_runtime_trigger_previews_only_with_configured_defaults(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    post_calls: list[tuple[str, dict[str, Any] | None]] = []
+    recorder_calls: list[tuple[str, str]] = []
+    recorded_paths: list[Path] = []
+    speech_calls: list[str] = []
+
+    class FakeAdapter:
+        def __init__(self, *, adapter_id, config):
+            assert adapter_id == "faster-whisper"
+
+        def transcribe_file(self, path, *, language=None):
+            recorded_paths.append(path)
+            assert path.exists()
+            return _FakeTranscriptionResult()
+
+    def fake_post(endpoint: str, payload: dict[str, Any] | None, **kwargs):
+        post_calls.append((endpoint, payload))
+        return _preview_response()
+
+    def fake_recorder(recorder_kind, *, output_dir, input_device):
+        recorder_calls.append((recorder_kind, input_device))
+        return voice_cmd.SilentWavRecorder(temp_dir=output_dir, sample_rate=8000)
+
+    monkeypatch.setattr(voice_cmd, "_sleep", lambda seconds: None)
+    monkeypatch.setattr(voice_cmd, "_build_recorder", fake_recorder)
+    monkeypatch.setattr(
+        voice_cmd,
+        "load_config",
+        lambda: _safe_config(
+            transcription_adapter="faster-whisper",
+            default_record_duration=0.1,
+            hotkey_bridge_recorder="sounddevice",
+            hotkey_bridge_input_device="configured-device",
+            hotkey_bridge_session_id="hotkey-session",
+        ),
+    )
+    monkeypatch.setattr(
+        voice_cmd,
+        "SpeechBackendLocalTranscriptionAdapter",
+        FakeAdapter,
+    )
+    monkeypatch.setattr(voice_cmd, "_post_json", fake_post)
+    monkeypatch.setattr(voice_cmd, "_base_url", lambda override: "http://test")
+    monkeypatch.setattr(voice_cmd, "_api_key", lambda override: "")
+    monkeypatch.setattr(
+        voice_cmd,
+        "_build_speech_output",
+        lambda *args, **kwargs: speech_calls.append("build"),
+    )
+
+    result = CliRunner().invoke(
+        voice_cmd.voice,
+        ["hotkey-runtime", "--trigger", "--output-dir", str(tmp_path)],
+    )
+
+    assert result.exit_code == 0
+    assert recorder_calls == [("sounddevice", "configured-device")]
+    assert post_calls == [
+        (
+            "/v1/voice/ptt/submit-transcript",
+            {"transcript": "open notes", "session_id": "hotkey-session"},
+        )
+    ]
+    assert len(recorded_paths) == 1
+    assert not recorded_paths[0].exists()
+    assert speech_calls == []
+    assert "Voice hotkey runtime trigger" in result.output
+    assert "listener_started: False" in result.output
+    assert "hammerspoon_init_modified: False" in result.output
+    assert "accessibility_permission_requested: False" in result.output
+    assert "behavior: preview-only unless --approve-dispatch is present" in (
+        result.output
+    )
+    assert "status: awaiting_approval" in result.output
+    assert "dispatch: skipped" in result.output
+    assert "speech: skipped" in result.output
+
+
+def test_voice_hotkey_runtime_trigger_speak_result_requires_dispatch() -> None:
+    result = CliRunner().invoke(
+        voice_cmd.voice,
+        ["hotkey-runtime", "--trigger", "--duration", "0.1", "--speak-result"],
+    )
+
+    assert result.exit_code == 2
+    assert "--speak-result requires --approve-dispatch" in result.output
+
+
+def test_voice_hotkey_runtime_trigger_dispatches_and_speaks_only_with_flags(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    post_calls: list[tuple[str, dict[str, Any] | None]] = []
+    speak_calls: list[str] = []
+
+    class FakeAdapter:
+        def __init__(self, *, adapter_id, config):
+            pass
+
+        def transcribe_file(self, path, *, language=None):
+            return _FakeTranscriptionResult()
+
+    class FakeSpeechOutput:
+        def speak(self, text: str) -> None:
+            speak_calls.append(text)
+
+    def fake_post(endpoint: str, payload: dict[str, Any] | None, **kwargs):
+        post_calls.append((endpoint, payload))
+        if endpoint.endswith("/submit-transcript"):
+            return _preview_response()
+        return {
+            "dispatched": True,
+            "status": "completed",
+            "fsm_state": "idle",
+            "agent_id": "agent-1",
+            "content": "done",
+        }
+
+    monkeypatch.setattr(voice_cmd, "_sleep", lambda seconds: None)
+    monkeypatch.setattr(
+        voice_cmd,
+        "_build_recorder",
+        lambda recorder_kind, *, output_dir, **kwargs: voice_cmd.SilentWavRecorder(
+            temp_dir=output_dir,
+            sample_rate=8000,
+        ),
+    )
+    monkeypatch.setattr(
+        voice_cmd,
+        "load_config",
+        lambda: _safe_config(transcription_adapter="faster-whisper"),
+    )
+    monkeypatch.setattr(
+        voice_cmd,
+        "SpeechBackendLocalTranscriptionAdapter",
+        FakeAdapter,
+    )
+    monkeypatch.setattr(voice_cmd, "_post_json", fake_post)
+    monkeypatch.setattr(voice_cmd, "_base_url", lambda override: "http://test")
+    monkeypatch.setattr(voice_cmd, "_api_key", lambda override: "")
+    monkeypatch.setattr(
+        voice_cmd,
+        "_build_speech_output",
+        lambda *args, **kwargs: FakeSpeechOutput(),
+    )
+
+    result = CliRunner().invoke(
+        voice_cmd.voice,
+        [
+            "hotkey-runtime",
+            "--trigger",
+            "--duration",
+            "0.1",
+            "--output-dir",
+            str(tmp_path),
+            "--recorder",
+            "sounddevice",
+            "--adapter",
+            "faster-whisper",
+            "--agent-id",
+            "agent-1",
+            "--approve-dispatch",
+            "--speak-result",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert post_calls == [
+        (
+            "/v1/voice/ptt/submit-transcript",
+            {"transcript": "open notes", "session_id": ""},
+        ),
+        (
+            "/v1/voice/ptt/dispatch",
+            {"transcript": "open notes", "agent_id": "agent-1", "approved": True},
+        ),
+    ]
+    assert speak_calls == ["done"]
+    assert "Voice dispatch result" in result.output
+    assert "speech: spoken" in result.output
 
 
 def test_voice_logs_command_outputs_recent_events(monkeypatch, tmp_path: Path) -> None:

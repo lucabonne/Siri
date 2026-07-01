@@ -1,5 +1,44 @@
 # Customization Plan
 
+## Voice Control Hotkey Runtime Phase 4
+
+Hotkey Runtime Phase 4 adds a safe single-shot external trigger wrapper for a
+manually installed Hammerspoon bridge while preserving preview-only defaults.
+
+- `jarvis voice hotkey-runtime --trigger` runs one bounded external-trigger
+  path and reuses the same guarded record/transcribe/preview behavior as
+  `jarvis voice mic-run`.
+- The trigger requires a bounded duration from `--duration` or
+  `[voice_control].default_record_duration`, a real microphone recorder from
+  `--recorder` or `[voice_control].hotkey_bridge_recorder`, and an
+  explicit/configured local transcription adapter/model.
+- The default trigger behavior submits the transcript to
+  `/v1/voice/ptt/submit-transcript` for preview only.
+- Dispatch remains disabled by default and requires explicit
+  `--approve-dispatch`. Speech remains disabled by default and requires
+  `--approve-dispatch --speak-result`.
+- The trigger prints Hammerspoon-friendly stdout/stderr through the existing
+  Click command path and preserves exit code behavior: `0` for completed
+  preview/approved paths, `1` for runtime/configuration/API/recording/
+  transcription/speech errors, and `2` for CLI usage errors.
+- Voice event logging follows the existing `mic-run` logging path with the same
+  local redaction defaults and no raw audio logging.
+- Runtime Phase 1 `--contract`, Runtime Phase 2 `--dry-run`, and Runtime Phase
+  3 `--preflight` behavior remain intact.
+
+Deferred work remains intentionally untouched:
+
+- no always-on listening
+- no enabled Fn/global hotkey capture
+- no Python-started global hotkey listener
+- no automatic Hammerspoon installation or init mutation
+- no programmatic Accessibility permission request
+- no approval bypass
+- no automatic dispatch by default
+- no automatic speech playback by default
+- no Mission Control execution controls
+- no voice-only mode; text input remains available
+
 ## Voice Control Hotkey Runtime Phase 3
 
 Hotkey Runtime Phase 3 adds a safe runtime preflight command for external

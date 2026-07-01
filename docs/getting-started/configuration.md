@@ -605,6 +605,17 @@ submit, dispatch, speak, start a listener, install Hammerspoon, edit
 `~/.hammerspoon/init.lua`, request Accessibility permission, bypass approval,
 or write voice log events.
 
+Use `jarvis voice hotkey-runtime --trigger` only as an explicit single-shot
+external trigger wrapper, such as from a user-installed Hammerspoon bridge. It
+requires a bounded duration from `--duration` or
+`[voice_control].default_record_duration`, a real recorder from `--recorder` or
+`[voice_control].hotkey_bridge_recorder`, and an explicit/configured local
+transcription adapter/model. The default trigger path submits the transcript for
+preview only. Dispatch requires `--approve-dispatch`; speech requires
+`--approve-dispatch --speak-result`. The trigger does not start a listener,
+mutate Hammerspoon files, install Hammerspoon, request Accessibility permission,
+bypass approval, dispatch by default, or speak by default.
+
 The optional real microphone recorder is selected only by explicit CLI flag
 (`--recorder sounddevice`) or this config field. Install it with
 `uv sync --extra voice-mic` or `pip install sounddevice`. It requires an
