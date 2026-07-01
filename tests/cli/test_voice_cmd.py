@@ -124,6 +124,7 @@ def test_voice_command_help_lists_subcommands() -> None:
     assert "run-local" in result.output
     assert "doctor" in result.output
     assert "hotkey-bridge" in result.output
+    assert "hotkey-runtime" in result.output
     assert "logs" in result.output
     assert "cancel" in result.output
 
@@ -177,6 +178,121 @@ def test_voice_release_readiness_help_text_stays_manual_and_safe() -> None:
     assert "without executing or modifying anything" in bridge_output
     assert "--status" in bridge_output
     assert "read-only Hammerspoon bridge status" in bridge_output
+
+    runtime = CliRunner().invoke(voice_cmd.voice, ["hotkey-runtime", "--help"])
+    runtime_output = " ".join(runtime.output.split())
+    assert runtime.exit_code == 0
+    assert "safe external hotkey runtime boundary" in runtime_output
+    assert "--contract" in runtime_output
+    assert "disabled-by-default external Hammerspoon runtime contract" in (
+        runtime_output
+    )
+
+
+def test_voice_hotkey_runtime_requires_contract_flag() -> None:
+    result = CliRunner().invoke(voice_cmd.voice, ["hotkey-runtime"])
+
+    assert result.exit_code == 2
+    assert "pass --contract to print the runtime contract" in result.output
+
+
+def test_voice_hotkey_runtime_contract_prints_safe_boundary(monkeypatch) -> None:
+    def fail_side_effect(*args, **kwargs):
+        raise AssertionError("hotkey runtime contract must not start voice flow")
+
+    monkeypatch.setattr(voice_cmd, "load_config", fail_side_effect)
+    monkeypatch.setattr(voice_cmd, "_post_json", fail_side_effect)
+    monkeypatch.setattr(voice_cmd, "_get_json", fail_side_effect)
+    monkeypatch.setattr(voice_cmd, "_build_recorder", fail_side_effect)
+    monkeypatch.setattr(voice_cmd, "_build_speech_output", fail_side_effect)
+    monkeypatch.setattr(voice_cmd, "_log_voice_event", fail_side_effect)
+
+    result = CliRunner().invoke(
+        voice_cmd.voice,
+        ["hotkey-runtime", "--contract"],
+    )
+
+    assert result.exit_code == 0
+    assert "Voice hotkey runtime bridge contract" in result.output
+    assert "status: disabled by default" in result.output
+    assert "Python listener started: False" in result.output
+    assert "~/.hammerspoon/init.lua modified: False" in result.output
+    assert "Accessibility permission requested: False" in result.output
+    assert "required argv: jarvis voice mic-run" in result.output
+    assert "--duration SECONDS" in result.output
+    assert "--recorder macos|sounddevice" in result.output
+    assert "--adapter faster-whisper|whisper.cpp" in result.output
+    assert "forbidden by default: --approve-dispatch, --speak-result" in (result.output)
+    assert "behavior: preview-only" in result.output
+    assert "dispatch: skipped unless --approve-dispatch is present" in result.output
+    assert "duration: required, 0.1-30 seconds" in result.output
+    assert "recorder: real backend required (macos, sounddevice)" in result.output
+    assert "transcription: local adapter/model required" in result.output
+    assert "approval: dispatch only with explicit --approve-dispatch" in result.output
+    assert "speech: only with --speak-result after approved dispatch" in result.output
+    assert "0: contract printed" in result.output
+    assert "1: runtime/configuration/API/recording/transcription/speech error" in (
+        result.output
+    )
+    assert "2: CLI usage error" in result.output
+    assert "stdout:" in result.output
+    assert "stderr:" in result.output
+    assert "Event logging:" in result.output
+    assert "raw audio logged: False" in result.output
+    assert "contract command writes event: False" in result.output
+    assert "no approval bypass, automatic dispatch, or automatic speech" in (
+        result.output
+    )
+
+
+def test_voice_hotkey_runtime_contract_json_reports_safe_defaults(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        voice_cmd,
+        "_log_voice_event",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("contract output must not write voice logs")
+        ),
+    )
+
+    result = CliRunner().invoke(
+        voice_cmd.voice,
+        ["hotkey-runtime", "--contract", "--json"],
+    )
+
+    assert result.exit_code == 0
+    data = json.loads(result.output)
+    assert data["version"] == 1
+    assert data["state"] == {
+        "enabled_by_default": False,
+        "listener_started_by_python": False,
+        "hammerspoon_init_modified": False,
+        "hammerspoon_installed": False,
+        "accessibility_permission_requested": False,
+        "dispatches_by_default": False,
+        "speaks_by_default": False,
+    }
+    assert data["external_trigger"]["shape"][:3] == ["jarvis", "voice", "mic-run"]
+    assert data["external_trigger"]["forbidden_default_flags"] == [
+        "--approve-dispatch",
+        "--speak-result",
+    ]
+    assert data["default_command_path"]["behavior"] == "preview-only"
+    assert data["default_command_path"]["dispatch_called_by_default"] is False
+    assert data["requirements"]["duration_seconds"]["required"] is True
+    assert data["requirements"]["duration_seconds"]["minimum"] == 0.1
+    assert data["requirements"]["duration_seconds"]["maximum"] == 30.0
+    assert data["requirements"]["recorder"]["allowed"] == ["macos", "sounddevice"]
+    assert data["requirements"]["recorder"]["must_be_real_microphone_backend"] is True
+    assert data["requirements"]["transcription"]["allowed_adapters"] == [
+        "faster-whisper",
+        "whisper.cpp",
+    ]
+    assert data["requirements"]["approval"]["bypass_allowed"] is False
+    assert data["requirements"]["speech"]["automatic"] is False
+    assert data["event_logging"]["raw_audio_logged"] is False
+    assert data["event_logging"]["contract_command_writes_event"] is False
 
 
 def test_voice_logs_command_outputs_recent_events(monkeypatch, tmp_path: Path) -> None:

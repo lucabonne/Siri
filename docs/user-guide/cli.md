@@ -490,6 +490,7 @@ jarvis voice run-local --duration 2 --adapter faster-whisper
 jarvis voice run-local --duration 2 --adapter faster-whisper --approve-dispatch
 jarvis voice run-local --duration 2 --adapter faster-whisper --approve-dispatch --speak-result
 jarvis voice doctor                                     # Safe local setup diagnostics
+jarvis voice hotkey-runtime --contract                  # External Hammerspoon runtime contract
 jarvis voice hotkey-bridge --adapter faster-whisper      # Print preview-only mic-run command
 jarvis voice hotkey-bridge --format hammerspoon          # Print disabled helper example
 jarvis voice hotkey-bridge --write-hammerspoon ./openjarvis-voice.lua
@@ -526,6 +527,7 @@ jarvis voice cancel
 | `voice capture-preview --duration N` | Record a local WAV, transcribe it locally, POST the transcript to `/v1/voice/ptt/submit-transcript`, and print the preview only |
 | `voice run-local --duration N` | Record, transcribe, submit preview, and print session state; dispatch and TTS require separate opt-in flags |
 | `voice doctor`        | Inspect voice, recorder, microphone configuration, and local dependencies without probing hardware, recording, dispatching, speaking, or starting hotkeys |
+| `voice hotkey-runtime --contract` | Print the disabled-by-default external Hammerspoon runtime bridge contract, including accepted trigger shape, preview-only defaults, bounded real-recorder/local-transcription requirements, approval/speech gates, exit codes, stdout/stderr, logging, and rollback expectations |
 | `voice hotkey-bridge` | Print or write a disabled macOS bridge example, statically validate one with `--validate-hammerspoon PATH`, print manual install steps with `--install-preview PATH`, print a manual activation/rollback guide with `--activation-guide PATH`, print manual backup/rollback steps with `--rollback-guide PATH`, report manual activation readiness with `--activation-status PATH`, or report read-only bridge status with `--status PATH`, around the bounded preview-only `mic-run` pipeline |
 | `voice speak TEXT`     | Speak text through an explicit local speech-output adapter; defaults to macOS `say` when available |
 | `voice logs`           | Inspect, export, or explicitly clean up local structured voice command events |
@@ -556,6 +558,24 @@ the bounded real-microphone `voice mic-run` preview path and omits both
 are present only as commented manual opt-in examples. OpenJarvis does not
 install Hammerspoon or the file, bind Fn/F18, start a listener, request
 Accessibility permission, or execute any generated command.
+
+`voice hotkey-runtime --contract` is the runtime bridge contract for an
+external Hammerspoon script that a user may install later. It prints the
+accepted external trigger shape: a bounded `jarvis voice mic-run --duration
+SECONDS --recorder macos|sounddevice --adapter faster-whisper|whisper.cpp`
+command with optional input device, language, base URL, session id, or
+`--keep-file` flags. The default path is preview-only and calls only the
+existing transcript preview flow; `--approve-dispatch` is forbidden by default
+and dispatches only when explicitly added, while `--speak-result` is valid only
+after approved dispatch. The contract also documents required 0.1-30 second
+duration bounds, required real recorder backend, required local transcription
+adapter/model, expected exit codes (`0` completed/printed, `1` runtime or
+configuration failure, `2` CLI usage error), stdout/stderr expectations, local
+redacted event logging behavior, and rollback expectations for disabling the
+external Hammerspoon guard or removing a manually added `dofile(...)` line.
+Printing the contract does not load Hammerspoon, edit `~/.hammerspoon/init.lua`,
+start listeners, request Accessibility permission, record audio, call the API,
+dispatch, write a voice log event, or speak.
 
 `--validate-hammerspoon PATH` is validation only. It reads a generated/example
 `.lua` file as text only. It refuses the active `~/.hammerspoon/init.lua` and

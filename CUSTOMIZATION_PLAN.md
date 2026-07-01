@@ -1,5 +1,41 @@
 # Customization Plan
 
+## Voice Control Hotkey Runtime Phase 1
+
+Hotkey Runtime Phase 1 adds a disabled-by-default contract for an external
+Hammerspoon push-to-talk runtime without activating any listener.
+
+- `jarvis voice hotkey-runtime --contract` prints the runtime bridge contract
+  an external, user-installed Hammerspoon script may follow later.
+- The accepted external trigger is a bounded `jarvis voice mic-run --duration
+  SECONDS --recorder macos|sounddevice --adapter faster-whisper|whisper.cpp`
+  command. It requires a real recorder backend and an explicit/configured local
+  transcription adapter/model.
+- The default path is preview-only. Dispatch remains approval-gated and requires
+  explicit `--approve-dispatch`; speech remains disabled unless
+  `--speak-result` is explicitly combined with approved dispatch.
+- The contract documents expected exit codes, stdout/stderr behavior, local
+  redacted event logging expectations, and manual rollback/safety expectations.
+- The contract command does not load or execute Lua, start Python listeners,
+  modify `~/.hammerspoon/init.lua`, install Hammerspoon, request Accessibility
+  permission, bypass approval, dispatch, write voice log events, or speak.
+- Existing `jarvis voice` commands, the pushed
+  `siri-voice-control-release-ready` baseline behavior, read-only Mission
+  Control voice status, and Hotkey Activation Phase 1-5 behavior remain intact.
+
+Deferred work remains intentionally untouched:
+
+- no always-on listening
+- no enabled Fn/global hotkey capture
+- no Python-started global hotkey listener
+- no automatic Hammerspoon installation or init mutation
+- no programmatic Accessibility permission request
+- no approval bypass
+- no automatic dispatch by default
+- no automatic speech playback by default
+- no Mission Control execution controls
+- no voice-only mode; text input remains available
+
 ## Voice Control Release Readiness
 
 This pass consolidates Voice Control Phase 1-30, Mic Phase 1-8, Hotkey Phase

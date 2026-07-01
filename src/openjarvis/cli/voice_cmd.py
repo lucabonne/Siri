@@ -1350,9 +1350,212 @@ def _format_voice_doctor(data: dict[str, Any]) -> None:
     )
 
 
+def _hotkey_runtime_contract_data() -> dict[str, Any]:
+    return {
+        "name": "OpenJarvis Hammerspoon push-to-talk runtime bridge contract",
+        "version": 1,
+        "state": {
+            "enabled_by_default": False,
+            "listener_started_by_python": False,
+            "hammerspoon_init_modified": False,
+            "hammerspoon_installed": False,
+            "accessibility_permission_requested": False,
+            "dispatches_by_default": False,
+            "speaks_by_default": False,
+        },
+        "external_trigger": {
+            "owner": "external Hammerspoon script, manually installed by the user",
+            "shape": [
+                "jarvis",
+                "voice",
+                "mic-run",
+                "--duration",
+                "SECONDS",
+                "--recorder",
+                "macos|sounddevice",
+                "--adapter",
+                "faster-whisper|whisper.cpp",
+            ],
+            "optional_flags": [
+                "--input-device DEVICE",
+                "--language LANGUAGE",
+                "--base-url URL",
+                "--session-id ID",
+                "--keep-file",
+            ],
+            "forbidden_default_flags": [
+                "--approve-dispatch",
+                "--speak-result",
+            ],
+        },
+        "default_command_path": {
+            "command": (
+                "jarvis voice mic-run --duration SECONDS --recorder macos "
+                "--adapter faster-whisper"
+            ),
+            "behavior": "preview-only",
+            "submit_endpoint": "/v1/voice/ptt/submit-transcript",
+            "dispatch_endpoint": "/v1/voice/ptt/dispatch",
+            "dispatch_called_by_default": False,
+        },
+        "requirements": {
+            "duration_seconds": {
+                "required": True,
+                "minimum": MICROPHONE_MIN_DURATION_SECONDS,
+                "maximum": MICROPHONE_MAX_DURATION_SECONDS,
+            },
+            "recorder": {
+                "required": True,
+                "allowed": list(MICROPHONE_RECORDER_KINDS),
+                "must_be_real_microphone_backend": True,
+            },
+            "transcription": {
+                "required": True,
+                "allowed_adapters": list(LOCAL_TRANSCRIPTION_ADAPTERS),
+                "model": "explicit or configured local adapter/model only",
+                "cloud_transcription_by_default": False,
+            },
+            "approval": {
+                "required_for_dispatch": True,
+                "opt_in_flag": "--approve-dispatch",
+                "bypass_allowed": False,
+            },
+            "speech": {
+                "allowed_only_after_approved_dispatch": True,
+                "opt_in_flag": "--speak-result",
+                "automatic": False,
+            },
+        },
+        "exit_codes": {
+            "0": "contract printed, or runtime preview/approved path completed",
+            "1": "runtime/configuration/API/recording/transcription/speech error",
+            "2": "CLI usage error such as missing duration or invalid flags",
+        },
+        "stdio": {
+            "stdout": (
+                "Human-readable preview/status by default; JSON only when an "
+                "existing command explicitly supports --json. No raw audio is "
+                "written to stdout."
+            ),
+            "stderr": (
+                "Click usage errors and runtime errors. External helpers should "
+                "treat stderr as diagnostic text, not as a transcript."
+            ),
+        },
+        "event_logging": {
+            "path": "[voice_control].voice_logs_path when local logging is enabled",
+            "redaction": (
+                "Transcript events store length/hash/redacted preview by default; "
+                "full transcript logging requires explicit config opt-in."
+            ),
+            "raw_audio_logged": False,
+            "contract_command_writes_event": False,
+        },
+        "rollback_safety": {
+            "disable_external_capture": (
+                "Set the external Hammerspoon guard back to false or remove the "
+                "manual dofile(...) line from ~/.hammerspoon/init.lua."
+            ),
+            "jarvis_rollback_actions": "none; rollback remains user-managed",
+            "safe_to_run_contract_repeatedly": True,
+        },
+    }
+
+
+def _format_hotkey_runtime_contract(data: dict[str, Any]) -> None:
+    state = data["state"]
+    trigger = data["external_trigger"]
+    command_path = data["default_command_path"]
+    requirements = data["requirements"]
+
+    click.echo("Voice hotkey runtime bridge contract")
+    click.echo(f"  version: {data['version']}")
+    click.echo("  status: disabled by default")
+    click.echo("  Python listener started: False")
+    click.echo("  ~/.hammerspoon/init.lua modified: False")
+    click.echo(f"  Hammerspoon installed: {state['hammerspoon_installed']}")
+    click.echo(
+        "  Accessibility permission requested: "
+        f"{state['accessibility_permission_requested']}"
+    )
+    click.echo("")
+    click.echo("Accepted external trigger shape:")
+    click.echo(f"  owner: {trigger['owner']}")
+    click.echo(f"  required argv: {' '.join(trigger['shape'])}")
+    click.echo(f"  optional flags: {', '.join(trigger['optional_flags'])}")
+    click.echo(
+        f"  forbidden by default: {', '.join(trigger['forbidden_default_flags'])}"
+    )
+    click.echo("")
+    click.echo("Default command path:")
+    click.echo(f"  command: {command_path['command']}")
+    click.echo(f"  behavior: {command_path['behavior']}")
+    click.echo(f"  submit endpoint: {command_path['submit_endpoint']}")
+    click.echo("  dispatch: skipped unless --approve-dispatch is present")
+    click.echo("")
+    click.echo("Runtime requirements:")
+    duration = requirements["duration_seconds"]
+    click.echo(
+        f"  duration: required, {duration['minimum']:g}-{duration['maximum']:g} seconds"
+    )
+    recorder = requirements["recorder"]
+    click.echo(f"  recorder: real backend required ({', '.join(recorder['allowed'])})")
+    transcription = requirements["transcription"]
+    click.echo(
+        "  transcription: local adapter/model required "
+        f"({', '.join(transcription['allowed_adapters'])})"
+    )
+    click.echo("  approval: dispatch only with explicit --approve-dispatch")
+    click.echo("  speech: only with --speak-result after approved dispatch")
+    click.echo("")
+    click.echo("Expected exit codes:")
+    for code, meaning in data["exit_codes"].items():
+        click.echo(f"  {code}: {meaning}")
+    click.echo("")
+    click.echo("Expected stdout/stderr:")
+    click.echo(f"  stdout: {data['stdio']['stdout']}")
+    click.echo(f"  stderr: {data['stdio']['stderr']}")
+    click.echo("")
+    click.echo("Event logging:")
+    event_logging = data["event_logging"]
+    click.echo(f"  path: {event_logging['path']}")
+    click.echo(f"  redaction: {event_logging['redaction']}")
+    click.echo(f"  raw audio logged: {event_logging['raw_audio_logged']}")
+    click.echo(
+        "  contract command writes event: "
+        f"{event_logging['contract_command_writes_event']}"
+    )
+    click.echo("")
+    click.echo("Rollback and safety:")
+    rollback = data["rollback_safety"]
+    click.echo(f"  external rollback: {rollback['disable_external_capture']}")
+    click.echo(f"  Jarvis rollback actions: {rollback['jarvis_rollback_actions']}")
+    click.echo("  no approval bypass, automatic dispatch, or automatic speech")
+
+
 @click.group("voice")
 def voice() -> None:
     """Explicit local/manual voice flow over /v1/voice/ptt."""
+
+
+@voice.command("hotkey-runtime")
+@click.option(
+    "--contract",
+    is_flag=True,
+    default=False,
+    help="Print the disabled-by-default external Hammerspoon runtime contract.",
+)
+@click.option("--json", "as_json", is_flag=True, help="Print the contract as JSON.")
+def hotkey_runtime(contract: bool, as_json: bool) -> None:
+    """Document the safe external hotkey runtime boundary."""
+    if not contract:
+        raise click.UsageError("pass --contract to print the runtime contract")
+
+    data = _hotkey_runtime_contract_data()
+    if as_json:
+        _emit_json(data)
+        return
+    _format_hotkey_runtime_contract(data)
 
 
 @voice.command("doctor")
