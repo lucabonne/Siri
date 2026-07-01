@@ -173,6 +173,8 @@ def test_voice_release_readiness_help_text_stays_manual_and_safe() -> None:
     assert "--install-preview" in bridge_output
     assert "without changing files" in bridge_output
     assert "--activation-guide" in bridge_output
+    assert "--manual-test" in bridge_output
+    assert "user-performed Hammerspoon test flow" in bridge_output
     assert "--rollback-guide" in bridge_output
     assert "--activation-status" in bridge_output
     assert "without executing or modifying anything" in bridge_output
@@ -1938,6 +1940,153 @@ def test_voice_hotkey_bridge_activation_guide_rejects_format_option(tmp_path) ->
 
     assert result.exit_code != 0
     assert "--activation-guide cannot be combined with --format" in result.output
+
+
+def test_voice_hotkey_bridge_manual_test_prints_step_by_step_flow(
+    monkeypatch, tmp_path
+) -> None:
+    bridge_path = tmp_path / "openjarvis-voice.lua"
+    _write_hammerspoon_validation_fixture(bridge_path)
+    monkeypatch.setattr(
+        voice_cmd,
+        "load_config",
+        lambda: (_ for _ in ()).throw(AssertionError("config must not load")),
+    )
+    monkeypatch.setattr(
+        voice_cmd,
+        "_log_voice_event",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("manual test must not write voice logs")
+        ),
+    )
+
+    result = CliRunner().invoke(
+        voice_cmd.voice,
+        ["hotkey-bridge", "--manual-test", str(bridge_path)],
+    )
+
+    assert result.exit_code == 0
+    assert (
+        "Hammerspoon activation manual test (user-performed outside Jarvis)"
+        in result.output
+    )
+    assert "scope: printed guide only; Jarvis does not run these steps" in (
+        result.output
+    )
+    assert "1. Run safe diagnostics:" in result.output
+    assert "jarvis voice doctor" in result.output
+    assert "2. Run the runtime readiness preflight:" in result.output
+    assert "jarvis voice hotkey-runtime --preflight" in result.output
+    assert "3. Generate or validate the Hammerspoon bridge manually:" in (result.output)
+    assert "jarvis voice hotkey-bridge --write-hammerspoon" in result.output
+    assert "jarvis voice hotkey-bridge --validate-hammerspoon" in result.output
+    assert "4. Manually add this exact line to ~/.hammerspoon/init.lua:" in (
+        result.output
+    )
+    assert "5. Manually reload Hammerspoon from the menu bar:" in result.output
+    assert "6. Press the configured Hammerspoon hotkey." in result.output
+    assert "8. Inspect local voice events:" in result.output
+    assert "jarvis voice logs" in result.output
+
+
+def test_voice_hotkey_bridge_manual_test_reports_preview_only_default(
+    tmp_path,
+) -> None:
+    bridge_path = tmp_path / "openjarvis-voice.lua"
+    _write_hammerspoon_validation_fixture(bridge_path)
+
+    result = CliRunner().invoke(
+        voice_cmd.voice,
+        ["hotkey-bridge", "--manual-test", str(bridge_path)],
+    )
+
+    assert result.exit_code == 0
+    assert "static validation: passed" in result.output
+    assert "preview-only default: True" in result.output
+    assert "Confirm the result is preview-only by default" in result.output
+    assert "approved dispatch: explicit opt-in only" in result.output
+    assert "result speech: explicit opt-in only" in result.output
+    assert "--approve-dispatch --speak-result" in result.output
+
+
+def test_voice_hotkey_bridge_manual_test_prints_rollback_instructions(
+    tmp_path,
+) -> None:
+    bridge_path = tmp_path / "openjarvis-voice.lua"
+    _write_hammerspoon_validation_fixture(bridge_path)
+
+    result = CliRunner().invoke(
+        voice_cmd.voice,
+        ["hotkey-bridge", "--manual-test", str(bridge_path)],
+    )
+
+    dofile_line = f"dofile({json.dumps(str(bridge_path.resolve(strict=False)))})"
+    assert result.exit_code == 0
+    assert "9. Roll back manually if needed:" in result.output
+    assert "jarvis voice hotkey-bridge --rollback-guide" in result.output
+    assert "Remove this exact line manually from" in result.output
+    assert dofile_line in result.output
+    assert "local enable_openjarvis_voice_hotkey = false" in result.output
+    assert "reload Hammerspoon manually" in result.output
+
+
+def test_voice_hotkey_bridge_manual_test_does_not_mutate_files(
+    monkeypatch, tmp_path
+) -> None:
+    home = tmp_path / "home"
+    active_init = home / ".hammerspoon" / "init.lua"
+    active_init.parent.mkdir(parents=True)
+    active_init.write_text("-- user hammerspoon config\n", encoding="utf-8")
+    bridge_path = tmp_path / "openjarvis-voice.lua"
+    _write_hammerspoon_validation_fixture(bridge_path)
+    original_bridge = bridge_path.read_text(encoding="utf-8")
+    original_init = active_init.read_text(encoding="utf-8")
+    monkeypatch.setenv("HOME", str(home))
+
+    def fail_side_effect(*args, **kwargs):
+        raise AssertionError("manual test must not start voice flow")
+
+    monkeypatch.setattr(voice_cmd, "_post_json", fail_side_effect)
+    monkeypatch.setattr(voice_cmd, "_get_json", fail_side_effect)
+    monkeypatch.setattr(voice_cmd, "_build_recorder", fail_side_effect)
+    monkeypatch.setattr(voice_cmd, "_build_speech_output", fail_side_effect)
+
+    result = CliRunner().invoke(
+        voice_cmd.voice,
+        ["hotkey-bridge", "--manual-test", str(bridge_path)],
+    )
+
+    assert result.exit_code == 0
+    assert bridge_path.read_text(encoding="utf-8") == original_bridge
+    assert active_init.read_text(encoding="utf-8") == original_init
+    assert "files modified by Jarvis: False" in result.output
+    assert "active Hammerspoon config touched by Jarvis: False" in result.output
+    assert "~/.hammerspoon/init.lua modified by Jarvis: False" in result.output
+
+
+def test_voice_hotkey_bridge_manual_test_prints_safety_statements(
+    tmp_path,
+) -> None:
+    bridge_path = tmp_path / "openjarvis-voice.lua"
+    _write_hammerspoon_validation_fixture(bridge_path)
+
+    result = CliRunner().invoke(
+        voice_cmd.voice,
+        ["hotkey-bridge", "--manual-test", str(bridge_path)],
+    )
+
+    assert result.exit_code == 0
+    assert "Safety boundaries for this manual-test command:" in result.output
+    assert "Lua execution by Jarvis: not attempted" in result.output
+    assert "shell commands from bridge by Jarvis: not run" in result.output
+    assert "listener started by Jarvis: False" in result.output
+    assert "global hotkey listener started from Python: False" in result.output
+    assert "Hammerspoon installed by Jarvis: False" in result.output
+    assert "Accessibility permission requested by Jarvis: False" in result.output
+    assert "approval bypassed by Jarvis: False" in result.output
+    assert "automatic dispatch by default: False" in result.output
+    assert "automatic speech by default: False" in result.output
+    assert "voice-only mode: deferred" in result.output
 
 
 def test_voice_hotkey_bridge_rollback_guide_prints_manual_backup_and_rollback(

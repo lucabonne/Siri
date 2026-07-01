@@ -491,6 +491,121 @@ def _format_hammerspoon_rollback_guide(path: Path) -> None:
     )
 
 
+def _hammerspoon_manual_test_validation(path: Path) -> dict[str, Any]:
+    expanded_path = path.expanduser()
+    if "://" in str(expanded_path):
+        raise click.ClickException("Hammerspoon bridge path must be local")
+    if expanded_path.suffix.lower() != ".lua":
+        raise click.ClickException("Hammerspoon bridge path must end in .lua")
+
+    resolved_path = expanded_path.resolve(strict=False)
+    active_init = (Path.home() / ".hammerspoon" / "init.lua").resolve(strict=False)
+    if resolved_path == active_init:
+        raise click.ClickException(
+            "Refusing to inspect the active ~/.hammerspoon/init.lua; "
+            "use a generated bridge file path for the manual test guide"
+        )
+
+    exists = expanded_path.exists()
+    is_file = expanded_path.is_file() if exists else False
+    errors: tuple[str, ...] = ()
+    if exists and is_file:
+        try:
+            content = expanded_path.read_text(encoding="utf-8")
+        except (OSError, UnicodeError) as exc:
+            errors = (f"could not read bridge file: {exc}",)
+        else:
+            errors = validate_hammerspoon_bridge(content).errors
+    elif exists:
+        errors = ("bridge path is not a file",)
+
+    if exists and is_file and not errors:
+        validation_status = "passed"
+    elif not exists:
+        validation_status = "not run; bridge file is missing"
+    else:
+        validation_status = "failed"
+
+    return {
+        "path": expanded_path,
+        "resolved_path": resolved_path,
+        "exists": exists,
+        "is_file": is_file,
+        "validation_status": validation_status,
+        "validation_errors": list(errors),
+        "preview_only_default": exists and is_file and not errors,
+    }
+
+
+def _format_hammerspoon_manual_test(path: Path) -> None:
+    validation = _hammerspoon_manual_test_validation(path)
+    resolved_path = validation["resolved_path"]
+    init_path = Path.home() / ".hammerspoon" / "init.lua"
+    dofile_line = f"dofile({json.dumps(str(resolved_path))})"
+
+    click.echo("Hammerspoon activation manual test (user-performed outside Jarvis)")
+    click.echo(f"  bridge: {resolved_path}")
+    click.echo("  scope: printed guide only; Jarvis does not run these steps")
+    click.echo(f"  bridge file exists: {validation['exists']}")
+    click.echo(f"  bridge file is regular file: {validation['is_file']}")
+    click.echo(f"  static validation: {validation['validation_status']}")
+    click.echo(f"  preview-only default: {validation['preview_only_default']}")
+    if validation["validation_errors"]:
+        click.echo("  validation errors:")
+        for error in validation["validation_errors"]:
+            click.echo(f"    - {error}")
+    click.echo("  approved dispatch: explicit opt-in only")
+    click.echo("  result speech: explicit opt-in only")
+    click.echo("")
+    click.echo("Manual test flow:")
+    click.echo("  1. Run safe diagnostics:")
+    click.echo("     jarvis voice doctor")
+    click.echo("  2. Run the runtime readiness preflight:")
+    click.echo("     jarvis voice hotkey-runtime --preflight")
+    click.echo("  3. Generate or validate the Hammerspoon bridge manually:")
+    click.echo("     If the bridge file does not exist yet:")
+    click.echo(f"       jarvis voice hotkey-bridge --write-hammerspoon {resolved_path}")
+    click.echo("     Then validate the bridge:")
+    click.echo(
+        f"       jarvis voice hotkey-bridge --validate-hammerspoon {resolved_path}"
+    )
+    click.echo("  4. Manually add this exact line to ~/.hammerspoon/init.lua:")
+    click.echo(f"     {dofile_line}")
+    click.echo("  5. Manually reload Hammerspoon from the menu bar:")
+    click.echo("     Hammerspoon > Reload Config")
+    click.echo("  6. Press the configured Hammerspoon hotkey.")
+    click.echo(
+        "  7. Confirm the result is preview-only by default: no dispatch occurs "
+        "unless --approve-dispatch is present, and no speech occurs unless "
+        "--approve-dispatch --speak-result is present."
+    )
+    click.echo("  8. Inspect local voice events:")
+    click.echo("     jarvis voice logs")
+    click.echo("  9. Roll back manually if needed:")
+    click.echo(f"     jarvis voice hotkey-bridge --rollback-guide {resolved_path}")
+    click.echo(f"     Remove this exact line manually from {init_path}:")
+    click.echo(f"     {dofile_line}")
+    click.echo(
+        "     Set `local enable_openjarvis_voice_hotkey = false` in the bridge "
+        "file and reload Hammerspoon manually."
+    )
+    click.echo("")
+    click.echo("Safety boundaries for this manual-test command:")
+    click.echo("  Lua execution by Jarvis: not attempted")
+    click.echo("  shell commands from bridge by Jarvis: not run")
+    click.echo("  files modified by Jarvis: False")
+    click.echo("  active Hammerspoon config touched by Jarvis: False")
+    click.echo("  ~/.hammerspoon/init.lua modified by Jarvis: False")
+    click.echo("  listener started by Jarvis: False")
+    click.echo("  global hotkey listener started from Python: False")
+    click.echo("  Hammerspoon installed by Jarvis: False")
+    click.echo("  Accessibility permission requested by Jarvis: False")
+    click.echo("  approval bypassed by Jarvis: False")
+    click.echo("  automatic dispatch by default: False")
+    click.echo("  automatic speech by default: False")
+    click.echo("  voice-only mode: deferred")
+
+
 def _active_init_references_bridge(init_path: Path, bridge_path: Path) -> bool:
     if not init_path.exists() or not init_path.is_file():
         return False
@@ -2759,6 +2874,16 @@ def doctor(as_json: bool) -> None:
     ),
 )
 @click.option(
+    "--manual-test",
+    type=click.Path(path_type=Path),
+    default=None,
+    help=(
+        "Manual activation test guide only: print a user-performed Hammerspoon "
+        "test flow without executing Lua, running bridge commands, or changing "
+        "files."
+    ),
+)
+@click.option(
     "--rollback-guide",
     type=click.Path(path_type=Path),
     default=None,
@@ -2801,11 +2926,44 @@ def hotkey_bridge(
     validate_hammerspoon: Path | None,
     install_preview: Path | None,
     activation_guide: Path | None,
+    manual_test: Path | None,
     rollback_guide: Path | None,
     activation_status: Path | None,
     status_path: Path | None,
 ) -> None:
     """Print or explicitly write a disabled macOS hotkey bridge example."""
+    if manual_test is not None:
+        if write_hammerspoon is not None:
+            raise click.UsageError(
+                "--manual-test cannot be combined with --write-hammerspoon"
+            )
+        if validate_hammerspoon is not None:
+            raise click.UsageError(
+                "--manual-test cannot be combined with --validate-hammerspoon"
+            )
+        if install_preview is not None:
+            raise click.UsageError(
+                "--manual-test cannot be combined with --install-preview"
+            )
+        if activation_guide is not None:
+            raise click.UsageError(
+                "--manual-test cannot be combined with --activation-guide"
+            )
+        if rollback_guide is not None:
+            raise click.UsageError(
+                "--manual-test cannot be combined with --rollback-guide"
+            )
+        if activation_status is not None:
+            raise click.UsageError(
+                "--manual-test cannot be combined with --activation-status"
+            )
+        if status_path is not None:
+            raise click.UsageError("--manual-test cannot be combined with --status")
+        if output_format is not None:
+            raise click.UsageError("--manual-test cannot be combined with --format")
+        _format_hammerspoon_manual_test(manual_test)
+        return
+
     if activation_status is not None:
         if write_hammerspoon is not None:
             raise click.UsageError(

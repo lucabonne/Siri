@@ -1,5 +1,44 @@
 # Customization Plan
 
+## Voice Control Hammerspoon Activation Test Phase 1
+
+Hammerspoon Activation Test Phase 1 adds a manual, user-run activation test
+workflow for the existing generated bridge without activating anything from
+Jarvis.
+
+- `jarvis voice hotkey-bridge --manual-test PATH` prints a step-by-step
+  manual test flow for a generated Hammerspoon bridge.
+- The flow tells the user to run `jarvis voice doctor`, run
+  `jarvis voice hotkey-runtime --preflight`, generate or validate the bridge,
+  manually add the printed `dofile(...)` line to `~/.hammerspoon/init.lua`,
+  manually reload Hammerspoon, press the configured hotkey, confirm the result
+  is preview-only by default, inspect `jarvis voice logs`, and manually roll
+  back with `--rollback-guide` if needed.
+- The command statically inspects only the supplied generated bridge file when
+  it exists. It does not execute Lua, run bridge shell commands, mutate files,
+  touch the active Hammerspoon config, start listeners, install Hammerspoon,
+  request Accessibility permission, bypass approval, dispatch by default, or
+  speak by default.
+- The runtime trigger path remains intact:
+  `jarvis voice hotkey-runtime --trigger`.
+- Preview-only behavior remains the default. Approved dispatch and speech
+  remain explicit opt-in variants only.
+- Mission Control remains read-only and unchanged.
+- Voice-only mode remains deferred.
+
+Deferred scope remains intentionally untouched:
+
+- no always-on listening
+- no enabled Fn/global hotkey capture
+- no Python-started global hotkey listener
+- no automatic Hammerspoon installation or init mutation
+- no programmatic Accessibility permission request
+- no approval bypass
+- no automatic dispatch by default
+- no automatic speech playback by default
+- no Mission Control execution controls
+- no voice-only mode; text input remains available
+
 ## Voice Control Hotkey Runtime Phase 7
 
 Hotkey Runtime Phase 7 is a final consolidation pass for the external
