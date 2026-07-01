@@ -1,5 +1,42 @@
 # Customization Plan
 
+## Voice Control Hotkey Runtime Phase 6
+
+Hotkey Runtime Phase 6 adds a read-only runtime trigger status/audit command
+for the external Hammerspoon trigger path without activating anything.
+
+- `jarvis voice hotkey-runtime --status` reports whether the runtime contract,
+  dry-run, preflight, and trigger command are available.
+- The status report includes the generated Hammerspoon bridge's expected
+  command, `jarvis voice hotkey-runtime --trigger`, plus preview-only defaults,
+  explicit dispatch approval requirements, and the speech requirement of both
+  approved dispatch and `--speak-result` opt-in.
+- The status report summarizes recorder readiness, local transcription/model
+  readiness, API base URL readiness, and local event logging state.
+- The status report explicitly states that the Python listener was not started,
+  `~/.hammerspoon/init.lua` was not mutated by Jarvis, and Accessibility
+  permission was not requested by Jarvis.
+- `--json` is supported for the same audit data.
+- The status command does not record, transcribe, submit, dispatch, speak,
+  write voice log events, execute Lua, run bridge shell commands, start
+  listeners, install Hammerspoon, modify `~/.hammerspoon/init.lua`, request
+  Accessibility permission, or bypass approval.
+- Runtime Phase 1 `--contract`, Phase 2 `--dry-run`, Phase 3 `--preflight`,
+  Phase 4 `--trigger`, and Phase 5 generated bridge behavior remain intact.
+
+Deferred work remains intentionally untouched:
+
+- no always-on listening
+- no enabled Fn/global hotkey capture
+- no Python-started global hotkey listener
+- no automatic Hammerspoon installation or init mutation
+- no programmatic Accessibility permission request
+- no approval bypass
+- no automatic dispatch by default
+- no automatic speech playback by default
+- no Mission Control execution controls
+- no voice-only mode; text input remains available
+
 ## Voice Control Hotkey Runtime Phase 5
 
 Hotkey Runtime Phase 5 updates the generated disabled Hammerspoon bridge so its

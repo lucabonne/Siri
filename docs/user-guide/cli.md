@@ -493,6 +493,7 @@ jarvis voice doctor                                     # Safe local setup diagn
 jarvis voice hotkey-runtime --contract                  # External Hammerspoon runtime contract
 jarvis voice hotkey-runtime --dry-run                   # Resolve external trigger command without running it
 jarvis voice hotkey-runtime --preflight                 # Validate external trigger readiness without side effects
+jarvis voice hotkey-runtime --status                    # Audit external trigger readiness without side effects
 jarvis voice hotkey-bridge --adapter faster-whisper      # Print preview-only mic-run command
 jarvis voice hotkey-bridge --format hammerspoon          # Print disabled helper example
 jarvis voice hotkey-bridge --write-hammerspoon ./openjarvis-voice.lua
@@ -532,6 +533,7 @@ jarvis voice cancel
 | `voice hotkey-runtime --contract` | Print the disabled-by-default external Hammerspoon runtime bridge contract, including accepted trigger shape, preview-only defaults, bounded real-recorder/local-transcription requirements, approval/speech gates, exit codes, stdout/stderr, logging, and rollback expectations |
 | `voice hotkey-runtime --dry-run` | Resolve and print the preview-only `mic-run` command an external Hammerspoon trigger would call, plus setup guidance, without recording, transcribing, submitting, dispatching, speaking, logging, or starting listeners |
 | `voice hotkey-runtime --preflight` | Validate readiness for an external Hammerspoon trigger by reporting the resolved preview-only command, real recorder, bounded duration, local transcription adapter/model, API base URL, approval, dispatch/speech defaults, and safe Hammerspoon/manual activation status without recording, transcribing, submitting, dispatching, speaking, logging, or starting listeners |
+| `voice hotkey-runtime --status` | Audit whether the external Hammerspoon trigger path is ready, including contract/dry-run/preflight/trigger availability, expected generated bridge command, preview-only defaults, approval/speech gates, recorder readiness, transcription/model readiness, API base URL readiness, event logging state, and explicit false safety fields, without recording, transcribing, submitting, dispatching, speaking, logging, executing Lua, running bridge commands, or starting listeners |
 | `voice hotkey-bridge` | Print or write a disabled macOS bridge example, statically validate one with `--validate-hammerspoon PATH`, print manual install steps with `--install-preview PATH`, print a manual activation/rollback guide with `--activation-guide PATH`, print manual backup/rollback steps with `--rollback-guide PATH`, report manual activation readiness with `--activation-status PATH`, or report read-only bridge status with `--status PATH`, around the bounded preview-only `mic-run` pipeline |
 | `voice speak TEXT`     | Speak text through an explicit local speech-output adapter; defaults to macOS `say` when available |
 | `voice logs`           | Inspect, export, or explicitly clean up local structured voice command events |
@@ -565,13 +567,13 @@ Accessibility permission, or execute any generated command.
 
 `voice hotkey-runtime --contract` is the runtime bridge contract for an
 external Hammerspoon script that a user may install later. It prints the
-accepted external trigger shape: a bounded `jarvis voice mic-run --duration
-SECONDS --recorder macos|sounddevice --adapter faster-whisper|whisper.cpp`
-command with optional input device, language, base URL, session id, or
-`--keep-file` flags. The default path is preview-only and calls only the
-existing transcript preview flow; `--approve-dispatch` is forbidden by default
-and dispatches only when explicitly added, while `--speak-result` is valid only
-after approved dispatch. The contract also documents required 0.1-30 second
+accepted external trigger shape: a bounded `jarvis voice hotkey-runtime
+--trigger --duration SECONDS --recorder macos|sounddevice --adapter
+faster-whisper|whisper.cpp` command with optional input device, language, base
+URL, session id, or `--keep-file` flags. The wrapper internally reuses the
+existing preview-only `mic-run` path; `--approve-dispatch` is forbidden by
+default and dispatches only when explicitly added, while `--speak-result` is
+valid only after approved dispatch. The contract also documents required 0.1-30 second
 duration bounds, required real recorder backend, required local transcription
 adapter/model, expected exit codes (`0` completed/printed, `1` runtime or
 configuration failure, `2` CLI usage error), stdout/stderr expectations, local
@@ -604,11 +606,26 @@ Printing the contract does not load Hammerspoon, edit `~/.hammerspoon/init.lua`,
 start listeners, request Accessibility permission, record audio, call the API,
 dispatch, write a voice log event, or speak.
 
+`voice hotkey-runtime --status` is a read-only runtime trigger audit. It reports
+whether the runtime contract, dry-run, preflight, and trigger command are
+available; the generated Hammerspoon bridge's expected command
+(`jarvis voice hotkey-runtime --trigger`); preview-only defaults; explicit
+approval and speech opt-in requirements; recorder readiness;
+transcription/model readiness; API base URL readiness; event logging state; and
+the safety fields `listener_started_by_python=false`,
+`init_lua_mutated_by_jarvis=false`, and
+`accessibility_permission_requested_by_jarvis=false`. It supports `--json`. It
+does not record, transcribe, submit, dispatch, speak, write voice log events,
+execute Lua, run bridge shell commands, start a listener, install Hammerspoon,
+modify `~/.hammerspoon/init.lua`, request Accessibility permission, or bypass
+approval.
+
 `--validate-hammerspoon PATH` is validation only. It reads a generated/example
 `.lua` file as text only. It refuses the active `~/.hammerspoon/init.lua` and
 requires a disabled bridge whose active command is preview-only
-`jarvis voice mic-run`, has a 0.1-30 second duration, and selects `macos` or
-`sounddevice`. It rejects active `--approve-dispatch`, `--speak-result`,
+`jarvis voice hotkey-runtime --trigger`, has a 0.1-30 second duration, and
+selects `macos` or `sounddevice`. It rejects active `--approve-dispatch`,
+`--speak-result`,
 Hammerspoon install-path mutation, LaunchAgent markers, and active
 execution/loading markers outside the disabled hotkey guard. Validation does
 not execute Lua or commands from the file, install anything, start listeners,

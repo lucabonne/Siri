@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import shlex
 import shutil
 import sys
 import time
@@ -1858,6 +1859,220 @@ def _hotkey_runtime_preflight_data() -> dict[str, Any]:
     }
 
 
+def _hotkey_runtime_status_data() -> dict[str, Any]:
+    config = load_config()
+    voice_control = _voice_control_config(config)
+    issues: list[str] = []
+    guidance: list[str] = []
+
+    raw_duration = getattr(voice_control, "default_record_duration", 0.0) or 0.0
+    try:
+        duration = float(raw_duration)
+    except (TypeError, ValueError):
+        duration = 0.0
+        issues.append("[voice_control].default_record_duration must be numeric")
+        guidance.append(
+            "Set [voice_control].default_record_duration to a bounded value "
+            "between 0.1 and 30 seconds before using the runtime trigger."
+        )
+    duration_ready = (
+        MICROPHONE_MIN_DURATION_SECONDS <= duration <= MICROPHONE_MAX_DURATION_SECONDS
+    )
+    command_duration = duration if duration_ready else 2.0
+
+    recorder = str(getattr(voice_control, "hotkey_bridge_recorder", "macos") or "macos")
+    recorder_status = recorder_diagnostics(recorder)
+    recorder_ready = (
+        recorder in MICROPHONE_RECORDER_KINDS
+        and recorder_status["real_microphone_recorder_configured"] is True
+        and recorder_status["supported"] is True
+    )
+    if not recorder_ready:
+        issues.append(
+            "[voice_control].hotkey_bridge_recorder must be macos or sounddevice"
+        )
+        guidance.append(
+            "Set [voice_control].hotkey_bridge_recorder to a real microphone "
+            "backend before using the runtime trigger."
+        )
+
+    configured_adapter = str(getattr(voice_control, "transcription_adapter", "") or "")
+    speech_backend = str(getattr(config.speech, "backend", "") or "")
+    if configured_adapter:
+        adapter = configured_adapter
+        adapter_source = "[voice_control].transcription_adapter"
+    elif speech_backend in LOCAL_TRANSCRIPTION_ADAPTERS:
+        adapter = speech_backend
+        adapter_source = "[speech].backend"
+    else:
+        adapter = ""
+        adapter_source = ""
+
+    adapter_ready = adapter in LOCAL_TRANSCRIPTION_ADAPTERS
+    if not adapter_ready:
+        issues.append("local transcription adapter is not configured")
+        guidance.append(
+            "Set [voice_control].transcription_adapter to faster-whisper or "
+            "whisper.cpp before using the runtime trigger."
+        )
+
+    model_path = _voice_doctor_model_path(config, adapter or "disabled")
+    model_ready = bool(model_path["value"]) and model_path["exists"] is not False
+    if not model_ready:
+        issues.append("local transcription model is not configured")
+        guidance.append(
+            "Configure [voice_control].model_path, [speech].model, or the "
+            "required adapter model environment variable before using the "
+            "runtime trigger."
+        )
+
+    approval_required = bool(
+        getattr(config.speech, "require_explicit_voice_approval", True)
+    )
+    if not approval_required:
+        issues.append("[speech].require_explicit_voice_approval should remain true")
+        guidance.append(
+            "Keep [speech].require_explicit_voice_approval = true for external "
+            "hotkey-triggered workflows."
+        )
+
+    api_base = _configured_api_base_url(config)
+    bridge = MacOSHotkeyBridgeCommand(
+        jarvis_bin=str(
+            getattr(voice_control, "hotkey_bridge_jarvis_bin", "jarvis") or "jarvis"
+        ),
+        duration=command_duration,
+        recorder=recorder,
+        input_device=str(
+            getattr(voice_control, "hotkey_bridge_input_device", ":0") or ":0"
+        ),
+        adapter=adapter or None,
+        base_url=api_base["value"] or None,
+        session_id=str(getattr(voice_control, "hotkey_bridge_session_id", "") or "")
+        or None,
+    )
+    trigger_argv = bridge.runtime_argv()
+    preview_argv = bridge.argv()
+    forbidden_default_flags_absent = all(
+        flag not in trigger_argv + preview_argv
+        for flag in ("--approve-dispatch", "--speak-result")
+    )
+    runtime_capabilities = {
+        "contract_available": True,
+        "dry_run_available": True,
+        "preflight_available": True,
+        "trigger_command_available": True,
+    }
+    safety = {
+        "status": True,
+        "preview_only_default": True,
+        "dispatch_requires_explicit_approval": True,
+        "speech_requires_dispatch_approval_and_speech_opt_in": True,
+        "record_audio": False,
+        "transcribe": False,
+        "submit": False,
+        "dispatch": False,
+        "speak": False,
+        "listener_started_by_python": False,
+        "init_lua_mutated_by_jarvis": False,
+        "accessibility_permission_requested_by_jarvis": False,
+        "hammerspoon_installed_by_jarvis": False,
+        "approval_bypassed": False,
+        "lua_executed": False,
+        "bridge_shell_commands_run": False,
+        "event_logged": False,
+        "forbidden_default_flags_absent": forbidden_default_flags_absent,
+    }
+    checks = {
+        "runtime_contract_available": {
+            "passed": runtime_capabilities["contract_available"],
+            "command": "jarvis voice hotkey-runtime --contract",
+        },
+        "dry_run_available": {
+            "passed": runtime_capabilities["dry_run_available"],
+            "command": "jarvis voice hotkey-runtime --dry-run",
+        },
+        "preflight_available": {
+            "passed": runtime_capabilities["preflight_available"],
+            "command": "jarvis voice hotkey-runtime --preflight",
+        },
+        "trigger_command_available": {
+            "passed": runtime_capabilities["trigger_command_available"],
+            "command": "jarvis voice hotkey-runtime --trigger",
+        },
+        "preview_only_default": {
+            "passed": safety["preview_only_default"] and forbidden_default_flags_absent,
+        },
+        "dispatch_requires_explicit_approval": {
+            "passed": approval_required,
+            "config": "[speech].require_explicit_voice_approval",
+        },
+        "speech_requires_dispatch_approval_plus_speech_opt_in": {
+            "passed": True,
+            "required_flags": ["--approve-dispatch", "--speak-result"],
+        },
+        "recorder_readiness": {
+            "passed": recorder_ready,
+            "value": recorder,
+            "source": "[voice_control].hotkey_bridge_recorder",
+            "diagnostics": recorder_status,
+        },
+        "duration_readiness": {
+            "passed": duration_ready,
+            "value": duration if duration > 0 else None,
+            "source": "[voice_control].default_record_duration",
+            "minimum": MICROPHONE_MIN_DURATION_SECONDS,
+            "maximum": MICROPHONE_MAX_DURATION_SECONDS,
+        },
+        "transcription_model_readiness": {
+            "passed": adapter_ready and model_ready,
+            "adapter": {
+                "value": adapter,
+                "source": adapter_source,
+                "allowed": list(LOCAL_TRANSCRIPTION_ADAPTERS),
+                "configured": adapter_ready,
+            },
+            "model": model_path,
+        },
+        "api_base_url_readiness": {
+            "passed": bool(api_base["value"]),
+            "value": api_base["value"],
+            "source": api_base["source"],
+        },
+        "event_logging_state": {
+            "enabled": bool(getattr(voice_control, "voice_logs_enabled", True)),
+            "path": str(getattr(voice_control, "voice_logs_path", "") or ""),
+            "status_command_writes_event": False,
+            "diagnostic_event_logged": False,
+        },
+        "listener_started_by_python": {"passed": True, "value": False},
+        "init_lua_mutated_by_jarvis": {"passed": True, "value": False},
+        "accessibility_permission_requested_by_jarvis": {
+            "passed": True,
+            "value": False,
+        },
+    }
+    ready = (
+        all(check["passed"] for check in checks.values() if "passed" in check)
+        and not issues
+    )
+
+    return {
+        "name": "OpenJarvis Hammerspoon push-to-talk runtime status",
+        "version": 1,
+        "ready": ready,
+        "runtime_capabilities": runtime_capabilities,
+        "generated_hammerspoon_bridge_expected_command": shlex.join(trigger_argv),
+        "generated_hammerspoon_bridge_expected_argv": trigger_argv,
+        "internal_preview_command": bridge.shell_command(),
+        "internal_preview_argv": preview_argv,
+        "checks": checks,
+        "issues": issues,
+        "guidance": guidance,
+        "safety": safety,
+    }
+
+
 def _format_hotkey_runtime_contract(data: dict[str, Any]) -> None:
     state = data["state"]
     trigger = data["external_trigger"]
@@ -2068,6 +2283,101 @@ def _format_hotkey_runtime_preflight(data: dict[str, Any]) -> None:
             click.echo(f"  - {item}")
 
 
+def _format_hotkey_runtime_status(data: dict[str, Any]) -> None:
+    click.echo("Voice hotkey runtime status")
+    click.echo(f"  ready: {data['ready']}")
+    click.echo(
+        "  generated Hammerspoon bridge expected command: "
+        f"{data['generated_hammerspoon_bridge_expected_command']}"
+    )
+    click.echo(f"  internal preview path: {data['internal_preview_command']}")
+    click.echo("  behavior: preview-only by default")
+
+    checks = data["checks"]
+    click.echo("")
+    click.echo("Runtime trigger audit:")
+    click.echo(
+        "  - runtime contract available: "
+        f"{checks['runtime_contract_available']['passed']}"
+    )
+    click.echo(f"  - dry-run available: {checks['dry_run_available']['passed']}")
+    click.echo(f"  - preflight available: {checks['preflight_available']['passed']}")
+    click.echo(
+        "  - trigger command available: "
+        f"{checks['trigger_command_available']['passed']}"
+    )
+    click.echo(f"  - preview-only default: {checks['preview_only_default']['passed']}")
+    click.echo(
+        "  - dispatch requires explicit approval: "
+        f"{checks['dispatch_requires_explicit_approval']['passed']}"
+    )
+    click.echo(
+        "  - speech requires explicit dispatch approval plus speech opt-in: "
+        f"{checks['speech_requires_dispatch_approval_plus_speech_opt_in']['passed']}"
+    )
+    recorder = checks["recorder_readiness"]
+    click.echo(f"  - recorder readiness: {recorder['passed']} ({recorder['value']})")
+    duration = checks["duration_readiness"]
+    duration_value = duration["value"] if duration["value"] is not None else "-"
+    click.echo(
+        f"  - duration readiness: {duration['passed']} ({duration_value} seconds)"
+    )
+    transcription = checks["transcription_model_readiness"]
+    click.echo(f"  - transcription/model readiness: {transcription['passed']}")
+    click.echo(f"    adapter: {transcription['adapter']['value'] or '-'}")
+    model = transcription["model"]
+    exists = model["exists"] if model["exists"] is not None else "not required"
+    click.echo(
+        f"    model: {model['value'] or '-'} "
+        f"(required={model['required']}, exists={exists})"
+    )
+    api_base = checks["api_base_url_readiness"]
+    click.echo(
+        f"  - API base URL readiness: {api_base['passed']} ({api_base['value']})"
+    )
+    event_logging = checks["event_logging_state"]
+    click.echo(
+        "  - event logging state: "
+        f"enabled={event_logging['enabled']}, "
+        f"path={event_logging['path'] or '-'}, "
+        "status command writes event=False"
+    )
+    click.echo(
+        "  - listener started by Python: "
+        f"{checks['listener_started_by_python']['value']}"
+    )
+    click.echo(
+        "  - init.lua mutated by Jarvis: "
+        f"{checks['init_lua_mutated_by_jarvis']['value']}"
+    )
+    click.echo(
+        "  - Accessibility permission requested by Jarvis: "
+        f"{checks['accessibility_permission_requested_by_jarvis']['value']}"
+    )
+
+    safety = data["safety"]
+    click.echo("")
+    click.echo(
+        "Safety: no recording, transcription, submit, dispatch, speech, listeners, "
+        "Lua execution, bridge shell commands, Hammerspoon install, init.lua "
+        "mutation, Accessibility request, approval bypass, or event log"
+    )
+    click.echo(
+        f"  forbidden default flags absent: {safety['forbidden_default_flags_absent']}"
+    )
+
+    if data["issues"]:
+        click.echo("")
+        click.echo("Setup issues:")
+        for issue in data["issues"]:
+            click.echo(f"  - {issue}")
+    if data["guidance"]:
+        click.echo("")
+        click.echo("Guidance:")
+        for item in data["guidance"]:
+            click.echo(f"  - {item}")
+
+
 @click.group("voice")
 def voice() -> None:
     """Explicit local/manual voice flow over /v1/voice/ptt."""
@@ -2096,6 +2406,15 @@ def voice() -> None:
     help=(
         "Validate external Hammerspoon trigger readiness without recording, "
         "transcribing, dispatching, speaking, logging, or starting listeners."
+    ),
+)
+@click.option(
+    "--status",
+    is_flag=True,
+    default=False,
+    help=(
+        "Audit external Hammerspoon trigger readiness without running the "
+        "trigger or starting listeners."
     ),
 )
 @click.option(
@@ -2235,6 +2554,7 @@ def hotkey_runtime(
     contract: bool,
     dry_run: bool,
     preflight: bool,
+    status: bool,
     trigger: bool,
     duration: float | None,
     output_dir: Path | None,
@@ -2255,20 +2575,20 @@ def hotkey_runtime(
     keep_file: bool,
     as_json: bool,
 ) -> None:
-    """Document, dry-run, preflight, or trigger the safe external hotkey runtime
-    boundary.
-    """
-    selected_modes = sum((contract, dry_run, preflight, trigger))
+    """Document, audit, or trigger the safe external hotkey runtime boundary."""
+    selected_modes = sum((contract, dry_run, preflight, status, trigger))
     if selected_modes != 1:
         raise click.UsageError(
-            "pass exactly one of --contract, --dry-run, --preflight, or --trigger "
-            "for hotkey runtime"
+            "pass exactly one of --contract, --dry-run, --preflight, --status, "
+            "or --trigger for hotkey runtime"
         )
 
     if contract:
         data = _hotkey_runtime_contract_data()
     elif dry_run:
         data = _hotkey_runtime_dry_run_data()
+    elif status:
+        data = _hotkey_runtime_status_data()
     elif trigger:
         if speak_result and not approve_dispatch:
             raise click.UsageError("--speak-result requires --approve-dispatch")
@@ -2315,6 +2635,8 @@ def hotkey_runtime(
         _format_hotkey_runtime_contract(data)
     elif dry_run:
         _format_hotkey_runtime_dry_run(data)
+    elif status:
+        _format_hotkey_runtime_status(data)
     else:
         _format_hotkey_runtime_preflight(data)
 

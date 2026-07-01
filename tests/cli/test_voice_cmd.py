@@ -189,6 +189,8 @@ def test_voice_release_readiness_help_text_stays_manual_and_safe() -> None:
     )
     assert "--preflight" in runtime_output
     assert "Validate external Hammerspoon trigger readiness" in runtime_output
+    assert "--status" in runtime_output
+    assert "Audit external Hammerspoon trigger readiness" in runtime_output
     assert "--trigger" in runtime_output
     assert "Run one bounded external trigger" in runtime_output
 
@@ -198,7 +200,7 @@ def test_voice_hotkey_runtime_requires_contract_flag() -> None:
 
     assert result.exit_code == 2
     assert (
-        "pass exactly one of --contract, --dry-run, --preflight, or --trigger"
+        "pass exactly one of --contract, --dry-run, --preflight, --status, or --trigger"
         in result.output
     )
 
@@ -211,7 +213,7 @@ def test_voice_hotkey_runtime_rejects_contract_and_dry_run_together() -> None:
 
     assert result.exit_code == 2
     assert (
-        "pass exactly one of --contract, --dry-run, --preflight, or --trigger"
+        "pass exactly one of --contract, --dry-run, --preflight, --status, or --trigger"
         in result.output
     )
 
@@ -631,6 +633,203 @@ def test_voice_hotkey_runtime_preflight_json_reports_checks_and_safety(
         "preview_only_default": True,
         "forbidden_default_flags_absent": True,
     }
+
+
+def test_voice_hotkey_runtime_status_reports_ready_configuration(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        voice_cmd,
+        "load_config",
+        lambda: _safe_config(
+            transcription_adapter="faster-whisper",
+            default_record_duration=1.5,
+            default_api_base_url="http://127.0.0.1:9000",
+            hotkey_bridge_session_id="fn-preview",
+            voice_logs_enabled=True,
+            voice_logs_path="/tmp/openjarvis-voice.jsonl",
+        ),
+    )
+
+    result = CliRunner().invoke(voice_cmd.voice, ["hotkey-runtime", "--status"])
+
+    assert result.exit_code == 0
+    assert "Voice hotkey runtime status" in result.output
+    assert "ready: True" in result.output
+    assert (
+        "generated Hammerspoon bridge expected command: "
+        "jarvis voice hotkey-runtime --trigger"
+    ) in result.output
+    assert "--duration 1.5" in result.output
+    assert "--recorder macos" in result.output
+    assert "--adapter faster-whisper" in result.output
+    assert "--base-url http://127.0.0.1:9000" in result.output
+    assert "--session-id fn-preview" in result.output
+    assert "runtime contract available: True" in result.output
+    assert "dry-run available: True" in result.output
+    assert "preflight available: True" in result.output
+    assert "trigger command available: True" in result.output
+    assert "preview-only default: True" in result.output
+    assert "dispatch requires explicit approval: True" in result.output
+    assert (
+        "speech requires explicit dispatch approval plus speech opt-in: True"
+        in result.output
+    )
+    assert "recorder readiness: True (macos)" in result.output
+    assert "duration readiness: True (1.5 seconds)" in result.output
+    assert "transcription/model readiness: True" in result.output
+    assert "API base URL readiness: True (http://127.0.0.1:9000)" in result.output
+    assert "event logging state: enabled=True" in result.output
+    assert "status command writes event=False" in result.output
+    assert "listener started by Python: False" in result.output
+    assert "init.lua mutated by Jarvis: False" in result.output
+    assert "Accessibility permission requested by Jarvis: False" in result.output
+    assert "--approve-dispatch" not in result.output
+    assert "--speak-result" not in result.output
+
+
+def test_voice_hotkey_runtime_status_reports_missing_recorder_and_transcription(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        voice_cmd,
+        "load_config",
+        lambda: _safe_config(
+            default_record_duration=1.5,
+            hotkey_bridge_recorder="dev-silent",
+        ),
+    )
+
+    result = CliRunner().invoke(voice_cmd.voice, ["hotkey-runtime", "--status"])
+
+    assert result.exit_code == 0
+    assert "ready: False" in result.output
+    assert "recorder readiness: False (dev-silent)" in result.output
+    assert "transcription/model readiness: False" in result.output
+    assert "[voice_control].hotkey_bridge_recorder must be macos or sounddevice" in (
+        result.output
+    )
+    assert "local transcription adapter is not configured" in result.output
+    assert "--approve-dispatch" not in result.output
+    assert "--speak-result" not in result.output
+
+
+def test_voice_hotkey_runtime_status_json_reports_audit_and_safety(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        voice_cmd,
+        "load_config",
+        lambda: _safe_config(
+            transcription_adapter="faster-whisper",
+            default_record_duration=1.5,
+        ),
+    )
+
+    result = CliRunner().invoke(
+        voice_cmd.voice,
+        ["hotkey-runtime", "--status", "--json"],
+    )
+
+    assert result.exit_code == 0
+    data = json.loads(result.output)
+    assert data["version"] == 1
+    assert data["ready"] is True
+    assert data["runtime_capabilities"] == {
+        "contract_available": True,
+        "dry_run_available": True,
+        "preflight_available": True,
+        "trigger_command_available": True,
+    }
+    assert data["generated_hammerspoon_bridge_expected_argv"][:4] == [
+        "jarvis",
+        "voice",
+        "hotkey-runtime",
+        "--trigger",
+    ]
+    assert data["generated_hammerspoon_bridge_expected_command"].startswith(
+        "jarvis voice hotkey-runtime --trigger"
+    )
+    assert data["internal_preview_argv"][:3] == ["jarvis", "voice", "mic-run"]
+    assert (
+        "--approve-dispatch" not in data["generated_hammerspoon_bridge_expected_argv"]
+    )
+    assert "--speak-result" not in data["generated_hammerspoon_bridge_expected_argv"]
+    assert data["checks"]["runtime_contract_available"]["passed"] is True
+    assert data["checks"]["dry_run_available"]["passed"] is True
+    assert data["checks"]["preflight_available"]["passed"] is True
+    assert data["checks"]["trigger_command_available"]["passed"] is True
+    assert data["checks"]["preview_only_default"]["passed"] is True
+    assert data["checks"]["dispatch_requires_explicit_approval"]["passed"] is True
+    assert (
+        data["checks"]["speech_requires_dispatch_approval_plus_speech_opt_in"]["passed"]
+        is True
+    )
+    assert data["checks"]["recorder_readiness"]["passed"] is True
+    assert data["checks"]["transcription_model_readiness"]["passed"] is True
+    assert data["checks"]["api_base_url_readiness"]["passed"] is True
+    assert data["checks"]["event_logging_state"]["status_command_writes_event"] is False
+
+
+def test_voice_hotkey_runtime_status_has_no_side_effect_calls(
+    monkeypatch,
+) -> None:
+    def fail_side_effect(*args, **kwargs):
+        raise AssertionError("hotkey runtime status must not run voice flow")
+
+    monkeypatch.setattr(
+        voice_cmd,
+        "load_config",
+        lambda: _safe_config(
+            transcription_adapter="faster-whisper",
+            default_record_duration=1.5,
+        ),
+    )
+    monkeypatch.setattr(voice_cmd, "_post_json", fail_side_effect)
+    monkeypatch.setattr(voice_cmd, "_get_json", fail_side_effect)
+    monkeypatch.setattr(voice_cmd, "_build_recorder", fail_side_effect)
+    monkeypatch.setattr(voice_cmd, "_record_local_audio", fail_side_effect)
+    monkeypatch.setattr(voice_cmd, "_build_transcriber", fail_side_effect)
+    monkeypatch.setattr(voice_cmd, "_transcribe_audio_file", fail_side_effect)
+    monkeypatch.setattr(voice_cmd, "_build_speech_output", fail_side_effect)
+    monkeypatch.setattr(voice_cmd, "_log_voice_event", fail_side_effect)
+
+    result = CliRunner().invoke(voice_cmd.voice, ["hotkey-runtime", "--status"])
+
+    assert result.exit_code == 0
+    assert "Safety: no recording, transcription, submit" in result.output
+
+
+def test_voice_hotkey_runtime_status_json_reports_false_safety_fields(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        voice_cmd,
+        "load_config",
+        lambda: _safe_config(
+            transcription_adapter="faster-whisper",
+            default_record_duration=1.5,
+        ),
+    )
+
+    result = CliRunner().invoke(
+        voice_cmd.voice,
+        ["hotkey-runtime", "--status", "--json"],
+    )
+
+    assert result.exit_code == 0
+    safety = json.loads(result.output)["safety"]
+    assert safety["listener_started_by_python"] is False
+    assert safety["init_lua_mutated_by_jarvis"] is False
+    assert safety["accessibility_permission_requested_by_jarvis"] is False
+    assert safety["record_audio"] is False
+    assert safety["transcribe"] is False
+    assert safety["submit"] is False
+    assert safety["dispatch"] is False
+    assert safety["speak"] is False
+    assert safety["lua_executed"] is False
+    assert safety["bridge_shell_commands_run"] is False
+    assert safety["event_logged"] is False
 
 
 def test_voice_hotkey_runtime_trigger_previews_only_with_configured_defaults(
