@@ -1462,6 +1462,158 @@ def _hotkey_runtime_contract_data() -> dict[str, Any]:
     }
 
 
+def _hotkey_runtime_dry_run_data() -> dict[str, Any]:
+    config = load_config()
+    voice_control = _voice_control_config(config)
+    issues: list[str] = []
+    guidance: list[str] = []
+
+    raw_duration = getattr(voice_control, "default_record_duration", 0.0) or 0.0
+    try:
+        duration = float(raw_duration) or 2.0
+    except (TypeError, ValueError):
+        duration = 2.0
+        issues.append("[voice_control].default_record_duration must be numeric")
+        guidance.append(
+            "Set [voice_control].default_record_duration to 0.1-30, or leave it "
+            "at 0 to use the hotkey runtime dry-run fallback of 2.0 seconds."
+        )
+    if not (
+        MICROPHONE_MIN_DURATION_SECONDS <= duration <= MICROPHONE_MAX_DURATION_SECONDS
+    ):
+        issues.append(
+            "[voice_control].default_record_duration must be between "
+            f"{MICROPHONE_MIN_DURATION_SECONDS:g} and "
+            f"{MICROPHONE_MAX_DURATION_SECONDS:g} seconds"
+        )
+        guidance.append(
+            "Use a bounded recording duration before wiring an external hotkey."
+        )
+
+    recorder = str(getattr(voice_control, "hotkey_bridge_recorder", "macos") or "macos")
+    if recorder not in MICROPHONE_RECORDER_KINDS:
+        issues.append(
+            "[voice_control].hotkey_bridge_recorder must be macos or sounddevice"
+        )
+        guidance.append(
+            "Set [voice_control].hotkey_bridge_recorder to a real microphone "
+            "backend: macos or sounddevice."
+        )
+
+    configured_adapter = str(getattr(voice_control, "transcription_adapter", "") or "")
+    speech_backend = str(getattr(config.speech, "backend", "") or "")
+    if configured_adapter:
+        adapter = configured_adapter
+        adapter_source = "[voice_control].transcription_adapter"
+    elif speech_backend in LOCAL_TRANSCRIPTION_ADAPTERS:
+        adapter = speech_backend
+        adapter_source = "[speech].backend"
+    else:
+        adapter = ""
+        adapter_source = ""
+        issues.append("local transcription adapter is not configured")
+        guidance.append(
+            "Set [voice_control].transcription_adapter to faster-whisper or "
+            "whisper.cpp before enabling any external trigger."
+        )
+    if adapter and adapter not in LOCAL_TRANSCRIPTION_ADAPTERS:
+        issues.append(f"unsupported local transcription adapter: {adapter}")
+        guidance.append(
+            f"Use a supported local adapter: {', '.join(LOCAL_TRANSCRIPTION_ADAPTERS)}."
+        )
+
+    model_path = _voice_doctor_model_path(config, adapter or "disabled")
+    if model_path["required"] and not model_path["value"]:
+        issues.append("required local transcription model path is missing")
+        guidance.append(
+            "Configure [voice_control].model_path or the required adapter model "
+            "environment variable before running a real hotkey-triggered path."
+        )
+    elif model_path["required"] and model_path["exists"] is False:
+        issues.append("configured local transcription model path does not exist")
+        guidance.append(
+            "Update the configured local transcription model path to an existing "
+            "file before running a real hotkey-triggered path."
+        )
+
+    approval_required = bool(
+        getattr(config.speech, "require_explicit_voice_approval", True)
+    )
+    if not approval_required:
+        issues.append("[speech].require_explicit_voice_approval should remain true")
+        guidance.append(
+            "Keep [speech].require_explicit_voice_approval = true for external "
+            "hotkey-triggered workflows."
+        )
+
+    resolved_base = str(getattr(voice_control, "default_api_base_url", "") or "")
+    bridge = MacOSHotkeyBridgeCommand(
+        jarvis_bin=str(
+            getattr(voice_control, "hotkey_bridge_jarvis_bin", "jarvis") or "jarvis"
+        ),
+        duration=duration,
+        recorder=recorder,
+        input_device=str(
+            getattr(voice_control, "hotkey_bridge_input_device", ":0") or ":0"
+        ),
+        adapter=adapter or None,
+        base_url=resolved_base or None,
+        session_id=str(getattr(voice_control, "hotkey_bridge_session_id", "") or "")
+        or None,
+    )
+    argv = bridge.argv()
+
+    return {
+        "name": "OpenJarvis Hammerspoon push-to-talk runtime dry run",
+        "version": 1,
+        "ready": not issues,
+        "resolved_preview_command": bridge.shell_command(),
+        "resolved_argv": argv,
+        "validation": {
+            "issues": issues,
+            "guidance": guidance,
+            "duration_seconds": {
+                "value": duration,
+                "source": "[voice_control].default_record_duration"
+                if raw_duration
+                else "hotkey runtime fallback",
+                "minimum": MICROPHONE_MIN_DURATION_SECONDS,
+                "maximum": MICROPHONE_MAX_DURATION_SECONDS,
+            },
+            "recorder": {
+                "value": recorder,
+                "source": "[voice_control].hotkey_bridge_recorder",
+                "allowed": list(MICROPHONE_RECORDER_KINDS),
+            },
+            "transcription_adapter": {
+                "value": adapter,
+                "source": adapter_source,
+                "allowed": list(LOCAL_TRANSCRIPTION_ADAPTERS),
+            },
+            "model_path": model_path,
+            "api_base_url": _configured_api_base_url(config),
+            "approval_required": approval_required,
+        },
+        "safety": {
+            "dry_run": True,
+            "record_audio": False,
+            "transcribe": False,
+            "submit": False,
+            "dispatch": False,
+            "speak": False,
+            "listener_started": False,
+            "hammerspoon_init_modified": False,
+            "hammerspoon_installed": False,
+            "accessibility_permission_requested": False,
+            "event_logged": False,
+            "preview_only_default": True,
+            "forbidden_default_flags_absent": all(
+                flag not in argv for flag in ("--approve-dispatch", "--speak-result")
+            ),
+        },
+    }
+
+
 def _format_hotkey_runtime_contract(data: dict[str, Any]) -> None:
     state = data["state"]
     trigger = data["external_trigger"]
@@ -1533,6 +1685,55 @@ def _format_hotkey_runtime_contract(data: dict[str, Any]) -> None:
     click.echo("  no approval bypass, automatic dispatch, or automatic speech")
 
 
+def _format_hotkey_runtime_dry_run(data: dict[str, Any]) -> None:
+    click.echo("Voice hotkey runtime dry run")
+    click.echo(f"  ready: {data['ready']}")
+    click.echo(f"  resolved preview command: {data['resolved_preview_command']}")
+    click.echo("  behavior: preview-only")
+    safety = data["safety"]
+    click.echo(
+        "  safety: "
+        "no recording, transcription, submit, dispatch, speech, listeners, "
+        "Hammerspoon install, init.lua edit, Accessibility request, or event log"
+    )
+    click.echo(
+        f"  forbidden default flags absent: {safety['forbidden_default_flags_absent']}"
+    )
+
+    validation = data["validation"]
+    click.echo("")
+    click.echo("Resolved values:")
+    duration = validation["duration_seconds"]
+    click.echo(f"  duration: {duration['value']:g} seconds ({duration['source']})")
+    recorder = validation["recorder"]
+    click.echo(f"  recorder: {recorder['value']} ({recorder['source']})")
+    adapter = validation["transcription_adapter"]
+    click.echo(
+        "  transcription_adapter: "
+        f"{adapter['value'] or '-'} ({adapter['source'] or 'missing'})"
+    )
+    model = validation["model_path"]
+    exists = model["exists"] if model["exists"] is not None else "not required"
+    click.echo(
+        f"  model_path: {model['value'] or '-'} "
+        f"(required={model['required']}, exists={exists})"
+    )
+    api_base = validation["api_base_url"]
+    click.echo(f"  api_base_url: {api_base['value']} ({api_base['source']})")
+    click.echo(f"  approval_required: {validation['approval_required']}")
+
+    if validation["issues"]:
+        click.echo("")
+        click.echo("Setup issues:")
+        for issue in validation["issues"]:
+            click.echo(f"  - {issue}")
+    if validation["guidance"]:
+        click.echo("")
+        click.echo("Guidance:")
+        for item in validation["guidance"]:
+            click.echo(f"  - {item}")
+
+
 @click.group("voice")
 def voice() -> None:
     """Explicit local/manual voice flow over /v1/voice/ptt."""
@@ -1545,17 +1746,38 @@ def voice() -> None:
     default=False,
     help="Print the disabled-by-default external Hammerspoon runtime contract.",
 )
-@click.option("--json", "as_json", is_flag=True, help="Print the contract as JSON.")
-def hotkey_runtime(contract: bool, as_json: bool) -> None:
-    """Document the safe external hotkey runtime boundary."""
-    if not contract:
-        raise click.UsageError("pass --contract to print the runtime contract")
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    default=False,
+    help=(
+        "Resolve the preview-only mic-run command an external Hammerspoon trigger "
+        "would call, without running it."
+    ),
+)
+@click.option(
+    "--json",
+    "as_json",
+    is_flag=True,
+    help="Print the contract or dry-run result as JSON.",
+)
+def hotkey_runtime(contract: bool, dry_run: bool, as_json: bool) -> None:
+    """Document or dry-run the safe external hotkey runtime boundary."""
+    if contract == dry_run:
+        raise click.UsageError(
+            "pass exactly one of --contract or --dry-run for hotkey runtime"
+        )
 
-    data = _hotkey_runtime_contract_data()
+    data = (
+        _hotkey_runtime_contract_data() if contract else _hotkey_runtime_dry_run_data()
+    )
     if as_json:
         _emit_json(data)
         return
-    _format_hotkey_runtime_contract(data)
+    if contract:
+        _format_hotkey_runtime_contract(data)
+    else:
+        _format_hotkey_runtime_dry_run(data)
 
 
 @voice.command("doctor")

@@ -580,9 +580,9 @@ voice_logs_preview_chars = 80
 | `speech_rate` | int | `0` | Optional local speech rate. `0` uses the adapter default. |
 | `hotkey_bridge_format` | string | `"command"` | Output format for the print-only hotkey bridge helper: `"command"`, `"hammerspoon"`, or `"json"`. |
 | `hotkey_bridge_jarvis_bin` | string | `"jarvis"` | Executable name/path printed in the bridge command. |
-| `hotkey_bridge_recorder` | string | `"macos"` | Real microphone recorder (`"macos"` or `"sounddevice"`) printed in the preview-only `mic-run` bridge command; this does not start a listener. |
-| `hotkey_bridge_input_device` | string | `":0"` | macOS avfoundation input device printed in the bridge command. |
-| `hotkey_bridge_session_id` | string | `""` | Optional session id printed in the bridge command. |
+| `hotkey_bridge_recorder` | string | `"macos"` | Real microphone recorder (`"macos"` or `"sounddevice"`) printed in the preview-only `mic-run` bridge command and resolved by `jarvis voice hotkey-runtime --dry-run`; this does not start a listener. |
+| `hotkey_bridge_input_device` | string | `":0"` | macOS avfoundation input device printed in the bridge command and dry-run preview. |
+| `hotkey_bridge_session_id` | string | `""` | Optional session id printed in the bridge command and dry-run preview. |
 | `voice_logs_enabled` | bool | `true` | Whether explicit voice CLI commands write local structured event logs. |
 | `voice_logs_path` | string | `"~/.openjarvis/voice-events.jsonl"` | Local JSONL path for voice event logs. |
 | `voice_logs_include_full_transcripts` | bool | `false` | Store full transcript text for future events only when explicitly enabled; redacted summaries are the default. |
@@ -592,6 +592,13 @@ For the current safe workflow, use `jarvis voice doctor`, configure a local
 adapter/model, then test manually with `mic-smoke`, `mic-transcribe-smoke`,
 `mic-preview`, `mic-run`, `record-local`, `transcribe-file`,
 `capture-preview`, `run-local`, and `logs`.
+
+Use `jarvis voice hotkey-runtime --dry-run` to resolve the preview-only
+`jarvis voice mic-run ...` command an external Hammerspoon trigger would call
+and to see missing setup guidance. The dry run reads configuration only; it
+does not open the microphone, load models, submit, dispatch, speak, start a
+listener, install Hammerspoon, edit `~/.hammerspoon/init.lua`, or request
+Accessibility permission.
 
 The optional real microphone recorder is selected only by explicit CLI flag
 (`--recorder sounddevice`) or this config field. Install it with
