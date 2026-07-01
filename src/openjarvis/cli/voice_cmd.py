@@ -275,7 +275,7 @@ def _format_hammerspoon_install_preview(path: Path) -> None:
     click.echo("  validation: passed")
     click.echo("  generated bridge: disabled/preview-only by default")
     click.echo("  manual activation: user-performed outside Jarvis")
-    click.echo("  active command: preview-only `jarvis voice mic-run`")
+    click.echo("  active command: preview-only `jarvis voice hotkey-runtime --trigger`")
     click.echo("  approved dispatch: manual opt-in only")
     click.echo("  result speech: manual opt-in only")
     click.echo("  listener startup: not started")
@@ -324,7 +324,9 @@ def _format_hammerspoon_activation_guide(path: Path) -> None:
     click.echo("  validation: passed")
     click.echo("  activation owner: user, outside Jarvis")
     click.echo("  manual activation: user-performed outside Jarvis")
-    click.echo("  default behavior: preview-only `jarvis voice mic-run`")
+    click.echo(
+        "  default behavior: preview-only `jarvis voice hotkey-runtime --trigger`"
+    )
     click.echo("  approved dispatch: disabled unless manually opted in")
     click.echo("  result speech: disabled unless manually opted in")
     click.echo("")

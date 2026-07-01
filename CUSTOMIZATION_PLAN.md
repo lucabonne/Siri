@@ -1,5 +1,41 @@
 # Customization Plan
 
+## Voice Control Hotkey Runtime Phase 5
+
+Hotkey Runtime Phase 5 updates the generated disabled Hammerspoon bridge so its
+preview-only active example calls the external runtime trigger entry point
+instead of calling the internal microphone path directly.
+
+- `jarvis voice hotkey-bridge --write-hammerspoon PATH` now writes a disabled
+  Hammerspoon example whose active preview-only command is
+  `jarvis voice hotkey-runtime --trigger`.
+- Approved dispatch and result speech variants remain commented manual opt-in
+  examples only, using `--approve-dispatch` and
+  `--approve-dispatch --speak-result`.
+- Static Hammerspoon validation, install preview, activation guide, activation
+  status, and status recognize the runtime trigger command as the generated
+  bridge default.
+- The generated bridge remains disabled/guarded by default and preview-only by
+  default. Jarvis still does not execute Lua, run bridge shell commands, mutate
+  `~/.hammerspoon/init.lua`, install Hammerspoon, start listeners, request
+  Accessibility permission, bypass approval, dispatch by default, or speak by
+  default.
+- Runtime Phase 1 `--contract`, Phase 2 `--dry-run`, Phase 3 `--preflight`, and
+  Phase 4 `--trigger` behavior remain intact.
+
+Deferred work remains intentionally untouched:
+
+- no always-on listening
+- no enabled Fn/global hotkey capture
+- no Python-started global hotkey listener
+- no automatic Hammerspoon installation or init mutation
+- no programmatic Accessibility permission request
+- no approval bypass
+- no automatic dispatch by default
+- no automatic speech playback by default
+- no Mission Control execution controls
+- no voice-only mode; text input remains available
+
 ## Voice Control Hotkey Runtime Phase 4
 
 Hotkey Runtime Phase 4 adds a safe single-shot external trigger wrapper for a
@@ -118,10 +154,11 @@ Hammerspoon push-to-talk runtime without activating any listener.
 
 - `jarvis voice hotkey-runtime --contract` prints the runtime bridge contract
   an external, user-installed Hammerspoon script may follow later.
-- The accepted external trigger is a bounded `jarvis voice mic-run --duration
-  SECONDS --recorder macos|sounddevice --adapter faster-whisper|whisper.cpp`
-  command. It requires a real recorder backend and an explicit/configured local
-  transcription adapter/model.
+- The accepted external trigger is a bounded
+  `jarvis voice hotkey-runtime --trigger --duration SECONDS --recorder
+  macos|sounddevice --adapter faster-whisper|whisper.cpp` command. It requires
+  a real recorder backend and an explicit/configured local transcription
+  adapter/model.
 - The default path is preview-only. Dispatch remains approval-gated and requires
   explicit `--approve-dispatch`; speech remains disabled unless
   `--speak-result` is explicitly combined with approved dispatch.
@@ -181,7 +218,10 @@ Optional local microphone/transcription/TTS behavior:
 Generated but disabled Hammerspoon bridge behavior:
 
 - `jarvis voice hotkey-bridge` prints or writes a disabled bridge example
-  around preview-only `jarvis voice mic-run`.
+  around preview-only `jarvis voice hotkey-runtime --trigger` for the
+  Hammerspoon Lua example. The plain command/json bridge preview continues to
+  expose the internal preview-only `jarvis voice mic-run` command for terminal
+  review.
 - Validation, install preview, activation guide, rollback guide, activation
   status, and status modes are static/read-only or guide-only. They do not
   execute Lua, run bridge shell commands, mutate `~/.hammerspoon/init.lua`,
@@ -363,7 +403,8 @@ without activating anything from Jarvis.
   preflight checklist, exact manual install steps, and exact manual rollback
   steps.
 - The guide clearly states that activation is user-performed outside Jarvis and
-  that preview-only `jarvis voice mic-run` remains the default behavior.
+  that preview-only `jarvis voice hotkey-runtime --trigger` remains the
+  generated bridge default behavior.
 - The guide does not execute Lua, run shell commands from the bridge file,
   mutate files, modify `~/.hammerspoon/init.lua`, install Hammerspoon, start
   listeners, request Accessibility permission, bypass approval, dispatch by
@@ -473,8 +514,8 @@ without activating or installing them.
 - `jarvis voice hotkey-bridge --validate-hammerspoon PATH` reads a `.lua` file
   as text only and refuses the active `~/.hammerspoon/init.lua`.
 - Validation requires `enable_openjarvis_voice_hotkey = false` and an active
-  preview-only `jarvis voice mic-run` command with a 0.1-30 second duration and
-  a real `macos` or `sounddevice` recorder.
+  preview-only `jarvis voice hotkey-runtime --trigger` command with a 0.1-30
+  second duration and a real `macos` or `sounddevice` recorder.
 - Active `--approve-dispatch`, `--speak-result`, Hammerspoon init-path mutation,
   and LaunchAgent markers are rejected. Commented manual opt-in examples remain
   valid.
@@ -494,9 +535,9 @@ installing a macOS hotkey helper.
   Hammerspoon Lua example only when an output path is explicitly supplied.
 - The target must be a new `.lua` file in an existing parent directory. The
   command refuses overwrites and the active `~/.hammerspoon/init.lua`.
-- The active generated command calls bounded `jarvis voice mic-run` in preview
-  mode. Approved dispatch and result speech variants are commented manual
-  opt-in examples only.
+- The active generated Hammerspoon command calls bounded
+  `jarvis voice hotkey-runtime --trigger` in preview mode. Approved dispatch
+  and result speech variants are commented manual opt-in examples only.
 - Generation does not install Hammerspoon or the file, start a listener, bind
   Fn/F18, request Accessibility permission, record, dispatch, or speak.
 - Existing print and JSON formats, Voice Control Phase 1-30, Mic Phase 1-8,
@@ -512,10 +553,12 @@ Hotkey Phase 1 refines the existing disabled macOS bridge around the hardened
 real-microphone stack without activating global key capture.
 
 - `jarvis voice hotkey-bridge` remains print-only and now generates the bounded
-  `jarvis voice mic-run` path with a real `macos` or `sounddevice` recorder.
-- The default command and disabled Hammerspoon F18 example stop at preview.
+  `jarvis voice mic-run` terminal-preview path with a real `macos` or
+  `sounddevice` recorder.
+- The default command stops at preview. The disabled Hammerspoon F18 example
+  now uses `jarvis voice hotkey-runtime --trigger` and also stops at preview.
   They omit `--approve-dispatch` and `--speak-result`; approved dispatch and
-  result speech remain separate, explicit manual `mic-run` terminal variants.
+  result speech remain separate, explicit manual opt-in variants.
 - The helper keeps `enable_openjarvis_voice_hotkey = false`, does not install or
   execute the example, does not start a listener, and does not capture Fn/F18.
 - Duration and recorder validation reuse the 0.1-30 second real-microphone

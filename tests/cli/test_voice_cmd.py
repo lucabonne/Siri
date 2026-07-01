@@ -1387,7 +1387,7 @@ def test_voice_hotkey_bridge_hammerspoon_snippet_is_disabled(monkeypatch) -> Non
     assert result.exit_code == 0
     assert "local enable_openjarvis_voice_hotkey = false" in result.output
     assert "hs.hotkey.bind" in result.output
-    assert "jarvis voice mic-run" in result.output
+    assert "jarvis voice hotkey-runtime --trigger" in result.output
     assert "--adapter faster-whisper" in result.output
     active_command = next(
         line
@@ -1426,7 +1426,7 @@ def test_voice_hotkey_bridge_writes_disabled_hammerspoon_example(
         for line in content.splitlines()
         if line.startswith("local openjarvis_voice_command =")
     )
-    assert "jarvis voice mic-run" in active_command
+    assert "jarvis voice hotkey-runtime --trigger" in active_command
     assert "--approve-dispatch" not in active_command
     assert "--speak-result" not in active_command
     assert "-- local openjarvis_voice_command" in content
@@ -1444,10 +1444,11 @@ def _write_hammerspoon_validation_fixture(
         "-- Generated OpenJarvis bridge example.\n"
         "local enable_openjarvis_voice_hotkey = false\n"
         "local openjarvis_voice_command = "
-        f"'jarvis voice mic-run{duration} --recorder macos --input-device :0"
+        f"'jarvis voice hotkey-runtime --trigger{duration} "
+        "--recorder macos --input-device :0"
         f"{extra_active_flags}'\n"
         "-- local openjarvis_voice_command = "
-        "'jarvis voice mic-run --duration 2 --recorder macos "
+        "'jarvis voice hotkey-runtime --trigger --duration 2 --recorder macos "
         "--approve-dispatch --speak-result'\n"
         "if enable_openjarvis_voice_hotkey then\n"
         "  hs.hotkey.bind({}, 'F18', function() end)\n"
@@ -1598,7 +1599,10 @@ def test_voice_hotkey_bridge_install_preview_starts_no_listener_or_voice_flow(
     assert result.exit_code == 0
     assert "listener startup: not started" in result.output
     assert "global hotkey capture: not enabled" in result.output
-    assert "active command: preview-only `jarvis voice mic-run`" in result.output
+    assert (
+        "active command: preview-only `jarvis voice hotkey-runtime --trigger`"
+        in result.output
+    )
 
 
 def test_voice_hotkey_bridge_activation_guide_prints_preflight_and_rollback(
@@ -1634,7 +1638,10 @@ def test_voice_hotkey_bridge_activation_guide_prints_preflight_and_rollback(
     assert result.exit_code == 0
     assert "Hammerspoon push-to-talk activation guide (manual only)" in result.output
     assert "activation owner: user, outside Jarvis" in result.output
-    assert "default behavior: preview-only `jarvis voice mic-run`" in result.output
+    assert (
+        "default behavior: preview-only `jarvis voice hotkey-runtime --trigger`"
+        in result.output
+    )
     assert "approved dispatch: disabled unless manually opted in" in result.output
     assert "result speech: disabled unless manually opted in" in result.output
     assert "Preflight checklist:" in result.output
@@ -2287,7 +2294,7 @@ def test_voice_hotkey_bridge_full_manual_hammerspoon_activation_workflow(
     assert "Hammerspoon push-to-talk activation guide (manual only)" in (
         activation_guide_result.output
     )
-    assert "default behavior: preview-only `jarvis voice mic-run`" in (
+    assert "default behavior: preview-only `jarvis voice hotkey-runtime --trigger`" in (
         activation_guide_result.output
     )
     assert "manual activation: user-performed outside Jarvis" in (

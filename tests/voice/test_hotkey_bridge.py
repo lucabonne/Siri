@@ -38,7 +38,7 @@ def test_macos_hotkey_bridge_hammerspoon_example_is_disabled() -> None:
 
     assert "local enable_openjarvis_voice_hotkey = false" in snippet
     assert "hs.hotkey.bind" in snippet
-    assert "jarvis voice mic-run" in snippet
+    assert "jarvis voice hotkey-runtime --trigger" in snippet
     assert "--adapter faster-whisper" in snippet
     active_command = next(
         line

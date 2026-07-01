@@ -143,29 +143,35 @@ def validate_hammerspoon_bridge(content: str) -> HammerspoonBridgeValidation:
             errors.append("active preview command is not a supported literal")
 
     if argv is not None:
-        if len(argv) < 3 or argv[1:3] != ["voice", "mic-run"]:
-            errors.append("active command must use jarvis voice mic-run")
+        if len(argv) < 4 or argv[1:4] != ["voice", "hotkey-runtime", "--trigger"]:
+            errors.append(
+                "active command must use jarvis voice hotkey-runtime --trigger"
+            )
 
         duration_value = _command_option(argv, "--duration")
         if duration_value is None:
-            errors.append("active mic-run command requires exactly one duration")
+            errors.append(
+                "active runtime trigger command requires exactly one duration"
+            )
         else:
             try:
                 duration = float(duration_value)
             except ValueError:
-                errors.append("active mic-run duration must be numeric")
+                errors.append("active runtime trigger duration must be numeric")
             else:
                 if not (
                     HAMMERSPOON_MIN_DURATION_SECONDS
                     <= duration
                     <= HAMMERSPOON_MAX_DURATION_SECONDS
                 ):
-                    errors.append("active mic-run duration must be between 0.1 and 30")
+                    errors.append(
+                        "active runtime trigger duration must be between 0.1 and 30"
+                    )
 
         recorder = _command_option(argv, "--recorder")
         if recorder not in HAMMERSPOON_RECORDER_KINDS:
             errors.append(
-                "active mic-run command requires recorder macos or sounddevice"
+                "active runtime trigger command requires recorder macos or sounddevice"
             )
 
     return HammerspoonBridgeValidation(errors=tuple(errors))
@@ -209,8 +215,34 @@ class MacOSHotkeyBridgeCommand:
     def shell_command(self) -> str:
         return shlex.join(self.argv())
 
+    def runtime_argv(self) -> list[str]:
+        command = [
+            self.jarvis_bin,
+            "voice",
+            "hotkey-runtime",
+            "--trigger",
+            "--duration",
+            f"{self.duration:g}",
+            "--recorder",
+            self.recorder,
+            "--input-device",
+            self.input_device,
+        ]
+        if self.adapter:
+            command.extend(["--adapter", self.adapter])
+        if self.language:
+            command.extend(["--language", self.language])
+        if self.base_url:
+            command.extend(["--base-url", self.base_url])
+        if self.session_id:
+            command.extend(["--session-id", self.session_id])
+        return command
+
+    def runtime_shell_command(self) -> str:
+        return shlex.join(self.runtime_argv())
+
     def hammerspoon_snippet(self) -> str:
-        command = self.shell_command()
+        command = self.runtime_shell_command()
         dispatch_command = f"{command} --approve-dispatch"
         speech_command = f"{dispatch_command} --speak-result"
         return f"""-- OpenJarvis voice hotkey bridge example.
