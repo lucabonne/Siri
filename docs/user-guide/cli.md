@@ -595,6 +595,36 @@ commands from the bridge file, mutate files, touch active Hammerspoon config,
 install Hammerspoon, bypass approval, dispatch automatically, or speak
 automatically.
 
+Full manual Hammerspoon activation workflow:
+
+1. `jarvis voice hotkey-bridge --write-hammerspoon ./siri-ptt.lua`
+   writes a disabled bridge file only. The active command remains
+   preview-only, and activation remains manual.
+2. `jarvis voice hotkey-bridge --validate-hammerspoon ./siri-ptt.lua`
+   statically validates the file as text only. It does not load Lua, run shell
+   commands, start listeners, or activate Hammerspoon.
+3. `jarvis voice hotkey-bridge --install-preview ./siri-ptt.lua`
+   validates again and prints the manual `dofile(...)` install line. It does
+   not edit `~/.hammerspoon/init.lua`, copy files, or install Hammerspoon.
+4. `jarvis voice hotkey-bridge --activation-guide ./siri-ptt.lua`
+   prints preflight, manual install, and manual rollback steps. The default
+   remains preview-only `jarvis voice mic-run`, and activation is still
+   user-performed outside Jarvis.
+5. Manually add the printed `dofile(...)` line to
+   `~/.hammerspoon/init.lua`. The generated bridge remains disabled and
+   preview-only until you manually review and change
+   `enable_openjarvis_voice_hotkey`.
+6. Manually reload Hammerspoon from its menu bar icon. Any Accessibility
+   permission prompt is managed by you in macOS System Settings; Jarvis does
+   not request it programmatically.
+7. `jarvis voice hotkey-bridge --activation-status ./siri-ptt.lua`
+   reports readiness and whether the active init appears to reference the
+   bridge. It remains read-only and does not dispatch or speak.
+8. `jarvis voice hotkey-bridge --rollback-guide ./siri-ptt.lua`
+   prints the exact manual backup and rollback steps, including the
+   `dofile(...)` line to remove manually. Jarvis does not roll back files for
+   you.
+
 `--status PATH` is status/readiness only. It is a read-only check for a
 generated bridge file. It reports whether the file exists, whether the Phase 6
 static validator passes, whether the bridge is preview-only by default, whether

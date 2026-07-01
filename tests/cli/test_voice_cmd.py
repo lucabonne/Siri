@@ -1496,6 +1496,129 @@ def test_voice_hotkey_bridge_activation_status_prints_manual_only_safety(
     assert "Jarvis does not activate the bridge" in result.output
 
 
+def test_voice_hotkey_bridge_full_manual_hammerspoon_activation_workflow(
+    monkeypatch, tmp_path
+) -> None:
+    home = tmp_path / "home"
+    home.mkdir()
+    active_init = home / ".hammerspoon" / "init.lua"
+    bridge_path = tmp_path / "siri-ptt.lua"
+    runner = CliRunner()
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setattr(voice_cmd.sys, "platform", "linux")
+    monkeypatch.setattr(voice_cmd, "load_config", lambda: _safe_config())
+
+    def fail_side_effect(*args, **kwargs):
+        raise AssertionError("manual workflow docs must not start voice flow")
+
+    monkeypatch.setattr(voice_cmd, "_post_json", fail_side_effect)
+    monkeypatch.setattr(voice_cmd, "_get_json", fail_side_effect)
+    monkeypatch.setattr(voice_cmd, "_build_recorder", fail_side_effect)
+    monkeypatch.setattr(voice_cmd, "_build_speech_output", fail_side_effect)
+
+    write_result = runner.invoke(
+        voice_cmd.voice,
+        ["hotkey-bridge", "--write-hammerspoon", str(bridge_path)],
+    )
+
+    assert write_result.exit_code == 0
+    assert bridge_path.exists()
+    assert "Wrote disabled Hammerspoon bridge example" in write_result.output
+    assert "preview-only default: True" in write_result.output
+    assert "manual activation: user-performed outside Jarvis" in write_result.output
+    assert not active_init.exists()
+
+    validate_result = runner.invoke(
+        voice_cmd.voice,
+        ["hotkey-bridge", "--validate-hammerspoon", str(bridge_path)],
+    )
+
+    assert validate_result.exit_code == 0
+    assert "Hammerspoon bridge validation passed" in validate_result.output
+    assert "preview-only default: True" in validate_result.output
+    assert "manual activation: user-performed outside Jarvis" in validate_result.output
+    assert not active_init.exists()
+
+    install_result = runner.invoke(
+        voice_cmd.voice,
+        ["hotkey-bridge", "--install-preview", str(bridge_path)],
+    )
+
+    assert install_result.exit_code == 0
+    assert "Hammerspoon bridge install preview (no changes made)" in (
+        install_result.output
+    )
+    assert "generated bridge: disabled/preview-only by default" in (
+        install_result.output
+    )
+    assert "manual activation: user-performed outside Jarvis" in (install_result.output)
+    assert "~/.hammerspoon/init.lua: not modified" in install_result.output
+    assert not active_init.exists()
+
+    activation_guide_result = runner.invoke(
+        voice_cmd.voice,
+        ["hotkey-bridge", "--activation-guide", str(bridge_path)],
+    )
+
+    dofile_line = f"dofile({json.dumps(str(bridge_path.resolve(strict=True)))})"
+    assert activation_guide_result.exit_code == 0
+    assert "Hammerspoon push-to-talk activation guide (manual only)" in (
+        activation_guide_result.output
+    )
+    assert "default behavior: preview-only `jarvis voice mic-run`" in (
+        activation_guide_result.output
+    )
+    assert "manual activation: user-performed outside Jarvis" in (
+        activation_guide_result.output
+    )
+    assert dofile_line in activation_guide_result.output
+    assert "~/.hammerspoon/init.lua modified by Jarvis: False" in (
+        activation_guide_result.output
+    )
+    assert not active_init.exists()
+
+    active_init.parent.mkdir(parents=True)
+    active_init.write_text(
+        f"-- user Hammerspoon config\n{dofile_line}\n",
+        encoding="utf-8",
+    )
+    manual_init_content = active_init.read_text(encoding="utf-8")
+
+    activation_status_result = runner.invoke(
+        voice_cmd.voice,
+        ["hotkey-bridge", "--activation-status", str(bridge_path)],
+    )
+
+    assert activation_status_result.exit_code == 0
+    assert "Hammerspoon bridge activation readiness (manual only)" in (
+        activation_status_result.output
+    )
+    assert "preview-only default: True" in activation_status_result.output
+    assert "activation: deferred/manual" in activation_status_result.output
+    assert "manual activation: user-performed outside Jarvis" in (
+        activation_status_result.output
+    )
+    assert "active init reference detected: True" in activation_status_result.output
+    assert "global listener not started by Jarvis: True" in (
+        activation_status_result.output
+    )
+    assert active_init.read_text(encoding="utf-8") == manual_init_content
+
+    rollback_result = runner.invoke(
+        voice_cmd.voice,
+        ["hotkey-bridge", "--rollback-guide", str(bridge_path)],
+    )
+
+    assert rollback_result.exit_code == 0
+    assert "Hammerspoon bridge rollback guide (manual only)" in rollback_result.output
+    assert "preview-only default: restored by setting" in rollback_result.output
+    assert "manual activation: not performed by Jarvis" in rollback_result.output
+    assert "Manual rollback steps:" in rollback_result.output
+    assert dofile_line in rollback_result.output
+    assert "Jarvis did not modify files" in rollback_result.output
+    assert active_init.read_text(encoding="utf-8") == manual_init_content
+
+
 def test_voice_hotkey_bridge_validation_rejects_active_dispatch(tmp_path) -> None:
     bridge_path = tmp_path / "unsafe-dispatch.lua"
     _write_hammerspoon_validation_fixture(

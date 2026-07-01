@@ -274,6 +274,7 @@ def _format_hammerspoon_install_preview(path: Path) -> None:
     click.echo(f"  bridge: {resolved_path}")
     click.echo("  validation: passed")
     click.echo("  generated bridge: disabled/preview-only by default")
+    click.echo("  manual activation: user-performed outside Jarvis")
     click.echo("  active command: preview-only `jarvis voice mic-run`")
     click.echo("  approved dispatch: manual opt-in only")
     click.echo("  result speech: manual opt-in only")
@@ -322,6 +323,7 @@ def _format_hammerspoon_activation_guide(path: Path) -> None:
     click.echo(f"  bridge: {resolved_path}")
     click.echo("  validation: passed")
     click.echo("  activation owner: user, outside Jarvis")
+    click.echo("  manual activation: user-performed outside Jarvis")
     click.echo("  default behavior: preview-only `jarvis voice mic-run`")
     click.echo("  approved dispatch: disabled unless manually opted in")
     click.echo("  result speech: disabled unless manually opted in")
@@ -432,6 +434,11 @@ def _format_hammerspoon_rollback_guide(path: Path) -> None:
     click.echo(f"  bridge file exists: {exists}")
     click.echo(f"  bridge file is regular file: {is_file}")
     click.echo(f"  static validation: {validation_status}")
+    click.echo(
+        "  preview-only default: restored by setting "
+        "`enable_openjarvis_voice_hotkey = false` manually"
+    )
+    click.echo("  manual activation: not performed by Jarvis")
     if validation_errors:
         click.echo("  validation errors:")
         for error in validation_errors:
@@ -670,6 +677,7 @@ def _format_hammerspoon_activation_status(data: dict[str, Any]) -> None:
         f"  global listener not started by Jarvis: {not safety['listener_started']}"
     )
     click.echo("  activation: deferred/manual")
+    click.echo("  manual activation: user-performed outside Jarvis")
     lua_status = "attempted" if safety["lua_executed"] else "not attempted"
     click.echo(f"  Lua execution by Jarvis: {lua_status}")
     click.echo(
@@ -1544,6 +1552,8 @@ def hotkey_bridge(
             )
         validated_path = _validate_hammerspoon_bridge_file(validate_hammerspoon)
         click.echo(f"Hammerspoon bridge validation passed: {validated_path}")
+        click.echo("  preview-only default: True")
+        click.echo("  manual activation: user-performed outside Jarvis")
         return
 
     defaults = _hotkey_bridge_defaults()
@@ -1642,6 +1652,8 @@ def hotkey_bridge(
         if write_hammerspoon is not None:
             written_path = _write_hammerspoon_bridge(write_hammerspoon, snippet)
             click.echo(f"Wrote disabled Hammerspoon bridge example: {written_path}")
+            click.echo("  preview-only default: True")
+            click.echo("  manual activation: user-performed outside Jarvis")
             return
         click.echo(snippet.rstrip())
         return

@@ -1,5 +1,43 @@
 # Customization Plan
 
+## Voice Control Hotkey Activation Phase 4
+
+Activation Phase 4 documents and tests the full manual Hammerspoon activation
+workflow end to end without adding automatic activation behavior.
+
+- The documented workflow is:
+  `jarvis voice hotkey-bridge --write-hammerspoon ./siri-ptt.lua`,
+  `jarvis voice hotkey-bridge --validate-hammerspoon ./siri-ptt.lua`,
+  `jarvis voice hotkey-bridge --install-preview ./siri-ptt.lua`,
+  `jarvis voice hotkey-bridge --activation-guide ./siri-ptt.lua`, manually add
+  the printed `dofile(...)` line to `~/.hammerspoon/init.lua`, manually reload
+  Hammerspoon, inspect with
+  `jarvis voice hotkey-bridge --activation-status ./siri-ptt.lua`, and use
+  `jarvis voice hotkey-bridge --rollback-guide ./siri-ptt.lua` for manual
+  rollback instructions.
+- CLI and macOS docs now state that every Jarvis step remains preview-only,
+  read-only, or guide-only by default, and that actual Hammerspoon activation
+  is user-performed outside Jarvis.
+- A focused regression test walks through the write, validate, install-preview,
+  activation-guide, simulated manual `dofile(...)` addition, activation-status,
+  and rollback-guide sequence. The test verifies that Jarvis does not mutate
+  `~/.hammerspoon/init.lua`; only the simulated manual step writes it.
+- Existing `jarvis voice` commands, Voice Control Phase 1-30, Mic Phase 1-8,
+  Hotkey Phase 1-6, Hotkey Activation Phase 1-3, and read-only Mission Control
+  behavior remain intact. Voice-only mode remains deferred.
+
+Deferred work remains intentionally untouched:
+
+- no always-on listening
+- no enabled Fn/global hotkey capture
+- no Python-started global hotkey listener
+- no automatic Hammerspoon installation or init mutation
+- no programmatic Accessibility permission request
+- no approval bypass
+- no automatic dispatch by default
+- no automatic speech playback by default
+- no voice-only mode; text input remains available
+
 ## Voice Control Hotkey Activation Phase 3
 
 Activation Phase 3 adds a final manual Hammerspoon bridge activation readiness
