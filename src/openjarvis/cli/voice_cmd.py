@@ -2546,7 +2546,7 @@ def voice() -> None:
     "--json",
     "as_json",
     is_flag=True,
-    help="Print the contract, dry-run, preflight, or trigger result as JSON.",
+    help="Print the contract, dry-run, preflight, status, or trigger result as JSON.",
 )
 @click.pass_context
 def hotkey_runtime(

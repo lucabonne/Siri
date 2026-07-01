@@ -191,6 +191,7 @@ def test_voice_release_readiness_help_text_stays_manual_and_safe() -> None:
     assert "Validate external Hammerspoon trigger readiness" in runtime_output
     assert "--status" in runtime_output
     assert "Audit external Hammerspoon trigger readiness" in runtime_output
+    assert "preflight, status, or trigger result as JSON" in runtime_output
     assert "--trigger" in runtime_output
     assert "Run one bounded external trigger" in runtime_output
 

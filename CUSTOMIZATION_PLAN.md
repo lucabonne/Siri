@@ -1,5 +1,72 @@
 # Customization Plan
 
+## Voice Control Hotkey Runtime Phase 7
+
+Hotkey Runtime Phase 7 is a final consolidation pass for the external
+Hammerspoon runtime trigger path before any decision about automatic listener
+activation.
+
+- Existing `jarvis voice` commands remain explicit terminal/API operations.
+- `jarvis voice hotkey-runtime --contract`, `--dry-run`, `--preflight`,
+  `--trigger`, and `--status` stay separated by purpose: contract
+  documentation, side-effect-free preview resolution, side-effect-free
+  readiness checks, one explicit bounded trigger run, and side-effect-free
+  runtime audit.
+- `jarvis voice hotkey-bridge --write-hammerspoon`,
+  `--validate-hammerspoon`, `--install-preview`, `--activation-guide`,
+  `--rollback-guide`, and `--activation-status` stay separated from the runtime
+  trigger entry point: they produce, validate, inspect, or guide a disabled
+  generated Hammerspoon bridge without activating it.
+- The plain command/json bridge preview continues to expose the internal
+  preview-only `jarvis voice mic-run` command for terminal review. The
+  generated Hammerspoon bridge's active default command remains preview-only
+  `jarvis voice hotkey-runtime --trigger`.
+- Manual Hammerspoon activation remains user-performed outside Jarvis by
+  manually adding the printed `dofile(...)` line to
+  `~/.hammerspoon/init.lua`, manually reloading Hammerspoon, and manually
+  managing macOS permissions.
+- Preview-only behavior remains the default. Dispatch still requires explicit
+  `--approve-dispatch`, and speech still requires explicit
+  `--approve-dispatch --speak-result`.
+- CLI help, CLI docs, macOS docs, and focused tests now consistently describe
+  the runtime trigger entry point, disabled generated bridge, manual activation
+  boundary, preview-only default, explicit approval gate, explicit speech opt-in,
+  and deferred automatic listener/voice-only behavior.
+- No Python global hotkey listener, always-on listening, Hammerspoon install,
+  `~/.hammerspoon/init.lua` mutation, Accessibility permission request,
+  approval bypass, automatic dispatch, or automatic speech behavior was added.
+- Runtime Phase 1-6 behavior remains intact.
+
+Hotkey Runtime Phase 1-7 summary:
+
+- Phase 1 added the disabled-by-default external runtime contract.
+- Phase 2 added side-effect-free dry-run resolution of the preview-only
+  internal `jarvis voice mic-run ...` command.
+- Phase 3 added side-effect-free preflight readiness checks.
+- Phase 4 added the explicit bounded `hotkey-runtime --trigger` wrapper that
+  reuses the preview-only `mic-run` path and dispatches or speaks only with
+  explicit opt-in flags.
+- Phase 5 changed generated Hammerspoon examples to call
+  `hotkey-runtime --trigger` instead of the internal microphone path directly.
+- Phase 6 added the side-effect-free runtime status/audit command.
+- Phase 7 consolidates help, docs, and focused coverage so the runtime trigger,
+  disabled generated bridge, manual Hammerspoon activation, preview-only
+  default, approval gate, speech opt-in, and deferred automatic behavior remain
+  unambiguous.
+
+Deferred scope remains intentionally untouched:
+
+- no always-on listening
+- no enabled Fn/global hotkey capture
+- no Python-started global hotkey listener
+- no automatic Hammerspoon installation or init mutation
+- no programmatic Accessibility permission request
+- no approval bypass
+- no automatic dispatch by default
+- no automatic speech playback by default
+- no Mission Control execution controls
+- no voice-only mode; text input remains available
+
 ## Voice Control Hotkey Runtime Phase 6
 
 Hotkey Runtime Phase 6 adds a read-only runtime trigger status/audit command
@@ -224,7 +291,7 @@ Deferred work remains intentionally untouched:
 ## Voice Control Release Readiness
 
 This pass consolidates Voice Control Phase 1-30, Mic Phase 1-8, Hotkey Phase
-1-6, and Hotkey Activation Phase 1-5 before any automatic hotkey/listener
+1-7, and Hotkey Activation Phase 1-5 before any automatic hotkey/listener
 activation work.
 
 Implemented safe local/manual behavior:
